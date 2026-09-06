@@ -84,7 +84,7 @@ services:
     restart: unless-stopped
     environment:
       # REQUIRED: Change these passwords before deploying.
-      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-rootsecret}
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD must be set (it used to default to the literal 'rootsecret'). Run openssl rand -base64 24}
       - MYSQL_DATABASE=chronicle
       - MYSQL_USER=chronicle
       - MYSQL_PASSWORD=${DB_PASSWORD:-chronicle}

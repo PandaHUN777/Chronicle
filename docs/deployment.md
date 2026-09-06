@@ -144,8 +144,22 @@ Every env var Chronicle reads. **Bold = required in production.**
 | `BACKUP_SCRIPT_PATH` | `/app/scripts/backup.sh` | Used by the admin "Run backup" button. |
 | `RESTORE_SCRIPT_PATH` | `/app/scripts/restore.sh` | Used by the admin restore page. |
 | `CHRONICLE_VERSION` | (empty, except on tag builds) | Names the build explicitly. Read by `GET /api/version` (highest precedence, then the VCS revision compiled into the binary, then the main module version, then `unknown`), by the `host.build` admin diagnostic, and stamped into the pre-migration manifest's `chronicle_version=` line. CI passes it as a Docker build arg **only for `v*` tag builds**, where it is the tag name — a `main`-branch push leaves it empty on purpose, because that build's metadata version is the literal `latest`, which is a tag and not a version. Empty is the normal case and is not a gap: the binary now carries its own commit SHA (Dockerfile stage 2 installs `git` so the Go toolchain stamps `vcs.revision`), and `/api/version` falls through to it. Set it yourself only if you want a human-chosen name in that field. Historical note: before this, the variable was set by nothing anywhere, so `GET /api/version` returned the literal string `unknown` on every image ever shipped. |
-| `MYSQL_ROOT_PASSWORD` | (compose) | Compose-only; sets root password for the bundled MariaDB. |
+| `MYSQL_ROOT_PASSWORD` | (compose, **required**) | Compose-only; sets the bundled MariaDB's root password **on first initialisation only**. It used to default silently to the literal `rootsecret`; compose now refuses to start without it. An install that was first started before this change still has `rootsecret` as its root password unless rotated — see "Rotating the root password" below. |
 | `MYSQL_PASSWORD` | (compose) | Compose-only; must match `DB_PASSWORD`. |
+
+### Rotating the root password
+
+`MYSQL_ROOT_PASSWORD` is read by the MariaDB image only when the data volume
+is empty, so changing it in `.env` does nothing to an existing database. To
+rotate on a running install (the database port is not published, so this is
+defence in depth rather than an open door):
+
+```
+docker compose exec -T mariadb mariadb -uroot -p"$OLD_ROOT_PASSWORD" \
+  -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '<new>'; ALTER USER 'root'@'%' IDENTIFIED BY '<new>'; FLUSH PRIVILEGES;"
+```
+
+then set the new value in `.env` so the healthcheck and backup tooling agree.
 
 ## 6. Upgrade / redeploy
 
