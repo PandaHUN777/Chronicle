@@ -38,8 +38,10 @@ RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
 # by itself, and internal/hostinfo reads them (GET /api/version and the
 # host.build admin diagnostic).
 #
-# WHY it was missing: golang:1.24-alpine's only `apk add` is ca-certificates —
-# no git — and when the VCS tool is absent Go SKIPS STAMPING SILENTLY. Measured:
+# WHY it was missing: the golang alpine builder (1.24-alpine when this was
+# diagnosed, 1.27-alpine now — the property holds across both) carries only
+# ca-certificates — no git — and when the VCS tool is absent Go SKIPS STAMPING
+# SILENTLY. Measured:
 # build exits 0, the binary carries zero vcs.* settings, and Main.Version is the
 # literal "(devel)". So every Chronicle image ever shipped contained a binary
 # with no idea what it was, which is why the 2026-08-11 incident had to reason
