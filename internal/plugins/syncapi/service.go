@@ -218,7 +218,7 @@ func (s *syncAPIService) CreateKey(ctx context.Context, userID string, input Cre
 	if s.addonGate != nil {
 		if err := s.addonGate.EnableForCampaignBySlug(ctx, input.CampaignID, SyncAPIAddonSlug, userID); err != nil {
 			slog.Error("api key created but the Sync API addon could not be enabled; "+
-				"the key will be refused until an owner enables Sync API in Settings › Extensions",
+				"the key will be refused until an owner enables Sync API on the campaign's Extensions page (sidebar → Extensions)",
 				slog.String("campaign_id", input.CampaignID),
 				slog.String("prefix", prefix),
 				slog.Any("error", err),

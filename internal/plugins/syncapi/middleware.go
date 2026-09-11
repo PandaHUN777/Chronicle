@@ -615,6 +615,6 @@ func syncAPIDisabledError() *apperror.AppError {
 		Code: http.StatusForbidden,
 		Type: "sync_api_disabled",
 		Message: "the Sync API integration is switched off for this campaign; " +
-			"a campaign owner can re-enable it in Settings › Extensions",
+			"a campaign owner can re-enable it on the campaign's Extensions page (sidebar → Extensions)",
 	}
 }

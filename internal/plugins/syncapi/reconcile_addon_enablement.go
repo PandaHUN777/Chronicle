@@ -77,7 +77,7 @@ func ReconcileAddonEnablement(ctx context.Context, keys CampaignKeyLister, store
 	if err != nil {
 		return 0, fmt.Errorf("syncapi.ReconcileAddonEnablement: listing campaigns with api keys: %w. "+
 			"Campaigns that already use the Sync API may be refused until this is resolved or an "+
-			"owner enables Sync API in Settings › Extensions", err)
+			"owner enables Sync API on the campaign's Extensions page (sidebar → Extensions)", err)
 	}
 
 	enabled := 0
