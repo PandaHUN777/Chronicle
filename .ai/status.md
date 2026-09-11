@@ -20,6 +20,47 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### The campaign "Sync API" toggle did nothing; it now refuses Bearer keys (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged). ADR-053.
+
+Switching a campaign's **Sync API** addon off had no effect anywhere. The
+`/api/v1` group carried no addon gate, and `syncAPIService.AuthenticateKey`
+checks prefix, bcrypt hash, `IsActive` and expiry but never reads
+`campaign_addons` — so every issued Bearer token stayed live against ~50
+campaign-scoped endpoints, and `AuthenticateKeyForWS` (same function) kept the
+WebSocket sync channel open too. Only `calGroup` and `mapGroup` were ever
+gated: the pattern existed and was never applied to the addon that governs the
+API itself.
+
+**It refuses the KEY, not the route.** `RequireSyncAPIAddon` gates real Bearer
+keys on both `/api/v1` groups and short-circuits for the synthetic session key
+Chronicle's own browser widgets carry — `/api/v1/*` is dual-auth, and
+`sync-api` is an INTEGRATION toggle, not a feature switch. Reusing
+`RequireAddonAPI` (the one-line version) 404s the layout editor the moment an
+owner touches the switch; that regression is pinned by a test. The refusal is
+**403 `sync_api_disabled`**, never 404 — the Foundry module reads a 404 on an
+API route as "this Chronicle is too old" and buries the real cause.
+
+**Enforcement defaults to DENIED, and that is the deployment risk.**
+`IsEnabledForCampaign` returns false when no `campaign_addons` row exists, and
+the only backfill that ever wrote those rows (syncapi migration 003) ran once.
+Two things close that: `CreateKey` now enables the addon (otherwise a new key
+is dead until the next restart), and `syncapi.ReconcileAddonEnablement` runs at
+boot from `internal/app/routes.go` for campaigns that own keys.
+
+**The reconciler keys on "is there a row", not "is it enabled".** Migration
+003's `ON DUPLICATE KEY UPDATE enabled = 1` was fine as a one-shot; as a boot
+reconciler it would re-enable every key-owning campaign on every restart, so
+switching the toggle off would last until the next deploy. `enabled = 0` is an
+owner's decision and is left alone — hence the new
+`addons.HasCampaignAddonRecord`.
+
+**Residual, booked in `.ai/todo.md`:** the WebSocket is enforced at CONNECT;
+an already-open socket is not dropped. That matches key revocation and
+`IsDmGranted`, which are also reconnect-scoped — making this toggle stronger
+than revocation would be incoherent.
+
 ### The campaign default visibility setting reached only ONE of five creation paths (2026-09-11)
 
 Branch `claude/determined-davinci-5ut5f5` (pushed, not merged).

@@ -34,6 +34,16 @@ type AddonService interface {
 	EnableForCampaign(ctx context.Context, campaignID string, addonID int, userID string) error
 	DisableForCampaign(ctx context.Context, campaignID string, addonID int) error
 	IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	// EnableForCampaignBySlug is EnableForCampaign addressed by slug instead
+	// of by numeric addon ID. Other plugins know their own addon by slug and
+	// have no business looking up an ID in the addons table to call the
+	// ID-keyed method — that would be a repo reach-through in disguise.
+	EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error
+	// HasCampaignAddonRecord reports whether the campaign has a
+	// campaign_addons row for this addon at all, enabled or not. See the
+	// repository doc comment: it is the only way to distinguish "never
+	// configured" from "explicitly disabled".
+	HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error)
 	CountCampaignsUsingAddon(ctx context.Context, addonSlug string) (int, error)
 	// ListCampaignsUsingAddon returns the IDs of every campaign with the addon
 	// enabled — used by startup backfills that replay enable-effects.
@@ -526,6 +536,27 @@ func (s *addonService) EnableForCampaign(ctx context.Context, campaignID string,
 		slog.String("user_id", userID),
 	)
 	return nil
+}
+
+// EnableForCampaignBySlug resolves the addon by slug and enables it for the
+// campaign. Thin wrapper over EnableForCampaign so every enable — whoever
+// initiates it — goes through the same status / installed-code / mutual-
+// exclusivity checks and the same enable-effects.
+func (s *addonService) EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error {
+	addon, err := s.repo.FindBySlug(ctx, addonSlug)
+	if err != nil {
+		return err
+	}
+	if addon == nil {
+		return apperror.NewNotFound("addon not found: " + addonSlug)
+	}
+	return s.EnableForCampaign(ctx, campaignID, addon.ID, userID)
+}
+
+// HasCampaignAddonRecord reports whether the campaign has any campaign_addons
+// row for this addon, enabled or not.
+func (s *addonService) HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error) {
+	return s.repo.HasCampaignAddonRecord(ctx, campaignID, addonSlug)
 }
 
 // DisableForCampaign disables an addon for a campaign.

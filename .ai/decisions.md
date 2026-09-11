@@ -4576,3 +4576,149 @@ cell's rendering is pixel-identical to what shipped.
 - Census + guard: `internal/widgets/calendar_block/moon_reach_probe_test.go`,
   registered in `tools/check-browser-probes.sh`
 - Data half of the same complaint: ADR pending / `internal/plugins/calendar/moon_fallback.go`
+
+---
+
+## ADR-053: The Sync API toggle refuses the Bearer key, not the route — and enabling it is a decision only a human or a key-creation makes
+
+**Date:** 2026-09-11 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** read-only audit of the `sync-api` addon toggle against current
+HEAD; implementation on branch `claude/determined-davinci-5ut5f5`.
+
+### Context
+
+A campaign has a "Sync API" addon toggle (slug `sync-api`, category
+`integration`, seeded by `db/migrations/000001_baseline.up.sql`). Switching it
+off did nothing at all.
+
+`internal/plugins/syncapi/routes.go` mounted `v1 := e.Group("/api/v1",
+RequireAuthOrAPIKey(...), RateLimit(...), RequireJSONContentType())` with no
+addon check, and the campaign sub-group underneath it carries ~50 endpoints.
+`RequireAuthOrAPIKey` → `RequireAPIKey` → `syncAPIService.AuthenticateKey`
+validates prefix, bcrypt hash, `IsActive` and expiry and never reads
+`campaign_addons`; `addons.IsEnabledForCampaign` is the only place "enabled" is
+ever evaluated and it was not on this path. The WebSocket had the same hole:
+`AuthenticateKeyForWS` delegates to the same `AuthenticateKey` and is wired at
+`internal/websocket/auth.go:81,107`.
+
+Only `calGroup` and `mapGroup` were gated, with `RequireAddonAPI(addonChecker,
+"calendar" / "maps")`. The pattern existed; it had simply never been applied to
+the addon that governs the API itself.
+
+### Decision
+
+**1. The toggle refuses REAL BEARER KEYS, and nothing else.**
+
+`RequireSyncAPIAddon` is mounted on both `/api/v1` groups (`v1` and
+`v1Multipart`), after the identity resolver and before the rate limiter. It
+short-circuits for any caller whose resolved `APIKey.ID == synthKeySessionID`.
+
+The rejected alternative was reusing `RequireAddonAPI`, which is one line. It
+gates EVERY caller — and `/api/v1/*` is dual-auth: Chronicle's own browser
+widgets authenticate there by session cookie
+(`static/js/widgets/layout_editor.js` reads `/entity-types` and `/maps` that
+way) and receive a synthetic key. `sync-api` is an **integration** toggle; an
+owner switching it off means "no outside clients", not "stop rendering my
+layout editor". `calendar` and `maps` are **feature** addons and gating their
+web callers too is right for them and wrong here. Pinned by
+`TestSyncAPIAddon_SessionCallerUnaffected`, which 404s under the naive fix.
+
+**2. It answers 403 `sync_api_disabled`, not 404.**
+
+Rejected 404 (what `RequireAddonAPI` returns) on evidence from the consumer:
+Chronicle's Foundry module reads a 404 on an API route as "this Chronicle is
+too old to have that endpoint" and takes its version-compatibility path, hiding
+the real cause — the same trap that made the calendar blackout answer 503
+rather than 404 on purpose. The key is authentic and the campaign is real; what
+is absent is authorization, which is 403. The machine-readable `type` lets a
+client name the condition instead of parsing prose.
+
+**3. It is NOT folded into `AuthenticateKey`.**
+
+Rejected: it would be one choke point covering REST and WS together, but every
+REST refusal would surface as `RequireAPIKey`'s blanket 401 "invalid api key",
+which is a lie — the key is valid. `AuthenticateKey` keeps answering one
+question ("is this token a live key?") and each transport shapes its own
+refusal: middleware for REST, `AuthenticateKeyForWS` for the socket.
+
+**4. The WebSocket is enforced AT CONNECT, and in-flight sessions are not
+dropped.**
+
+Rejected dropping live sockets. The hub has no disconnect-by-campaign
+mechanism, and adding one would make this toggle *stronger than key
+revocation*: deactivating or deleting an API key — the established revocation
+control — also only takes effect at reconnect, as does revoking a `dm_granted`
+flag (`Client.IsDmGranted`, "revoking a grant requires the user to reconnect").
+A toggle that outranks revocation would be incoherent, and building a
+revocation-polling loop into the hub in the same change as the gate widens the
+blast radius of the deploy for no gain over the control it would exceed.
+Booked in `.ai/todo.md`; the honest statement is that this is a connect-time
+control, uniformly with every other authorization fact the hub resolves.
+
+**5. Enforcement defaults to DENIED, so `CreateKey` records the decision.**
+
+`addons.IsEnabledForCampaign` returns false when no `campaign_addons` row
+exists. `syncapi/migrations/003_autoenable_existing_keys.up.sql` backfilled
+`enabled = 1` for campaigns with an `api_keys` row, but it ran once; any
+campaign that minted its first key afterwards sits at "no row".
+
+`syncAPIService.CreateKey` now calls `EnableForCampaignBySlug` after the key
+row commits. Rejected leaving it to the boot reconciler alone: a campaign
+minting its first key would get a token that is dead until the next server
+restart — "restart the server to make your new key work" is a worse defect than
+the one being closed. This does re-enable a toggle an owner may have switched
+off; that is deliberate and logged, because the owner is at that moment on the
+API keys screen asking for an external credential, and the `campaign_addons`
+row is the only record this system keeps of that. Nothing else re-enables it.
+Best-effort on failure: the key row is committed and its plaintext is shown
+once, so returning an error would destroy an unrecoverable credential.
+
+**6. The backfill is a reconciler keyed on "is there a row", not "is it on".**
+
+`syncapi.ReconcileAddonEnablement` runs at boot from
+`internal/app/routes.go`, alongside `backfillPlayerCharacterTypes`, and enables
+`sync-api` only for campaigns that own an API key and have **no
+`campaign_addons` row at all**. A row saying `enabled = 0` is an owner's
+decision and is left alone.
+
+This is the trap. Migration 003's `ON DUPLICATE KEY UPDATE enabled = 1` was
+harmless as a one-shot when "enabled" meant nothing; as a BOOT reconciler the
+same clause would re-enable every key-owning campaign on every restart, so
+switching the toggle off would last exactly until the next deploy — handing
+back the decorative toggle this ADR removes. Hence the new
+`HasCampaignAddonRecord`: `IsEnabledForCampaign` cannot distinguish "never
+configured" from "explicitly off" and is the wrong question for a backfill.
+Pinned by `TestReconcileAddonEnablement`, whose "deliberately switched it OFF"
+row fails under the migration's semantics.
+
+Per CLAUDE.md a one-time data fix is a reconciler, never a migration; it also
+has to be re-runnable, since a campaign can acquire its first key between two
+boots of an older build.
+
+**7. An unwired gate refuses.**
+
+`SetAddonGate` is injected in `internal/app/routes.go`. If that line is ever
+dropped, `AuthenticateKeyForWS` fails with a distinct internal error rather
+than assuming permission. A security control that silently no-ops when its
+dependency is missing is the defect class this ADR exists to remove.
+
+### Deliberately out of scope
+
+`/api/version` (unauthenticated by design, pre-dates auth) and
+`/api/v1/campaigns/:cid/foundry-vtt/module.{json,zip}`
+(`foundry_vtt.RegisterPublicRoutes`, its own per-campaign signed token, not a
+Bearer key) stay ungated. The operator must be able to fetch and update the
+module in order to reach the toggle at all.
+
+### Where it lives
+
+- `internal/plugins/syncapi/middleware.go` — `RequireSyncAPIAddon`,
+  `syncAPIDisabledError`, `SyncAPIAddonSlug`
+- `internal/plugins/syncapi/routes.go` — mounted on `v1` and `v1Multipart`
+- `internal/plugins/syncapi/service.go` — `SyncAPIAddonGate`, `SetAddonGate`,
+  the `AuthenticateKeyForWS` gate, `CreateKey`'s enable
+- `internal/plugins/syncapi/reconcile_addon_enablement.go` — the boot backfill
+- `internal/plugins/addons/{service,repository}.go` —
+  `EnableForCampaignBySlug`, `HasCampaignAddonRecord`
+- Tests: `internal/plugins/syncapi/addon_gate_test.go`,
+  `internal/plugins/syncapi/reconcile_addon_enablement_test.go`

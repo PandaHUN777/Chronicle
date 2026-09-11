@@ -2274,6 +2274,26 @@ func (a *App) RegisterRoutes() {
 	// request logging, security monitoring, and admin dashboard.
 	syncRepo := syncapi.NewSyncAPIRepository(a.DB)
 	syncService := syncapi.NewSyncAPIService(syncRepo)
+	// The campaign "Sync API" addon toggle is what gates external Bearer
+	// access (REST via syncapi.RequireSyncAPIAddon, WebSocket via
+	// AuthenticateKeyForWS). Both read it through this gate; the WS path
+	// fails CLOSED if this line is ever dropped, which is the intended
+	// direction for a security control.
+	syncService.SetAddonGate(addonService)
+	// One-time, idempotent startup backfill, same shape and same rules as
+	// backfillPlayerCharacterTypes above: enable sync-api for campaigns that
+	// already own API keys but have no recorded toggle state, so enforcing
+	// the toggle cannot cut off an integration that was working. Enables
+	// ONLY where no campaign_addons row exists — a row saying enabled=0 is
+	// an owner's decision and is left alone. Best-effort: a failure is
+	// logged with the manual remedy and never blocks startup.
+	if n, err := syncapi.ReconcileAddonEnablement(context.Background(), syncService, addonService); err != nil {
+		slog.Error("sync-api addon enablement backfill failed; campaigns that already use the "+
+			"Sync API may be refused until an owner enables Sync API in Settings › Extensions",
+			slog.String("error", err.Error()))
+	} else if n > 0 {
+		slog.Info("sync-api addon enablement backfill complete", slog.Int("campaigns", n))
+	}
 	syncHandler := syncapi.NewHandler(syncService)
 	// Inject sync mapping service early so the owner dashboard can show sync status.
 	syncMappingRepoEarly := syncapi.NewSyncMappingRepository(a.DB)

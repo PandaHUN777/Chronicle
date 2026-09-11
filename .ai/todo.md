@@ -9,6 +9,35 @@
 <!-- Legend: [ ] Not started  [~] In progress  [x] Complete  [!] Blocked      -->
 <!-- ====================================================================== -->
 
+## 0-syncapi. The "Sync API" toggle is enforced (2026-09-11, ADR-053)
+
+- [x] **The gate, scoped to real Bearer keys.** `RequireSyncAPIAddon` on both
+  `/api/v1` groups; a synthetic session key (`ID == synthKeySessionID`) passes
+  through untouched so Chronicle's own widgets on the same dual-auth routes are
+  unaffected. Refusal is 403 `sync_api_disabled`, never 404.
+- [x] **The WebSocket.** Gated in `AuthenticateKeyForWS`, not inside
+  `AuthenticateKey` (whose every failure surfaces as 401 "invalid api key").
+- [x] **Boot reconciler.** `syncapi.ReconcileAddonEnablement`, wired in
+  `internal/app/routes.go` next to `backfillPlayerCharacterTypes`. Enables
+  `sync-api` only where a campaign owns API keys and has **no**
+  `campaign_addons` row; `enabled = 0` is an owner's decision and is left alone.
+- [x] **`CreateKey` enables the addon**, so a key minted after boot is not dead
+  until the next restart.
+
+- [ ] **RESIDUAL — an in-flight WebSocket is not dropped when the toggle flips
+  off.** Enforcement is at CONNECT. The hub has no disconnect-by-campaign
+  mechanism, and adding one would make this toggle stronger than API-key
+  revocation, which is also reconnect-scoped (as is `Client.IsDmGranted`:
+  "revoking a grant requires the user to reconnect"). Fixing it properly means
+  giving the hub ONE revocation path that all three use — not a special case
+  for this toggle. Until then the honest statement is: the socket closes on the
+  module's next reconnect, or on a world reload.
+- [ ] **Not audited: the other addon-gated groups.** `calGroup` and `mapGroup`
+  use `RequireAddonAPI`, which gates session callers too and answers 404. For
+  `calendar` / `maps` — feature addons — gating everyone is right, but the 404
+  shape has the same "too old a Chronicle" ambiguity for the Foundry module.
+  Re-measure against V5 before changing anything on the calendar side.
+
 ## 0-vis. Campaign default visibility reaches every creation path (2026-09-11)
 
 - [x] **One shared resolution.**

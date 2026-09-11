@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -19,6 +20,11 @@ const keyBytes = 32
 // keyPrefixLen is the length of the prefix stored for key identification.
 const keyPrefixLen = 8
 
+// errAddonGateUnwired is the internal error behind a WebSocket refusal when
+// SetAddonGate was never called. A distinct value so the boot/wiring fault is
+// distinguishable in logs from a genuine "addon is off" refusal.
+var errAddonGateUnwired = errors.New("syncapi: addon gate not wired (SetAddonGate was never called)")
+
 // SyncAPIService handles business logic for the sync API.
 type SyncAPIService interface {
 	// Key management.
@@ -30,6 +36,16 @@ type SyncAPIService interface {
 	ActivateKey(ctx context.Context, id int) error
 	DeactivateKey(ctx context.Context, id int) error
 	RevokeKey(ctx context.Context, id int) error
+
+	// ListCampaignIDsWithKeys returns the distinct campaign IDs that own at
+	// least one api_keys row, active or not. Backs ReconcileAddonEnablement.
+	ListCampaignIDsWithKeys(ctx context.Context) ([]string, error)
+
+	// SetAddonGate injects the campaign addon state reader/writer. MUST be
+	// called during wiring: without it the WebSocket authenticator fails
+	// closed (see AuthenticateKeyForWS) and CreateKey cannot record that a
+	// campaign now uses the Sync API.
+	SetAddonGate(gate SyncAPIAddonGate)
 
 	// Authentication.
 	AuthenticateKey(ctx context.Context, rawKey string) (*APIKey, error)
@@ -71,14 +87,36 @@ type SyncAPIService interface {
 	ConfirmCalendarDate(ctx context.Context, campaignID string, year, month, day int) error
 }
 
+// SyncAPIAddonGate is the narrow view of the addons service this plugin
+// needs: read whether the campaign's "Sync API" addon is on, and turn it on.
+// Declared here (structurally, not as an import of the addons package) for
+// the same reason AddonChecker is — syncapi states what it needs and the
+// addons service happens to satisfy it.
+type SyncAPIAddonGate interface {
+	IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error
+}
+
 // syncAPIService implements SyncAPIService.
 type syncAPIService struct {
 	repo SyncAPIRepository
+
+	// addonGate reads and writes the campaign's Sync API toggle. Injected
+	// after construction (SetAddonGate) rather than taken as a constructor
+	// argument only because the addons service is built earlier in the
+	// wiring than this one; a nil gate is treated as a wiring fault, not as
+	// permission — see AuthenticateKeyForWS.
+	addonGate SyncAPIAddonGate
 }
 
 // NewSyncAPIService creates a new sync API service.
 func NewSyncAPIService(repo SyncAPIRepository) SyncAPIService {
 	return &syncAPIService{repo: repo}
+}
+
+// SetAddonGate injects the campaign addon state reader/writer.
+func (s *syncAPIService) SetAddonGate(gate SyncAPIAddonGate) {
+	s.addonGate = gate
 }
 
 // --- Key Management ---
@@ -157,6 +195,43 @@ func (s *syncAPIService) CreateKey(ctx context.Context, userID string, input Cre
 		slog.String("campaign_id", input.CampaignID),
 	)
 
+	// Minting a Bearer token for an outside client IS the affirmative act of
+	// turning external access on, and the campaign_addons row is the only
+	// record this system keeps of that. Without this, a campaign that mints
+	// its first key while the addon is off gets a token that is dead by
+	// construction and only starts working after the next server restart
+	// picks it up in ReconcileAddonEnablement — a "restart the server to
+	// make your new key work" behaviour that is worse than the bug this
+	// change closes. So the create path records the decision immediately and
+	// the reconciler stays what it is: a one-time heal for keys minted before
+	// the gate existed.
+	//
+	// This does re-enable a toggle the owner may have switched off. That is
+	// deliberate and it is logged: the owner is, right now, on the API keys
+	// screen asking for an external credential. Nothing else re-enables it —
+	// switching it off after the fact stays off until another key is created.
+	//
+	// Best-effort on failure: the key row is already committed and its
+	// plaintext is shown exactly once, so returning an error here would
+	// destroy a credential the caller cannot recover. Logged at ERROR with
+	// the remedy instead.
+	if s.addonGate != nil {
+		if err := s.addonGate.EnableForCampaignBySlug(ctx, input.CampaignID, SyncAPIAddonSlug, userID); err != nil {
+			slog.Error("api key created but the Sync API addon could not be enabled; "+
+				"the key will be refused until an owner enables Sync API in Settings › Extensions",
+				slog.String("campaign_id", input.CampaignID),
+				slog.String("prefix", prefix),
+				slog.Any("error", err),
+			)
+		}
+	} else {
+		slog.Error("api key created with no addon gate wired; the Sync API addon state "+
+			"was not updated and the key may be refused",
+			slog.String("campaign_id", input.CampaignID),
+			slog.String("prefix", prefix),
+		)
+	}
+
 	return &CreateAPIKeyResult{Key: key, RawKey: rawKey}, nil
 }
 
@@ -173,6 +248,13 @@ func (s *syncAPIService) ListKeysByUser(ctx context.Context, userID string) ([]A
 // ListKeysByCampaign returns all keys for a campaign.
 func (s *syncAPIService) ListKeysByCampaign(ctx context.Context, campaignID string) ([]APIKey, error) {
 	return s.repo.ListKeysByCampaign(ctx, campaignID)
+}
+
+// ListCampaignIDsWithKeys returns the distinct campaign IDs owning at least
+// one API key. Deactivated and expired keys count: a deactivated key can be
+// switched back on, so the campaign is still one that uses the Sync API.
+func (s *syncAPIService) ListCampaignIDsWithKeys(ctx context.Context) ([]string, error) {
+	return s.repo.ListCampaignIDsWithKeys(ctx)
 }
 
 // maxListLimit caps admin list pagination so a caller can't force a huge query
@@ -462,6 +544,40 @@ func (s *syncAPIService) AuthenticateKeyForWS(ctx context.Context, rawKey string
 	if err != nil {
 		return "", "", 0, err
 	}
+
+	// The campaign's "Sync API" toggle governs the push channel exactly as it
+	// governs REST. The WS upgrade never passes through Echo's /api/v1 chain,
+	// so the gate cannot live in middleware for this path; it lives here
+	// rather than inside AuthenticateKey so that method keeps answering one
+	// question ("is this token a live key?") and each transport can shape its
+	// own refusal. Folding it into AuthenticateKey would surface as a 401
+	// "invalid api key" on REST, which is a lie: the key is valid.
+	//
+	// A nil gate is a wiring fault, and a security control that silently
+	// no-ops when unwired is the defect class this change exists to remove —
+	// so it refuses, loudly, rather than assuming permission.
+	if s.addonGate == nil {
+		slog.Error("websocket api key auth refused: addon gate not wired",
+			slog.String("campaign_id", key.CampaignID),
+			slog.Int("key_id", key.ID),
+		)
+		return "", "", 0, apperror.NewInternal(errAddonGateUnwired)
+	}
+	enabled, gateErr := s.addonGate.IsEnabledForCampaign(ctx, key.CampaignID, SyncAPIAddonSlug)
+	if gateErr != nil {
+		// Fail closed, same as the REST gate: an unreadable addon state is
+		// not permission.
+		slog.Error("websocket api key auth: sync-api addon check failed",
+			slog.String("campaign_id", key.CampaignID),
+			slog.Int("key_id", key.ID),
+			slog.Any("error", gateErr),
+		)
+		return "", "", 0, apperror.NewInternalMessage("temporarily unable to verify addon status", gateErr)
+	}
+	if !enabled {
+		return "", "", 0, syncAPIDisabledError()
+	}
+
 	// API keys are always created by the campaign owner, so default to owner role.
 	return key.CampaignID, key.UserID, 3, nil
 }

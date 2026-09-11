@@ -30,6 +30,15 @@ type AddonRepository interface {
 	EnableForCampaign(ctx context.Context, campaignID string, addonID int, userID string) error
 	DisableForCampaign(ctx context.Context, campaignID string, addonID int) error
 	IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	// HasCampaignAddonRecord reports whether a campaign_addons row exists for
+	// this campaign + addon slug REGARDLESS of its enabled value — i.e.
+	// "has anyone ever made a decision about this addon for this campaign?".
+	// IsEnabledForCampaign cannot answer that: it returns false both for
+	// "never configured" and for "explicitly switched off", and a backfill
+	// that cannot tell those apart would keep resurrecting a toggle the
+	// owner deliberately turned off. See ReconcileAddonEnablement in the
+	// syncapi plugin, the only caller today.
+	HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error)
 	CountCampaignsUsingAddon(ctx context.Context, addonSlug string) (int, error)
 	// ListCampaignsUsingAddon returns the IDs of every campaign that has the
 	// addon enabled. Backs one-time startup backfills that must replay an
@@ -322,6 +331,25 @@ func (r *addonRepository) IsEnabledForCampaign(ctx context.Context, campaignID s
 		return false, fmt.Errorf("checking addon enabled: %w", err)
 	}
 	return enabled, nil
+}
+
+// HasCampaignAddonRecord reports whether a campaign_addons row exists for the
+// campaign + addon slug, enabled or not. See the interface doc for why the
+// distinction from IsEnabledForCampaign matters.
+func (r *addonRepository) HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error) {
+	query := `SELECT 1 FROM campaign_addons ca
+	          INNER JOIN addons a ON a.id = ca.addon_id
+	          WHERE ca.campaign_id = ? AND a.slug = ?
+	          LIMIT 1`
+	var found int
+	err := r.db.QueryRowContext(ctx, query, campaignID, addonSlug).Scan(&found)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("checking campaign addon record: %w", err)
+	}
+	return true, nil
 }
 
 // CountCampaignsUsingAddon returns the number of campaigns that have the
