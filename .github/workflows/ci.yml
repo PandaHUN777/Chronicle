@@ -41,7 +41,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27'
 
       - name: Install templ
         # Pin to the runtime version in go.mod. The generator and the
@@ -234,7 +234,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27'
 
       - name: Install templ
         run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
@@ -302,7 +302,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27'
 
       - uses: actions/setup-node@v4
         with:
@@ -398,7 +398,7 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27'
 
       - name: Install templ
         # Pin to the runtime version in go.mod. The generator and the
@@ -411,9 +411,20 @@ jobs:
         run: templ generate
 
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.5.0
+        # Pinned: v2.5.0's release binary was built with go1.25.1, and
+        # golangci-lint refuses to run at all against a module whose `go`
+        # directive names a newer language version than the binary that
+        # would analyze it was itself built with ("the Go language version
+        # ... used to build golangci-lint is lower than the targeted Go
+        # version") — measured locally the moment go.mod moved to 1.27.1.
+        # v2.13.2's release binary is built with go1.27.1 (verified locally:
+        # `golangci-lint --version` reports it) and its own go.mod requires
+        # "latest-1" by policy, so it tracks new Go releases deliberately.
+        # Bumping the version surfaced 17 pre-existing findings (2 govet
+        # deprecated-identifier, 15 staticcheck QF1012) from newer default
+        # checks; fixed in this same change rather than leaving Lint red.
+        # Bump this pin together with go.mod's `go` directive.
+        version: v2.13.2
 
   # --- Security Scan ---
   security:
@@ -424,18 +435,28 @@ jobs:
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.24'
+          go-version: '1.27'
 
       - name: Install govulncheck
-        # Pinned: @latest broke CI when x/vuln moved to `go 1.25.0` (v1.2.0+)
-        # against our go-version 1.24 + GOTOOLCHAIN=local. v1.1.4 declares
-        # `go 1.22.0` (verified in its go.mod). Bump this pin together with
-        # the job's go-version when the toolchain moves to 1.25.
-        run: go install golang.org/x/vuln/cmd/govulncheck@v1.1.4
+        # Pinned: @latest can drift ahead of whatever go-version this job
+        # runs and start requiring a newer minimum toolchain than is
+        # installed, the same failure mode that forced the old v1.1.4 pin.
+        # v1.8.0 declares `go 1.26.0` (verified in its go.mod), comfortably
+        # under this job's go-version 1.27. Bump this pin together with the
+        # job's go-version whenever a future govulncheck release raises its
+        # minimum above what setup-go installs here.
+        run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
       - name: Run govulncheck
-        # Advisory: stdlib vulnerabilities require a Go toolchain upgrade.
-        # Non-blocking so stdlib-only findings don't break CI.
+        # continue-on-error stays TRUE: this could not be re-verified as
+        # clean from the authoring sandbox for this toolchain bump — its
+        # vulnerability DB (vuln.go.dev) is not reachable from that sandbox's
+        # egress policy (403), a pre-existing gap (see .ai/status.md,
+        # 2026-09-06 sweep). Do not flip this to non-blocking without an
+        # actual clean run's output in hand (a CI run of this job, or a run
+        # from an environment that can reach vuln.go.dev) — an unverified
+        # "clean" is exactly the failure mode this whole change exists to
+        # end.
         continue-on-error: true
         run: govulncheck ./...
 

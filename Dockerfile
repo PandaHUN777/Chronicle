@@ -22,12 +22,11 @@ WORKDIR /src
 RUN tailwindcss -i static/css/input.css -o static/css/app.css --minify
 
 # --- Stage 2: Go Build ---
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install templ CLI for generating Go code from .templ files. Pin to the
 # runtime version in go.mod — `@latest` drifts ahead and emits symbols
-# the pinned runtime doesn't have (and newer templ now requires Go 1.25,
-# which would force a base-image bump). Keep generator and runtime in
+# the pinned runtime doesn't have. Keep generator and runtime in
 # lockstep; bumping templ is a deliberate change in three places
 # (go.mod, ci.yml, Dockerfile).
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001

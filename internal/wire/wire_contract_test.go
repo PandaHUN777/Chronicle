@@ -281,14 +281,14 @@ func TestWireContractConformance(t *testing.T) {
 		var msg strings.Builder
 		msg.WriteString("wire-contract drift detected.\n\n")
 		if len(added) > 0 {
-			msg.WriteString(fmt.Sprintf("Routes added since snapshot (%d):\n", len(added)))
+			fmt.Fprintf(&msg, "Routes added since snapshot (%d):\n", len(added))
 			for _, l := range added {
 				msg.WriteString("  + " + l + "\n")
 			}
 			msg.WriteString("\n")
 		}
 		if len(removed) > 0 {
-			msg.WriteString(fmt.Sprintf("Routes removed since snapshot (%d):\n", len(removed)))
+			fmt.Fprintf(&msg, "Routes removed since snapshot (%d):\n", len(removed))
 			for _, l := range removed {
 				msg.WriteString("  - " + l + "\n")
 			}

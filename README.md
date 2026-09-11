@@ -125,7 +125,7 @@ docker compose up -d
 
 ### From Source
 
-**Prerequisites:** Go 1.24+, Node.js (for Tailwind), MariaDB 10.11+, Redis 7+
+**Prerequisites:** Go 1.27+, Node.js (for Tailwind), MariaDB 10.11+, Redis 7+
 
 ```bash
 # Clone and setup
@@ -203,7 +203,7 @@ See [.ai/architecture.md](.ai/architecture.md) for the full architecture documen
 
 | Layer | Technology |
 |-------|-----------|
-| **Backend** | Go 1.24, [Echo v4](https://echo.labstack.com/) |
+| **Backend** | Go 1.27, [Echo v4](https://echo.labstack.com/) |
 | **Templates** | [Templ](https://templ.guide/) (type-safe Go templates) |
 | **Frontend** | [HTMX](https://htmx.org/), [Alpine.js](https://alpinejs.dev/) |
 | **Editor** | [TipTap](https://tiptap.dev/) (ProseMirror-based) |

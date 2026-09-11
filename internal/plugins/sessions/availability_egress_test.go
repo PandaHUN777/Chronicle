@@ -54,7 +54,7 @@ func mentionsSchedulerData(f reflect.StructField) string {
 // A visited-set guards against cycles in the type graph.
 func assertNoSchedulerFields(t *testing.T, typ reflect.Type, path string, seen map[reflect.Type]bool) {
 	t.Helper()
-	for typ.Kind() == reflect.Ptr || typ.Kind() == reflect.Slice {
+	for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice {
 		typ = typ.Elem()
 	}
 	if typ.Kind() != reflect.Struct || seen[typ] {
@@ -67,7 +67,7 @@ func assertNoSchedulerFields(t *testing.T, typ reflect.Type, path string, seen m
 			t.Errorf("egress leak: %s.%s references scheduler data (%q) — it must stay out of export payloads (RC-12.5)", path, f.Name, tok)
 		}
 		ft := f.Type
-		for ft.Kind() == reflect.Ptr || ft.Kind() == reflect.Slice {
+		for ft.Kind() == reflect.Pointer || ft.Kind() == reflect.Slice {
 			ft = ft.Elem()
 		}
 		if ft.Kind() == reflect.Struct && ft.PkgPath() != "time" {

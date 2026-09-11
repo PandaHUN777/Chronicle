@@ -20,6 +20,68 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### Toolchain moved to Go 1.27.1; x/crypto, x/net, echo/v4 unmuted (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged — see the
+CALENDAR V5 gate below; nothing stacks on `main` until the operator has
+deployed). Closes booked item (1) below.
+
+**Target chosen:** golang.org/x/crypto and golang.org/x/net's current
+releases (v0.57.0 / v0.59.0) both declare `go 1.26.0`; golang.org/x/vuln
+(govulncheck) v1.8.0 also declares `go 1.26.0`; echo/v4 v4.15.4 only needs
+`go 1.25.0`. So 1.26 was the floor. Landed on **1.27.1** instead — the
+newest stable release (verified against the `golang.org/toolchain` module
+list on proxy.golang.org: 1.27.0/1.27.1 are tagged final, not `rc*`) —
+because it's a superset of that floor, it's what dependabot's already-open
+PR #600 targets for the Dockerfile (`golang:1.27-alpine`, confirmed to
+exist on the registry), and there's no reason to land on the trailing edge
+of support when the leading edge is already available and green here.
+
+**Moved together:** `go.mod` (`go 1.27.1`), every `go-version` in
+`ci.yml` (5 jobs), `Dockerfile`'s builder stage, and `.golangci.yml`'s
+`run.go` (not explicitly asked for, but leaving it at `1.24` while
+everything else moved would be the same kind of unnoticed divergence this
+whole exercise exists to close).
+
+**Dependencies actually bumped** (not just unmuted): x/crypto v0.46.0 →
+v0.57.0, x/net v0.48.0 → v0.59.0, echo/v4 v4.15.0 → v4.15.4, plus their
+transitive train (gommon, go-isatty, go-colorable, x/time, x/sys, x/text).
+`go mod tidy` also reclassified a dozen-plus packages from `// indirect` to
+direct `require` — pre-existing go.mod drift the version bump surfaced, not
+something this change introduced.
+
+**Found and fixed, not skipped:** bumping go.mod's language version to
+1.27 broke the pinned `golangci-lint-action@v7 version: v2.5.0` outright —
+its release binary was built with go1.25.1, and golangci-lint refuses to
+analyze a module declaring a newer `go` directive than the binary that
+would check it. Re-pinned to v2.13.2 (release binary confirmed locally
+built with go1.27.1; upstream policy keeps its own minimum at "latest-1").
+That surfaced 17 real, pre-existing findings from newer default checks (2
+govet deprecated-identifier, 15 staticcheck QF1012 `WriteString(Sprintf(...))`
+→ `Fprintf`) in `internal/plugins/smtp/service.go`,
+`internal/plugins/sessions/availability_egress_test.go`, and
+`internal/wire/{plugin_import_guard,wire_contract}_test.go` — fixed
+mechanically in the same change rather than landing a red Lint job.
+
+**govulncheck: re-pinned, NOT verified clean.** Re-pinned CI's install to
+v1.8.0 (needs go ≥1.26.0, satisfied). Could not run it for real from this
+authoring sandbox — `vuln.go.dev` returns 403 from the sandbox's egress
+policy, the same gap booked item (2) below already named. `continue-on-error:
+true` stays in `ci.yml` on purpose: do not remove it without an actual clean
+run in hand (CI's own job output, or a run from a network that can reach
+vuln.go.dev) — read that before the next release.
+
+**Not verified in this sandbox:** an actual `docker build .` — no Docker
+daemon is reachable here (`docker.sock` absent). Verified instead, from the
+sandbox's network: `golang:1.27-alpine` and `golang:1.27.1-alpine` both
+exist on the registry (anonymous manifest HEAD, HTTP 200). Someone with a
+daemon should still run the real build once before this lands anywhere.
+
+Full local proof: `make verify` (templ generate, build, vet, all eight
+`tools/` guards, `go test ./... -short` — 46 packages, 0 failures) followed
+by `make test-js` (97/97) and `make lint` (0 issues) all green on this
+branch as of this commit.
+
 ### Shotgun security sweep (2026-09-06) — small fixes, two follow-ups booked
 
 Six cheap checkers over rarely-inspected areas (secrets, deps, cookies/
@@ -37,12 +99,13 @@ cookie's clear branch now carries SameSite like its set branch. Fixed in
 the Foundry module (its own commit): the API key was a WORLD-scoped setting,
 readable by every player via `game.settings.get` — now client-scoped with a
 migration that deletes the world document.
-**Booked, not done:** (1) bumping echo/x-crypto/x-net moves `go.mod` to
-Go ≥1.25 — CI pins 1.24 with GOTOOLCHAIN=local and the Dockerfile builder
-would move too; do it as its own change with an image test. (2)
-`govulncheck` runs `continue-on-error` in CI, so its findings never block;
-it could not be run from the authoring sandbox (vuln DB blocked) — read the
-CI job output, or run it locally, before the next release.
+**Booked, not done:** (1) DONE 2026-09-11 — see the toolchain-move entry
+above; go.mod/ci.yml/Dockerfile now on Go 1.27.1, echo/x-crypto/x-net
+bumped, image build itself untested (no Docker daemon in that sandbox
+either — someone with one should run it). (2) `govulncheck` still runs
+`continue-on-error` in CI, so its findings still never block; still could
+not be run from an authoring sandbox (vuln DB blocked, unchanged) — read
+the CI job output, or run it locally, before the next release.
 
 ### CALENDAR V5 CLEAN SLATE — read this before touching anything calendar-shaped (2026-08-28)
 
