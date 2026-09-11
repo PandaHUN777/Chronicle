@@ -20,6 +20,71 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### Shotgun security sweep (2026-09-06) — small fixes, two follow-ups booked
+
+Six cheap checkers over rarely-inspected areas (secrets, deps, cookies/
+headers/CSRF/rate-limits, redirects/traversal/debug surfaces, the Foundry
+key's settings scope, widget XSS sinks); every finding hand-verified. Clean:
+no committed secrets ever, redirects, path traversal, admin gating, API keys
+hashed + constant-time compared, `?token=` redacted from request logs.
+Fixed here: four unescaped `innerHTML` sinks in `template_editor.js`
+(Scribe-editable section titles, field labels, block-type labels — stored
+XSS against whoever opens the editor); `MYSQL_ROOT_PASSWORD` no longer
+defaults to the literal `rootsecret` (compose refuses to start without it;
+`.env.example` stops shipping it; deployment.md gained a root-rotation
+recipe because MariaDB only reads it on first init); the view-as-player
+cookie's clear branch now carries SameSite like its set branch. Fixed in
+the Foundry module (its own commit): the API key was a WORLD-scoped setting,
+readable by every player via `game.settings.get` — now client-scoped with a
+migration that deletes the world document.
+**Booked, not done:** (1) bumping echo/x-crypto/x-net moves `go.mod` to
+Go ≥1.25 — CI pins 1.24 with GOTOOLCHAIN=local and the Dockerfile builder
+would move too; do it as its own change with an image test. (2)
+`govulncheck` runs `continue-on-error` in CI, so its findings never block;
+it could not be run from the authoring sandbox (vuln DB blocked) — read the
+CI job output, or run it locally, before the next release.
+
+### CALENDAR V5 CLEAN SLATE — read this before touching anything calendar-shaped (2026-08-28)
+
+Branch `claude/calendar-system-review-bprsvh`, PR #595, **gated: DO NOT MERGE
+until the operator has a verified backup and is at the console.** The v4
+calendar was demolished on the operator's explicit clean-slate ruling: plugin
+UI/handlers/routes deleted, 34 syncapi routes answer `503 calendar_rebuilding`,
+five user-facing seats render `components.FeatureRebuilding`, and the domain
+layer (model/import/export/presets, 4,278 lines) was recovered verbatim.
+Migrations `calendar/019` + `timeline/002` + `sessions/006` wipe the data —
+**one-way; all three down files are deliberately empty.**
+
+What CI's fresh-DB replay caught after the PR opened, both fixed on-branch:
+019 originally DROPPED `calendars`/`calendar_events` while sessions/001 and
+timeline/001 still declare FKs to them (errno 150, both plugins dead at v0 on
+a fresh install) — 019 now EMPTIES those two, guarded by
+`calendar/clean_slate_test.go` which derives the protected set from sibling
+SQL and honours later `DROP FOREIGN KEY` releases. And 49 JS tests read
+deleted files while five orphaned engine assets (`cal-almanac.js` + friends,
+392 KB) kept 15 more green against code nothing loads — all removed, plus the
+`skybox`/`worldstate`/`worldstate_provider` widget shims found by the
+follow-up audit. JS suite: 97 tests, all against live code.
+
+**Backup gate (new, this branch):** `MigrateWithBackup` only ever backed up
+for pending CORE migrations; a destructive plugin-only release took no backup
+at all. `cmd/server/main.go` now detects pending PLUGIN migrations
+(`database.PendingPluginMigrations`) and runs `PreMigrationBackup` under the
+same `BACKUP_REQUIRED` semantics, skipping only when the core path already
+snapshotted this boot. Pinned by
+`TestPluginMigration_PendingDetectionForBackupGate` (real-DB, CI replay job).
+
+**Deploy runbook:** back up manually anyway; set `BACKUP_REQUIRED=1`; deploy
+only builds at/after the FK fix (`1bda7d6`) — the intermediate `bfcaf24`
+build's 019 drops the FK parents and a persistent DB that ever booted it
+records version 19 and skips the corrected text forever. Then watch the boot
+log for 019/002/006 and walk the three click-paths in PR #595.
+
+The rebuild to-do list is the 67 `CALV5-PLACEHOLDER:` tags (grep them). V5
+design: `cordinator/plans/2026-08-21-calendar-v5-design-brief.md`; salvage
+doctrine + CI post-mortem: `...-calendar-v5-salvage-manifest.md` §6.
+Migration `020_calv5_schema` stays unwritten until 019 has run on the real DB.
+
 ### CI drove the runner image's Chromium, not the one it pinned (2026-09-06)
 
 Branch `claude/dependabot-setup` (PR #599). `main` at eb977162, unchanged

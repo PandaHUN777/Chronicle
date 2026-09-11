@@ -1357,6 +1357,7 @@ func (h *Handler) ToggleViewAsPlayer(c echo.Context) error {
 			Path:     "/",
 			HttpOnly: true,
 			Secure:   secure,
+			SameSite: http.SameSiteLaxMode, // mirror the set-branch below
 			MaxAge:   -1,
 		})
 	} else {
