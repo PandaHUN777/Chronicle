@@ -82,22 +82,59 @@ func (a *bestiaryUserFetcherAdapter) GetUserPublicInfo(ctx context.Context, user
 
 // bestiaryEntityCreatorAdapter wraps entities.EntityService to implement the
 // bestiary.EntityCreator interface for importing creatures into campaigns.
+//
+// It carries campaignSvc only to read the campaign's DefaultVisibility
+// setting. The bestiary plugin has no opinion about visibility and its
+// EntityCreator interface has no is_private parameter, so an import is
+// always the ABSENT case: the campaign default decides.
 type bestiaryEntityCreatorAdapter struct {
-	svc entities.EntityService
+	svc         entities.EntityService
+	campaignSvc campaigns.CampaignService
 }
 
 // CreateFromStatblock creates a new entity in a campaign from a bestiary statblock.
 // Uses entity type ID 0 (default) since the real type depends on system configuration.
+//
+// Visibility comes from the campaign's DefaultVisibility setting. The
+// bestiary's EntityCreator interface has no is_private parameter and the
+// import UI has no per-import visibility control, so every import is the
+// ABSENT case: the campaign default is the only input there is. This was not
+// set at all until now, so an imported boss statblock landed visible to the
+// whole party in a campaign the DM had set to "DM Only".
 func (a *bestiaryEntityCreatorAdapter) CreateFromStatblock(ctx context.Context, campaignID, userID, name string, statblock json.RawMessage) (string, error) {
 	input := entities.CreateEntityInput{
 		Name:       name,
 		FieldsData: map[string]any{"statblock_json": string(statblock)},
+		IsPrivate:  a.defaultPrivate(ctx, campaignID),
 	}
 	ent, err := a.svc.Create(ctx, campaignID, userID, input)
 	if err != nil {
 		return "", err
 	}
 	return ent.ID, nil
+}
+
+// defaultPrivate reports whether this campaign's DefaultVisibility setting
+// means "new content starts hidden".
+//
+// It FAILS CLOSED. An import whose campaign settings cannot be read still
+// succeeds — a transient read failure is no reason to break creature import —
+// but it succeeds hidden, because "we could not find out what the DM asked
+// for" is not a licence to publish. Over-hiding costs the DM one toggle;
+// revealing a boss statblock to the party cannot be undone.
+func (a *bestiaryEntityCreatorAdapter) defaultPrivate(ctx context.Context, campaignID string) bool {
+	if a.campaignSvc == nil {
+		slog.Error("bestiary import: no campaign service wired; imported entity defaults to private",
+			slog.String("campaign_id", campaignID))
+		return true
+	}
+	campaign, err := a.campaignSvc.GetByID(ctx, campaignID)
+	if err != nil || campaign == nil {
+		slog.Error("bestiary import: could not read campaign default visibility; imported entity defaults to private",
+			slog.String("campaign_id", campaignID), slog.Any("error", err))
+		return true
+	}
+	return campaign.ParseSettings().DefaultsToPrivate()
 }
 
 // bestiaryCampaignRoleAdapter wraps campaigns.CampaignService to implement the
@@ -2380,7 +2417,7 @@ func (a *App) RegisterRoutes() {
 	bestiaryRepo := bestiary.NewBestiaryRepository(a.DB)
 	bestiarySvc := bestiary.NewBestiaryService(bestiaryRepo)
 	bestiarySvc.SetUserFetcher(&bestiaryUserFetcherAdapter{authSvc: authService})
-	bestiarySvc.SetEntityCreator(&bestiaryEntityCreatorAdapter{svc: entityService})
+	bestiarySvc.SetEntityCreator(&bestiaryEntityCreatorAdapter{svc: entityService, campaignSvc: campaignService})
 	bestiarySvc.SetCampaignRoleChecker(&bestiaryCampaignRoleAdapter{svc: campaignService})
 	bestiarySvc.SetCampaignSystemFetcher(&bestiaryCampaignSystemAdapter{svc: campaignService})
 	bestiaryHandler := bestiary.NewHandler(bestiarySvc)

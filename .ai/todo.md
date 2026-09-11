@@ -9,6 +9,41 @@
 <!-- Legend: [ ] Not started  [~] In progress  [x] Complete  [!] Blocked      -->
 <!-- ====================================================================== -->
 
+## 0-vis. Campaign default visibility reaches every creation path (2026-09-11)
+
+- [x] **One shared resolution.**
+  `campaigns.CampaignSettings.ResolveNewEntityPrivacy(patch.Field[bool])` (+
+  `DefaultsToPrivate()`), next to the setting it interprets. The four-line
+  inline block in `entities/handler.go` — for months the ONLY reader of
+  `DefaultVisibility` anywhere in the repo — now calls it like everyone else.
+- [x] **Applied at the four paths that ignored the setting**: the shop
+  widget's `QuickCreateAPI`, syncapi `CreateEntity` (`is_private` `bool` →
+  `patch.Field[bool]`), the batch-sync `case "create"` (`.Val(false)` threw
+  away a distinction the field already carried), and
+  `bestiaryEntityCreatorAdapter.CreateFromStatblock`. Absent falls back to
+  the campaign default; an explicit `is_private: false` stays public.
+  Unreadable campaign settings fail CLOSED, loudly logged.
+- [x] Pinned by `internal/plugins/campaigns/default_visibility_test.go`,
+  `internal/plugins/entities/default_visibility_create_test.go`,
+  `internal/plugins/syncapi/create_default_visibility_test.go` and
+  `internal/app/bestiary_import_visibility_test.go` — three directions per
+  path (absent / explicit false / explicit true), each red before the fix.
+
+- [ ] **BOOKED, a copy/product decision — "DM Only" and "Private" are the
+  same behaviour.** `internal/plugins/campaigns/settings.templ:373-381`
+  offers them as two options and tells the DM that Private means "visible
+  only to the creator". Storage has exactly one flag (`entities.is_private`),
+  so both resolve to "hidden from players" and the creator-only behaviour is
+  not implemented anywhere. Either the copy is wrong or a feature is missing;
+  deciding which is not an implementation call. `DefaultVisibilityDMOnly` /
+  `DefaultVisibilityPrivate` in `campaigns/model.go` carry the same note.
+
+- [ ] **NOT AUDITED — visibility defaults on non-entity content.** This work
+  covered `CreateEntityInput` only. Whether maps, markers, notes, timeline
+  events and sessions honour a campaign default (or should) was never
+  looked at. Being unlisted here is a statement about what was examined,
+  not a claim that they are fine.
+
 ## 0-rsvp. The product asks instead of guessing (C-RSVP-P10, 2026-08-16)
 
 - [x] **One call-to-action banner** for the player, polled like the bell badge:

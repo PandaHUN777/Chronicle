@@ -49,9 +49,17 @@ func (s *stubEntityServiceForCreate) GetEntityTypes(_ context.Context, _ string)
 
 // stubCampaignServiceForCreate embeds campaigns.CampaignService. Only
 // GetMember is reachable from CreateEntity (and only when owner_user_id
-// is supplied, which these tests don't do).
+// is supplied, which these tests don't do) — plus GetByID, which the
+// create path reads to resolve the campaign's DefaultVisibility setting
+// whenever the body omits is_private. This campaign has no default set,
+// so these tests keep their original public-entity expectations. See
+// create_default_visibility_test.go for the resolution itself.
 type stubCampaignServiceForCreate struct {
 	campaigns.CampaignService
+}
+
+func (s *stubCampaignServiceForCreate) GetByID(_ context.Context, id string) (*campaigns.Campaign, error) {
+	return &campaigns.Campaign{ID: id, Name: "Test Campaign", Settings: "{}"}, nil
 }
 
 // newCreateEntityContext builds an Echo context for POST

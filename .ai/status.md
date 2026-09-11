@@ -20,6 +20,45 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### The campaign default visibility setting reached only ONE of five creation paths (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged).
+
+A campaign's `DefaultVisibility` setting (`"dm_only"` / `"private"` / `""`)
+had exactly one consumer in the whole repo: the web entity-creation form.
+Every other path that builds a `CreateEntityInput` ignored it and produced a
+PUBLIC entity, so a DM who set "DM Only" still got player-visible content out
+of Foundry sync, the shop widget's quick-create and bestiary creature import.
+Same defect class as the `{name}`-only push that once published a hidden
+character entity to every player (sweep R4).
+
+**One implementation now**: `campaigns.CampaignSettings.ResolveNewEntityPrivacy(patch.Field[bool])`,
+next to the setting it interprets, plus `DefaultsToPrivate()` for callers
+that have no client input to merge. The four-line inline block in
+`entities/handler.go` is gone — it calls the shared method like everyone else.
+
+**Fixed**: `entities.QuickCreateAPI` (shop widget), syncapi `CreateEntity`
+(`is_private` `bool` → `patch.Field[bool]`), syncapi batch-sync `case
+"create"` (`.Val(false)` threw away a distinction the field already carried),
+and `bestiaryEntityCreatorAdapter.CreateFromStatblock` (now carries
+`campaignSvc`).
+
+**The absent/explicit-false distinction is the point.** An explicit
+`is_private: false` stays public; only an ABSENT field falls back to the
+campaign default. Collapsing them in either direction is a different bug.
+
+**Reads fail CLOSED.** An unreadable campaign resolves to private, loudly
+logged. Over-hiding is one toggle; publishing a hidden entity to the table
+cannot be taken back. The syncapi read is lazy and memoized — one per
+request, none at all for a batch that creates nothing or that states
+`is_private` on every create.
+
+**Deliberately untouched**: `ai_workspace/importer/committer.go` (its own
+per-import visibility control — a product decision nobody has made) and
+`app/export_adapters.go`'s campaign-import create (restores a complete
+exported row, so `is_private` is always explicit and the default must not
+override it). The settings-UI copy discrepancy is booked in `.ai/todo.md`.
+
 ### Toolchain moved to Go 1.27.1; x/crypto, x/net, echo/v4 unmuted (2026-09-11)
 
 Branch `claude/determined-davinci-5ut5f5` (pushed, not merged — see the

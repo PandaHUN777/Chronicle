@@ -12,6 +12,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/keyxmakerx/chronicle/internal/patch"
 )
 
 // --- Role System ---
@@ -581,6 +583,67 @@ type CampaignSettings struct {
 	// existing settings JSON per Option B locked 2026-05-28 post-
 	// C-THEME-CUSTOMIZATION-AUDIT.
 	EventTierDefinitions []TierDefinition `json:"event_tier_definitions,omitempty"`
+}
+
+// --- Default visibility for newly created content ---
+
+// DefaultVisibility* are the accepted values of
+// CampaignSettings.DefaultVisibility, as written by the campaign settings
+// page (internal/plugins/campaigns/settings.templ). Empty is the fourth,
+// unnamed state: "Everyone", the shipped default for a campaign that has
+// never touched the setting.
+//
+// NOTE, deliberately not papered over: the settings UI describes DM Only and
+// Private as two different behaviours ("hidden from players" vs "visible only
+// to the creator"), but the storage layer has exactly one flag —
+// entities.is_private — so both resolve to the same thing here. That is a
+// copy/product discrepancy, not a bug in this resolution, and fixing it is
+// somebody's product decision. Both values mean "start hidden" today, which
+// is what this code implements and all it claims.
+const (
+	DefaultVisibilityDMOnly  = "dm_only"
+	DefaultVisibilityPrivate = "private"
+)
+
+// DefaultsToPrivate reports whether this campaign's DefaultVisibility setting
+// means "new content starts hidden from players".
+func (s CampaignSettings) DefaultsToPrivate() bool {
+	return s.DefaultVisibility == DefaultVisibilityDMOnly ||
+		s.DefaultVisibility == DefaultVisibilityPrivate
+}
+
+// ResolveNewEntityPrivacy decides the is_private flag for a NEWLY created
+// entity, merging what the caller asked for over the campaign's
+// DefaultVisibility setting:
+//
+//	requested ABSENT         -> the campaign default decides
+//	requested explicit FALSE -> public, even under a private default
+//	requested explicit TRUE  -> private
+//
+// The absent/explicit-false distinction is the whole point, which is why the
+// parameter is a patch.Field and not a bool: a plain bool cannot tell "the
+// client omitted is_private" from "the client sent is_private: false", and
+// every caller that collapsed them produced a PUBLIC entity under a DM-only
+// campaign default. That shipped on four creation paths — the shop widget's
+// quick-create, the REST create, the batch-sync create, and the bestiary
+// creature import — so a DM who set "DM Only" got public entities from
+// Foundry sync, the shop widget and creature imports anyway. It is the same
+// defect class as the Foundry {name}-only push that once published a hidden
+// character entity to every player (sweep R4).
+//
+// This is the ONLY implementation. A caller that re-derives it from
+// DefaultVisibility inline is how the four paths drifted apart in the first
+// place.
+//
+// An explicit JSON null is treated as absent: create has no stored value to
+// clear, so "clear" has no meaning here, and falling through to the campaign
+// default is the safe reading (it matches patch.Field.Val's ruling that a
+// null on a NOT NULL column preserves rather than zeroes).
+func (s CampaignSettings) ResolveNewEntityPrivacy(requested patch.Field[bool]) bool {
+	if v, ok := requested.Get(); ok {
+		return v
+	}
+	return s.DefaultsToPrivate()
 }
 
 // TierDefinition is a single entry in the per-campaign event tier

@@ -516,14 +516,20 @@ func (h *Handler) Create(c echo.Context) error {
 
 	userID := auth.GetUserID(c)
 
-	// Apply campaign default visibility if the user didn't explicitly set private.
-	isPrivate := req.IsPrivate
-	if !isPrivate {
-		defaultVis := cc.Campaign.ParseSettings().DefaultVisibility
-		if defaultVis == "dm_only" || defaultVis == "private" {
-			isPrivate = true
-		}
+	// Resolve visibility against the campaign's DefaultVisibility setting.
+	//
+	// An unchecked HTML checkbox submits NOTHING, so a false here IS the
+	// absent case — this form has no way to say "explicitly public" and
+	// never had one. Everything else about the merge lives in
+	// CampaignSettings.ResolveNewEntityPrivacy, which is the single
+	// implementation the other creation paths share; this block used to be
+	// an inline copy and was the ONLY place in the repo that read the
+	// setting at all.
+	requestedPrivacy := patch.Absent[bool]()
+	if req.IsPrivate {
+		requestedPrivacy = patch.Of(true)
 	}
+	isPrivate := cc.Campaign.ParseSettings().ResolveNewEntityPrivacy(requestedPrivacy)
 
 	input := CreateEntityInput{
 		Name:         req.Name,
@@ -1045,6 +1051,13 @@ func (h *Handler) QuickCreateAPI(c echo.Context) error {
 	var req struct {
 		Name         string `json:"name"`
 		EntityTypeID int    `json:"entity_type_id"`
+		// IsPrivate is three-state: ABSENT lets the campaign's
+		// DefaultVisibility decide, an explicit value overrides it. The
+		// shop widget omits the key entirely, which is exactly why it has
+		// to stay distinguishable from an explicit false — bound as a
+		// plain bool it decoded to "public", so every item created in a
+		// DM-only campaign was visible to the whole table on arrival.
+		IsPrivate patch.Field[bool] `json:"is_private"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request")
@@ -1069,6 +1082,7 @@ func (h *Handler) QuickCreateAPI(c echo.Context) error {
 	input := CreateEntityInput{
 		Name:         req.Name,
 		EntityTypeID: req.EntityTypeID,
+		IsPrivate:    cc.Campaign.ParseSettings().ResolveNewEntityPrivacy(req.IsPrivate),
 	}
 
 	entity, err := h.service.Create(c.Request().Context(), cc.Campaign.ID, userID, input)
