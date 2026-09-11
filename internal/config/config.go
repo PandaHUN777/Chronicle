@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/go-sql-driver/mysql"
+
+	"github.com/keyxmakerx/chronicle/internal/middleware"
 )
 
 // Config holds all application configuration. Populated from environment
@@ -40,6 +42,14 @@ type Config struct {
 
 	// Upload holds file upload settings.
 	Upload UploadConfig
+
+	// TrustedProxies lists the reverse proxies whose X-Real-IP and
+	// X-Forwarded-For headers are believed, as CIDR blocks or bare addresses.
+	// Set TRUSTED_PROXY_CIDRS to REPLACE the default list (it does not append),
+	// which a deployment must do when its proxy reaches Chronicle from outside
+	// the private ranges -- a mesh VPN peer, for instance. Name the proxy's own
+	// address rather than its whole range. See middleware.DefaultTrustedProxies.
+	TrustedProxies []string
 
 	// ExtensionsPath is the root directory for user-installed content extensions.
 	ExtensionsPath string
@@ -216,6 +226,7 @@ func Load() (*Config, error) {
 		},
 
 		ExtensionsPath: getEnv("EXTENSIONS_PATH", "./extensions"),
+		TrustedProxies: getEnvList("TRUSTED_PROXY_CIDRS", middleware.DefaultTrustedProxies),
 
 		BackupDir:         getEnv("BACKUP_DIR", "/app/data/backups"),
 		BackupScriptPath:  getEnv("BACKUP_SCRIPT_PATH", "/app/scripts/backup.sh"),
@@ -268,6 +279,24 @@ func getEnv(key, defaultVal string) string {
 		return val
 	}
 	return defaultVal
+}
+
+// getEnvList reads a comma-separated env var into a slice, trimming blanks. An
+// unset var returns the default; an empty var returns an empty list, which for
+// the trusted-proxy list means "trust nothing", a deliberate and reachable
+// choice rather than a fall back to the default.
+func getEnvList(key string, defaultVal []string) []string {
+	val, ok := os.LookupEnv(key)
+	if !ok {
+		return defaultVal
+	}
+	var out []string
+	for _, part := range strings.Split(val, ",") {
+		if part = strings.TrimSpace(part); part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
 }
 
 // getEnvInt reads an integer env var or returns the default.

@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -8,40 +9,89 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+// DefaultTrustedProxies is the trusted-proxy list used when TRUSTED_PROXY_CIDRS
+// is not set: loopback plus the private ranges a container platform puts its
+// bridges on. It deliberately contains no public or carrier-grade range, so an
+// unconfigured deployment trusts nothing that could arrive from the internet.
+//
+// A deployment whose reverse proxy reaches Chronicle from outside these ranges
+// -- a mesh VPN peer, for instance, which lands in 100.64.0.0/10 -- MUST name
+// that proxy in TRUSTED_PROXY_CIDRS or every visitor is recorded as the proxy.
+// Name the proxy's own address as a /32 rather than its whole range: every host
+// inside a trusted range can dictate the client IP of every request it relays.
+var DefaultTrustedProxies = []string{
+	"127.0.0.0/8",    // IPv4 loopback
+	"::1/128",        // IPv6 loopback -- the counterpart to the line above
+	"10.0.0.0/8",     // Docker default bridge
+	"172.16.0.0/12",  // Docker bridge (alternate range)
+	"192.168.0.0/16", // Common LAN
+	"fd00::/8",       // IPv6 private
+}
+
 // TrustedProxies configures Echo to trust reverse proxy headers
-// (X-Forwarded-For, X-Real-IP, X-Forwarded-Proto) from specific IP ranges.
+// (X-Forwarded-For, X-Real-IP) from specific IP ranges, and returns an error if
+// any entry is unparseable.
 //
-// Chronicle runs behind Cosmos Cloud's reverse proxy. Without this config,
-// c.RealIP() would always return the proxy's IP instead of the actual client.
-// Rate limiting, audit logging, and abuse detection depend on accurate IPs.
+// Chronicle runs behind a reverse proxy. Without this config, c.RealIP() would
+// return the proxy's address for every request, which collapses per-IP rate
+// limiting into one shared bucket and writes the same address into every audit
+// row. Rate limiting, audit logging and abuse detection all depend on it.
 //
-// The trustedCIDRs parameter specifies which proxy IPs to trust. Common values:
-//   - "127.0.0.1/8"   -- localhost (docker host)
-//   - "10.0.0.0/8"    -- Docker default bridge network
-//   - "172.16.0.0/12" -- Docker default bridge network (alternative range)
-//   - "192.168.0.0/16" -- common LAN range
-//   - "fd00::/8"      -- IPv6 private range
-func TrustedProxies(e *echo.Echo, trustedCIDRs []string) {
+// Entries may be CIDR blocks ("10.0.0.0/8") or bare addresses ("100.82.251.84",
+// read as a single host). An unparseable entry is a startup ERROR and never a
+// silent skip: this list used to drop what it could not parse, so one typo in
+// the deployment environment would silently stop client IPs resolving and
+// nothing would say so.
+//
+// SECURITY, and the reason a wide range is the wrong answer: once a peer is
+// trusted, the headers it sends decide what gets recorded. If the proxy APPENDS
+// to X-Forwarded-For rather than replacing it, a visitor can supply the leftmost
+// entry and choose the address in their own audit row. Trust the specific proxy,
+// and verify that it sets X-Real-IP or overwrites X-Forwarded-For.
+func TrustedProxies(e *echo.Echo, trustedCIDRs []string) error {
 	// Echo's IPExtractor determines how c.RealIP() resolves the client IP.
 	// We use a custom extractor that checks X-Forwarded-For and X-Real-IP
 	// headers only when the direct connection comes from a trusted proxy.
-	e.IPExtractor = buildIPExtractor(trustedCIDRs)
+	trusted, err := ParseTrustedProxies(trustedCIDRs)
+	if err != nil {
+		return err
+	}
+	e.IPExtractor = buildIPExtractor(trusted)
+	return nil
+}
+
+// ParseTrustedProxies turns the configured entries into networks, rejecting
+// anything it cannot parse. A bare address is read as a single host, so an
+// operator naming one proxy does not have to remember the /32 suffix.
+func ParseTrustedProxies(trustedCIDRs []string) ([]*net.IPNet, error) {
+	var trusted []*net.IPNet
+	for _, entry := range trustedCIDRs {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		if _, network, err := net.ParseCIDR(entry); err == nil {
+			trusted = append(trusted, network)
+			continue
+		}
+		// A bare address is a single host. Width depends on the family, so
+		// derive it rather than assuming /32 and mangling IPv6.
+		ip := net.ParseIP(entry)
+		if ip == nil {
+			return nil, fmt.Errorf("trusted proxy %q is neither a CIDR block nor an IP address", entry)
+		}
+		bits := 8 * net.IPv6len
+		if v4 := ip.To4(); v4 != nil {
+			ip, bits = v4, 8*net.IPv4len
+		}
+		trusted = append(trusted, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+	}
+	return trusted, nil
 }
 
 // buildIPExtractor returns an Echo IPExtractor that trusts X-Forwarded-For
-// and X-Real-IP headers only from connections originating in trusted CIDRs.
-func buildIPExtractor(trustedCIDRs []string) echo.IPExtractor {
-	// Parse trusted CIDRs into net.IPNet for fast matching.
-	var trusted []*net.IPNet
-	for _, cidr := range trustedCIDRs {
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			// Skip invalid CIDRs -- log would be better but this runs at startup.
-			continue
-		}
-		trusted = append(trusted, network)
-	}
-
+// and X-Real-IP headers only from connections originating in trusted networks.
+func buildIPExtractor(trusted []*net.IPNet) echo.IPExtractor {
 	return func(req *http.Request) string {
 		// Get the direct connection IP (peer address).
 		directIP := extractDirectIP(req.RemoteAddr)

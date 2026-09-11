@@ -1,0 +1,77 @@
+# Dependabot: weekly, grouped, so the operator sees one PR per ecosystem
+# rather than a dozen. Every PR runs the full CI (make verify + the fresh-DB
+# migration replay), which is the real gate; Dependabot only opens the door.
+#
+# What it does NOT do: bump the `go` directive in go.mod or the go-version
+# pinned in ci.yml. Those are the toolchain, and the toolchain is a manual,
+# roughly-yearly change (see docs/deployment.md). It WILL propose new
+# golang:/alpine: base-image tags from the Dockerfile, which is the nudge
+# that the toolchain is behind.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(go)"
+    groups:
+      golang-x:
+        patterns: ["golang.org/x/*"]
+      go-minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # These three currently require a `go` directive >= 1.25/1.26, and CI pins
+      # Go 1.24 with GOTOOLCHAIN=local, so their PRs can only fail. Remove this
+      # block in the toolchain PR — that is the point at which they become
+      # mergeable, and they are the security-relevant ones.
+      - dependency-name: "golang.org/x/crypto"
+      - dependency-name: "golang.org/x/net"
+      - dependency-name: "github.com/labstack/echo/v4"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps(actions)"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # Dockerfile FROM lines: golang:1.24-alpine and alpine:3.20 today.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps(docker)"
+
+  # docker-compose.yml images. Note mariadb:latest cannot be bumped by anyone —
+  # it is unpinned, which is the hazard: pin it to the version actually running
+  # (docker compose exec mariadb mariadb --version) and Dependabot takes over.
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps(compose)"
+
+  # Build-time only (Tailwind, esbuild, the Tiptap editor bundle).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "deps(npm)"
+    groups:
+      npm-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]

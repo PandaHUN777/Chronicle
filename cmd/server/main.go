@@ -182,7 +182,11 @@ func main() {
 	systems.ScanPackageDir(filepath.Join(cfg.Upload.MediaPath, "packages", "systems"))
 
 	// --- Create Application ---
-	application := app.New(cfg, db, rdb, pluginHealth, pluginSchemas)
+	application, err := app.New(cfg, db, rdb, pluginHealth, pluginSchemas)
+	if err != nil {
+		slog.Error("failed to create application", slog.Any("error", err))
+		os.Exit(1)
+	}
 
 	// Register all routes (public, plugin, system, widget, API).
 	application.RegisterRoutes()

@@ -85,6 +85,33 @@ design: `cordinator/plans/2026-08-21-calendar-v5-design-brief.md`; salvage
 doctrine + CI post-mortem: `...-calendar-v5-salvage-manifest.md` §6.
 Migration `020_calv5_schema` stays unwritten until 019 has run on the real DB.
 
+### CI drove the runner image's Chromium, not the one it pinned (2026-09-06)
+
+Branch `claude/dependabot-setup` (PR #599). `main` at eb977162, unchanged
+since 2026-08-16, failed Browser Probes on 2026-09-06 —
+`TestLegendProbe_TheTabOpensByKeyboardAndByTouch`, both pointer arms, "a
+SECOND tap did not close it" — and failed identically on one re-run. Nothing
+in the repo had changed; the browser had. The probe job downloads Playwright's
+pinned Chromium and then `findProbeChromium` / `find_chromium` look for
+`chromium` on PATH *first*, and ubuntu-latest ships `/usr/bin/chromium` of its
+own, so every probe run to date drove whatever build the runner image carried
+that fortnight. Its current build matches `:focus-visible` on the checkbox
+after a synthetic `label.click()`, which keeps `.legend:has(> .legpin:focus-
+visible) > .legbody` open after the second tap un-checks the box. Measured
+locally: Chromium 131 (the old pin) and 141 both leave `:focus-visible`
+unmatched after that click and close on the second tap — the disclosure is
+sound; the browser under it was unpinned.
+
+**Fix (ci.yml only):** Playwright pinned to 1.56.1, whose chromium-1194 is the
+141.0.7390.37 build the probes' own headers say they were verified against
+(and the dev container's `/opt/pw-browsers` build, so local and CI now drive
+one binary), plus a step that resolves that binary and exports `CHROMIUM_BIN`,
+which every finder honours before PATH. The step fails by name if it finds
+zero or two builds instead of falling through. Full guard run locally on the
+pinned build: every probe the dev container can drive passed (43); the one
+Tailwind-dependent breakpoint probe has no Tailwind CLI here and ran only in
+CI, where it passed on 2026-09-06 too. The V5 branch's census is empty by
+placeholder, so this changes nothing there until V5 has probes.
 
 ### The product asks instead of guessing (C-RSVP-P10, 2026-08-16)
 

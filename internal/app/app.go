@@ -74,7 +74,7 @@ type App struct {
 
 // New creates a new App instance with the given dependencies and configures
 // the Echo server with global middleware and error handling.
-func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *database.PluginHealthRegistry, pluginSchemas []database.PluginSchema) *App {
+func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *database.PluginHealthRegistry, pluginSchemas []database.PluginSchema) (*App, error) {
 	e := echo.New()
 
 	// Disable Echo's default banner and startup message -- we log our own.
@@ -83,14 +83,16 @@ func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *databa
 
 	// Configure trusted reverse proxy IPs so c.RealIP() returns the actual
 	// client IP instead of the proxy's IP. Critical for rate limiting, audit
-	// logging, and abuse detection. Cosmos Cloud routes through Docker networks.
-	middleware.TrustedProxies(e, []string{
-		"127.0.0.0/8",    // Localhost
-		"10.0.0.0/8",     // Docker default bridge
-		"172.16.0.0/12",  // Docker bridge (alternate range)
-		"192.168.0.0/16", // Common LAN
-		"fd00::/8",       // IPv6 private
-	})
+	// logging, and abuse detection.
+	//
+	// The list is CONFIGURATION rather than a literal, because the deployment
+	// that needs it changed is the one that cannot rebuild: a proxy reaching
+	// Chronicle from a mesh address lands outside every private range here and
+	// makes every visitor look like the proxy. A bad entry fails startup rather
+	// than being skipped, so the failure is never a silently wrong client IP.
+	if err := middleware.TrustedProxies(e, cfg.TrustedProxies); err != nil {
+		return nil, fmt.Errorf("trusted proxy configuration: %w", err)
+	}
 
 	app := &App{
 		Config:       cfg,
@@ -119,7 +121,7 @@ func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *databa
 	e.Use(middleware.StaticCache(layouts.StaticURLPrefix))
 	e.Static("/static", "static")
 
-	return app
+	return app, nil
 }
 
 // setupMiddleware registers global middleware on the Echo instance.

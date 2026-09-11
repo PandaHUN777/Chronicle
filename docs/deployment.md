@@ -137,7 +137,8 @@ Every env var Chronicle reads. **Bold = required in production.**
 | `MAX_UPLOAD_SIZE` | `10MB` | |
 | `MEDIA_PATH` | `./data/media` | Resolves to `/app/data/media` in the container. |
 | `MEDIA_SIGNING_SECRET` | (auto) | Auto-generated if empty; HMAC-SHA256 for signed media URLs. |
-| `MEDIA_SERVE_RATE_LIMIT` | `300` | Requests/min/IP for `GET /media/:id`. |
+| `MEDIA_SERVE_RATE_LIMIT` | `300` | Requests/min/IP for `GET /media/:id`. Per-IP only works if the row below is right. |
+| `TRUSTED_PROXY_CIDRS` | loopback + private ranges | Comma-separated CIDR blocks or bare addresses whose `X-Real-IP` / `X-Forwarded-For` headers are believed. **Replaces** the default, does not extend it. See "Client IP behind a reverse proxy" below. |
 | `BACKUP_DIR` | `/app/data/backups` | Where backups land. Defaults to the persistent `/app/data` volume so a fresh deploy works without operator setup. Override only if you mount backups on a different path. Setting it explicitly to empty is unsupported (the admin UI will surface a "not configured" error and the in-process pre-migration backup will be skipped). |
 | `BACKUP_RETENTION_DAYS` | `7` | Used by `scripts/backup.sh`. The in-process rotator uses a separate hardcoded 7d for `chronicle_pre_migrate_*` artifacts. |
 | `BACKUP_REQUIRED` | `0` | When `1` or `true`, the in-process pre-migration capture is mandatory: any failure (mysqldump missing, dump zero bytes, manifest write fails) aborts startup before migrations apply. This covers BOTH gates — pending core migrations (`MigrateWithBackup`) and pending plugin migrations (`main.go`'s gate over `PendingPluginMigrations`); before the plugin gate existed, a release shipping only plugin migrations silently bypassed this variable entirely. Use in production. The default fail-open behavior (warn + proceed) preserves the legacy semantics for development setups that don't have `mariadb-client` installed. |
@@ -160,6 +161,56 @@ docker compose exec -T mariadb mariadb -uroot -p"$OLD_ROOT_PASSWORD" \
 ```
 
 then set the new value in `.env` so the healthcheck and backup tooling agree.
+
+### Client IP behind a reverse proxy
+
+Chronicle resolves the client address with Echo's `IPExtractor`. It believes
+`X-Real-IP` and `X-Forwarded-For` **only** from a peer inside
+`TRUSTED_PROXY_CIDRS`, and otherwise records the peer itself. Three things
+depend on getting this right: per-IP rate limiting, the media serve limit, and
+the address written into every audit and security row.
+
+The default covers loopback and the private ranges, which is correct for a proxy
+running as a container on the same Docker network. **It is not correct for a
+proxy that reaches Chronicle over a mesh VPN**, whose peer address lands in
+`100.64.0.0/10` and matches nothing in the default. That deployment records every
+public visitor as the proxy: one shared rate-limit bucket for the whole internet,
+and one address repeated down the audit log.
+
+Ask the running service rather than reasoning about your topology:
+
+```bash
+docker compose logs --tail 500 chronicle \
+  | grep -oE '"?remote_ip"?[=:]"?[^ ",}]+' | sort | uniq -c | sort -rn | head
+```
+
+A single private address on nearly every row means the headers are not being
+believed. Set the variable to the proxy's own address:
+
+```
+TRUSTED_PROXY_CIDRS=127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,<proxy-address>
+```
+
+**Name the proxy, not its range.** Every host inside a trusted range can dictate
+the client IP of any request it relays, so a mesh-wide entry hands that to every
+peer that ever joins. A bare address is read as a single host.
+
+**Then verify, because a wrong answer here is worse than the problem.** From
+outside the network, forge a header and see whether it lands:
+
+```bash
+curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' https://your-instance/
+```
+
+Re-read the logs. If `203.0.113.99` appears, your proxy is **appending** to
+`X-Forwarded-For` instead of replacing it, and any visitor can now choose the
+address recorded against them. Revert the setting and fix the proxy to set
+`X-Real-IP` or overwrite `X-Forwarded-For` first. If the real client address
+appears, the configuration is sound.
+
+An unparseable entry stops the server at startup with the offending value named.
+That is deliberate: the previous behaviour skipped what it could not parse, so a
+typo silently disabled client-IP resolution and nothing reported it.
 
 ## 6. Upgrade / redeploy
 

@@ -319,7 +319,38 @@ jobs:
         # bare ubuntu-latest image; without them the binary exists and every
         # probe dies on launch instead of skipping, which the guard reports as
         # a failure rather than an absence — correctly.
-        run: npx --yes playwright@1.49.1 install --with-deps chromium
+        #
+        # 1.56.1 ships chromium-1194 (141.0.7390.37), the build the probes'
+        # own headers say they were verified against. Keep it and the Node
+        # install below on the same version.
+        run: npx --yes playwright@1.56.1 install --with-deps chromium
+
+      - name: Point every probe at the Chromium just installed
+        # THE PIN ABOVE WAS NOT THE BROWSER THE PROBES RAN ON. findProbeChromium
+        # (Go) and find_chromium (the guard) both look for `chromium` on PATH
+        # before they glob Playwright's cache, and ubuntu-latest ships a
+        # /usr/bin/chromium of its own — a build that changes with every image
+        # release. So this job downloaded one browser and drove another. On
+        # 2026-09-06 the image's Chromium started matching :focus-visible on
+        # the input after a synthetic label click, which held the legend open
+        # on the second tap (TestLegendProbe_TheTabOpensByKeyboardAndByTouch)
+        # on a commit that had passed unchanged on 2026-08-16; Chromium 131 and
+        # 141 both close it. CHROMIUM_BIN is honoured FIRST by every finder,
+        # so setting it here makes the pin real. A missing binary fails this
+        # step by name rather than falling through to PATH and hiding the pin
+        # again. Playwright installs under PLAYWRIGHT_BROWSERS_PATH, which this
+        # job's env sets to /opt/pw-browsers (the dev container's layout); the
+        # fallback is Playwright's own default.
+        run: |
+          shopt -s nullglob
+          root="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+          bins=("$root"/chromium-*/chrome-linux/chrome)
+          if [ "${#bins[@]}" -ne 1 ] || [ ! -x "${bins[0]}" ]; then
+            echo "expected exactly one pinned Chromium under $root, found: ${bins[*]:-none}"
+            exit 1
+          fi
+          "${bins[0]}" --version
+          echo "CHROMIUM_BIN=${bins[0]}" >> "$GITHUB_ENV"
 
       - name: Install the Node deps the probes drive (ONE install, deliberately)
         # Two dependencies, one `npm install`, and the single-command shape is
@@ -341,7 +372,7 @@ jobs:
         #     it drives Chromium from Node. findProbePlaywright
         #     (sky_close_probe_test.go:286) looks in $NODE_PATH, `npm root -g`
         #     and the repo's node_modules; this puts it in the third. Pinned to
-        #     the same 1.49.1 as the browser install — a module and a browser
+        #     the same 1.56.1 as the browser install — a module and a browser
         #     build that disagree is a debugging session nobody wants.
         #   tailwindcss — TestProbe_MobileBreakpointSwapInRealBrowser measures a
         #     breakpoint that exists only in the BUILT stylesheet.
@@ -350,7 +381,7 @@ jobs:
         # decides what a probe needs, so a missing Tailwind still cannot take
         # the browser-only probes down with it. That separation lives in
         # tools/check-browser-probes.sh, not in the number of install steps.
-        run: npm install --no-save --no-audit --no-fund playwright@1.49.1 tailwindcss@3.4.17
+        run: npm install --no-save --no-audit --no-fund playwright@1.56.1 tailwindcss@3.4.17
 
       - name: Drive the browser probes
         # Runs them WITHOUT -short and then requires a `--- PASS:` line from
