@@ -2,6 +2,19 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **Add a workflow-shape guard (`tools/check-workflow-steps.sh`).** On
+  2026-09-12 the golangci-lint step lost its `uses:` and `with:` lines during
+  the Go 1.27 pin bump, leaving a step whose only key was `version:`. GitHub
+  could not compile the workflow, so for ~19 hours and ~30 commits EVERY push
+  produced a zero-job run and no job ran at all — not build, not test, not the
+  guards, not the fresh-DB replay, not the probes, not the security scan, not
+  the Docker build. Nothing was red; CI was simply absent, which is worse
+  because absence is invisible. Repaired in `03ca8ead`.
+  The guard: parse `.github/workflows/*.yml` and fail if any step has neither
+  `uses:` nor `run:`. Ten lines of Python, and it catches the whole class.
+  Worth pairing with a check that the run's name is the workflow's `name:` —
+  a run labelled with the FILE PATH is the tell that it never compiled.
+
 - **OPERATOR RULING NEEDED — does the co-DM promotion cross plugin lines?**
   ADR-057 slice 1 promotes a DM-granted member to Owner *for visibility* on
   entity paths. An adversarial review of the shipped fix (2026-09-12) showed
