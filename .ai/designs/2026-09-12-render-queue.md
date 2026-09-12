@@ -25,8 +25,9 @@ shown — A rail-and-tint, B sliding marker, C echo in the header, or a mix
 drawn round 3: D traced ring (theirs), E icon fills, F folder tab. Still
 open. Round 4: the switcher redrawn as a flyout from the nav's own edge (ruled,
 header-and-nav addendum item 5, corrected); D drawn MOVING in three
-strengths with the page name kept in the row. Lead recommends calm-at-rest
-+ flare on click + C. Still open.
+strengths with the page name kept in the row. Round 5: D corrected to the full
+glow border with rest / hover / active live and an Owner settings card
+(Motion, Traces, Length, On hover, Page name). D + C awaiting the word.
 Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 Two pages. *Permissions:* Owner editing (three modes, role / member / group
 rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank

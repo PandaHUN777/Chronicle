@@ -163,3 +163,23 @@ script loop; `prefers-reduced-motion` disables it. Lively-at-rest is a
 permanent repaint on every page and a permanent eye-pull; if the operator
 wants it anyway, make the strength an Owner setting on Customize → Header
 with the user's reduced-motion preference always winning. **Still open.**
+
+**D, corrected (round 5, operator):** the traces ride the FULL glow border
+— the row's own box, `sidebar-nav-glow::before` inset 0, square corners —
+not an inset ring. Three states: **rest** nothing; **hover** = today's
+right-edge glow unchanged, with the two traces sitting on it and tugging a
+few percent back and forth, going nowhere; **active** = the two traces on
+the full border at a middle speed, each drifting in LENGTH and PACE on its
+own long uneven cycle (14s / 19s, ease-in-out per segment), now and then
+one closing the whole loop, never quick ("we don't want to freak out ADHD
+users"). Page name kept in the row (A's sub-label). CSS only: one SVG rect
+pair per active row, `pathLength="100"`, keyframes on `stroke-dasharray` +
+`stroke-dashoffset`; `prefers-reduced-motion` → Still.
+
+**Ruled: Owner settings for it, on Customize → Header** ("Navigation
+highlight" card): Motion Still / Calm (default) / Lively · Traces One / Two
+· Length Short / Long / Varies · On hover Quiet / Tug · Page name Hidden /
+In the row. Colour follows the Chrome accent. Reduced-motion members always
+get Still; a per-user "turn nav motion off" lives in the account menu.
+Extend `CampaignSettings` (`campaigns/model.go`), never a parallel model.
+**D + C is the pick in all but name; awaiting the operator's word.**
