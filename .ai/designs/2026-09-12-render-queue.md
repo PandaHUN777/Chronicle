@@ -23,8 +23,10 @@ Option A (in the edit page, restyled to the form's density) or Option B
 shown — A rail-and-tint, B sliding marker, C echo in the header, or a mix
 — **recommended A + C**; operator leans C + A and asked for three more,
 drawn round 3: D traced ring (theirs), E icon fills, F folder tab. Still
-open. Also drawn round 3: the campaign switcher as a right-edge panel with
-search and filters (ruled, see the header-and-nav addendum item 5).
+open. Round 4: the switcher redrawn as a flyout from the nav's own edge (ruled,
+header-and-nav addendum item 5, corrected); D drawn MOVING in three
+strengths with the page name kept in the row. Lead recommends calm-at-rest
++ flare on click + C. Still open.
 Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 Two pages. *Permissions:* Owner editing (three modes, role / member / group
 rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank
