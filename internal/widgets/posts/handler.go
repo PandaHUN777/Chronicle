@@ -64,8 +64,12 @@ func (h *Handler) ListPosts(c echo.Context) error {
 		// Fail closed: a missing gate must never serve ungated posts.
 		return apperror.NewInternal(errors.New("posts: entity gate not configured"))
 	}
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
+	// cc.MemberRole. includeDMOnly just below already checks cc.IsDmGranted
+	// directly for dm_only post content, but this gate used to 404 a Co-DM
+	// before that branch could ever run.
 	campaignID, canView, err := h.entityGate.ResolveViewableEntity(
-		c.Request().Context(), entityID, int(cc.MemberRole), auth.GetUserID(c))
+		c.Request().Context(), entityID, int(cc.VisibilityRole()), auth.GetUserID(c))
 	if err != nil {
 		return err // NotFound for a missing entity; propagates real errors.
 	}

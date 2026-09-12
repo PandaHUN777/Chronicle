@@ -369,10 +369,15 @@ func (h *Handler) Show(c echo.Context) error {
 	transfer, _ := h.service.GetPendingTransfer(c.Request().Context(), cc.Campaign.ID)
 
 	// Fetch recently updated pages for the dashboard.
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
+	// cc.MemberRole — this list threads straight through to the entities
+	// repository's visibility filter (the same rule CheckEntityAccess and
+	// GetChildren use), and a Co-DM already sees dm_only entities in the
+	// entities plugin's own list/category views, so the dashboard must agree.
 	var recentEntities []RecentEntity
 	if h.recentLister != nil {
 		recentEntities, _ = h.recentLister.ListRecentForDashboard(
-			c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), auth.GetUserID(c), 8,
+			c.Request().Context(), cc.Campaign.ID, int(cc.VisibilityRole()), auth.GetUserID(c), 8,
 		)
 	}
 
@@ -1273,10 +1278,12 @@ func (h *Handler) OwnerDashboard(c echo.Context) error {
 		return apperror.NewMissingContext()
 	}
 
+	// ADR-057 slice 2 (P1FIX): see Show's identical comment above — the owner
+	// dashboard's recent-entities list must use the same promoted role.
 	var recentEntities []RecentEntity
 	if h.recentLister != nil {
 		recentEntities, _ = h.recentLister.ListRecentForDashboard(
-			c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), auth.GetUserID(c), 8,
+			c.Request().Context(), cc.Campaign.ID, int(cc.VisibilityRole()), auth.GetUserID(c), 8,
 		)
 	}
 

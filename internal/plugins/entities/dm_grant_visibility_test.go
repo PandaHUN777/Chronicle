@@ -40,8 +40,9 @@ import (
 // an assertion on which constant got passed.
 type dmGrantEntitySvc struct {
 	EntityService
-	entity *Entity
-	etype  *EntityType
+	entity   *Entity
+	etype    *EntityType
+	children []Entity
 }
 
 func (s *dmGrantEntitySvc) GetByID(_ context.Context, _ string) (*Entity, error) {
@@ -58,8 +59,22 @@ func (s *dmGrantEntitySvc) GetAncestors(_ context.Context, _ string) ([]Entity, 
 	return nil, nil
 }
 
-func (s *dmGrantEntitySvc) GetChildren(_ context.Context, _ string, _ int, _ string) ([]Entity, error) {
-	return nil, nil
+// GetChildren mirrors the real repository's visibilityFilter default-mode
+// rule (entities/repository.go: role>=RoleScribe sees dm_only; role>=RoleOwner
+// is the same threshold with room to spare) so a test against this stub
+// exercises the actual promotion threshold Show's GetChildren call site must
+// clear for a Co-DM, not an arbitrary sentinel unconnected to production.
+func (s *dmGrantEntitySvc) GetChildren(_ context.Context, _ string, role int, _ string) ([]Entity, error) {
+	if role >= int(campaigns.RoleScribe) {
+		return s.children, nil
+	}
+	visible := make([]Entity, 0, len(s.children))
+	for _, ch := range s.children {
+		if !ch.IsPrivate {
+			visible = append(visible, ch)
+		}
+	}
+	return visible, nil
 }
 
 // CheckEntityAccess mirrors entityService.CheckEntityAccess's legacy
@@ -171,5 +186,44 @@ func TestBacklinksFragment_CoDmSeesListAndReachesTarget(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Secret War Council Minutes") {
 		t.Errorf("backlinks list must be populated for the Co-DM viewer; body=%s", rec.Body)
+	}
+}
+
+// TestShow_CoDmSeesDmOnlyChildren pins the entity page's OTHER half of the
+// ADR-057 review finding: Show's own CheckEntityAccess call (a few lines above
+// GetChildren) is already promoted via cc.VisibilityRole(), but the GetChildren
+// call passed the raw cc.MemberRole -- so a Co-DM who is correctly let onto a
+// dm_only PARENT page then saw that page's own dm_only children silently
+// dropped from the Sub-pages section (line 604 and line 617 must agree, per
+// the P1FIX dispatch). Before the fix this failed because GetChildren's stub
+// (mirroring the real repository's visibilityFilter) excludes a dm_only child
+// below the RoleScribe threshold, and int(cc.MemberRole) for this Co-DM
+// (Player) is below it.
+func TestShow_CoDmSeesDmOnlyChildren(t *testing.T) {
+	ent, et := dmOnlyFixture()
+	child := Entity{
+		ID: "child-1", CampaignID: "c1", EntityTypeID: 7, Name: "The Hidden Vault",
+		IsPrivate: true, Visibility: VisibilityDefault, TypeName: "NPC",
+	}
+	h := &Handler{service: &dmGrantEntitySvc{entity: ent, etype: et, children: []Entity{child}}}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/campaigns/c1/entities/e1", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id", "eid")
+	c.SetParamValues("c1", "e1")
+	c.Set("campaign_context", coDmContext())
+	auth.SetSession(c, &auth.Session{UserID: "codm-1"})
+
+	err := h.Show(c)
+	if err != nil {
+		t.Fatalf("Co-DM opening a dm_only entity: Show returned %v, want nil (200)", err)
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Co-DM opening a dm_only entity: got status %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "The Hidden Vault") {
+		t.Errorf("Co-DM must see the dm_only child in the Sub-pages list; body=%s", rec.Body)
 	}
 }

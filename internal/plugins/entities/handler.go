@@ -613,8 +613,12 @@ func (h *Handler) Show(c echo.Context) error {
 
 	// Fetch ancestor chain for breadcrumbs and children for sub-page listing.
 	// Backlinks load asynchronously via HTMX to keep page load fast.
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole() here too, matching the
+	// CheckEntityAccess call just above. Before this fix a Co-DM allowed onto
+	// a dm_only parent page (promoted) then had that page's own dm_only
+	// children silently dropped (raw MemberRole) from the Sub-pages list.
 	ancestors, _ := h.service.GetAncestors(c.Request().Context(), entity.ID)
-	children, _ := h.service.GetChildren(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	children, _ := h.service.GetChildren(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 
 	// Check if the "attributes" addon is enabled for this campaign.
 	// Defaults to true (show attributes) if addon checker is not wired or
