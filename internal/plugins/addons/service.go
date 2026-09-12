@@ -228,7 +228,7 @@ type addonDef struct {
 // seeder will upsert it into the database automatically. No migration required.
 var builtinAddons = []addonDef{
 	// Plugins (feature apps).
-	{Slug: "calendar", Name: "Calendar", Description: "Custom fantasy calendar with configurable months, weekdays, moons, seasons, and events. Link events to entities for timeline tracking. Currently being rebuilt from scratch (V5) and deliberately switched off — nothing is broken.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-calendar-days", Author: "Chronicle"},
+	{Slug: "calendar", Name: "Calendar", Description: "Custom fantasy calendar with configurable months, weekdays, moons, seasons, and events. Link events to entities for timeline tracking.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-calendar-days", Author: "Chronicle"},
 	{Slug: "maps", Name: "Interactive Maps", Description: "Leaflet.js map viewer with entity pins and layer support", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-map", Author: "Chronicle"},
 	{Slug: "media-gallery", Name: "Media Gallery", Description: "Campaign media management — browse and organize images.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-images", Author: "Chronicle"},
 	{Slug: "timeline", Name: "Timeline", Description: "Interactive visual timelines with zoom levels, entity grouping, and calendar integration.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-timeline", Author: "Chronicle"},
