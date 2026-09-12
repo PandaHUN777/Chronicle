@@ -26,6 +26,37 @@ at the bottom goes away; Players see nothing.
 - `internal/plugins/campaigns/model.go:248-263` — `VisibilityRole()`.
 - `internal/plugins/entities/service.go:2340-2375` — `CheckEntityAccess`.
 
+## Census correction (2026-09-12, measured during build, Opus lead)
+
+ADR-057 counted **four** implementations. A fresh grep for the teal shield
+found **seven**, and the "shown to Players" defect is in **three** places,
+not one. Slice 3 must replace all seven:
+
+| # | Where | File | Role gate | States | Colour |
+|---|---|---|---|---|---|
+| 1 | Show header | `visibility_badge.templ:10-32` | `MemberRole >= RoleScribe` (caller, `show.templ:247`) | 3 + tag dot | `#0d9488` |
+| 2 | List/grid card | `entity_card.templ:86-100` | `MemberRole >= RoleScribe` (caller, `:41`) | 3 | `#0d9488` |
+| 3 | Details card | `show.templ:448-456` (`blockDetails`) | **NONE — Players see it** | 2 | `#0d9488` |
+| 4 | Permissions row | `show.templ:627-636` (`blockPermissions`) | `MemberRole >= RoleOwner` | editor | tokens |
+| 5 | Category table row | `category_dashboard.templ:382-393` | `MemberRole >= RoleScribe` | 2 | `#0d9488` + **amber** for private |
+| 6 | Category tree node | `category_dashboard.templ:488-492` | **NONE — Players see it** | 2 | `#0d9488` |
+| 7 | Child-entity list | `show.templ:719-723` | **NONE — Players see it** | 2 | `#0d9488` |
+
+Three further notes for the executor:
+
+- **Every gate is raw `MemberRole`, so no Co-DM sees any of them.** Slice 3's
+  `VisibilityRole() >= RoleScribe` gate fixes that everywhere at once; that is
+  the same defect slice 1 fixes on the access path, on the render path.
+- **Rows 5-7 are two-state**: no globe for "everyone". Folding them into the
+  one component gives them the third state. Check with the operator only if
+  that changes a dense table's look; otherwise ship consistent.
+- **Row 5 paints private amber**, a fourth colour vocabulary nobody else uses.
+  It goes with the rest.
+- **`#0d9488` also appears at `static/js/widgets/db_explorer.js:22`** as a
+  calendar swatch colour, unrelated to visibility. The render-contract grep
+  guard must be scoped to the entities templates, NOT a tree-wide ban, or it
+  fails on an innocent line.
+
 ## The states, and what the glance shows
 
 | Entity state | Glyph | Token | Popover text |
