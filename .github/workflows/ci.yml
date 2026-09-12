@@ -411,20 +411,28 @@ jobs:
         run: templ generate
 
       - name: golangci-lint
-        # Pinned: v2.5.0's release binary was built with go1.25.1, and
-        # golangci-lint refuses to run at all against a module whose `go`
-        # directive names a newer language version than the binary that
-        # would analyze it was itself built with ("the Go language version
-        # ... used to build golangci-lint is lower than the targeted Go
-        # version") — measured locally the moment go.mod moved to 1.27.1.
-        # v2.13.2's release binary is built with go1.27.1 (verified locally:
-        # `golangci-lint --version` reports it) and its own go.mod requires
-        # "latest-1" by policy, so it tracks new Go releases deliberately.
-        # Bumping the version surfaced 17 pre-existing findings (2 govet
-        # deprecated-identifier, 15 staticcheck QF1012) from newer default
-        # checks; fixed in this same change rather than leaving Lint red.
-        # Bump this pin together with go.mod's `go` directive.
-        version: v2.13.2
+        # The `uses:` and `with:` lines below were accidentally deleted when
+        # this pin was bumped for the Go 1.27 move, leaving a step whose only
+        # key was `version:`. That is not a valid step, so GitHub could not
+        # compile the workflow AT ALL: every push to this branch produced a
+        # run with zero jobs that failed instantly, and no job in any of the
+        # six jobs ever executed. CI was silently off, not passing. Restored.
+        uses: golangci/golangci-lint-action@v7
+        with:
+          # Pinned: v2.5.0's release binary was built with go1.25.1, and
+          # golangci-lint refuses to run at all against a module whose `go`
+          # directive names a newer language version than the binary that
+          # would analyze it was itself built with ("the Go language version
+          # ... used to build golangci-lint is lower than the targeted Go
+          # version") — measured locally the moment go.mod moved to 1.27.1.
+          # v2.13.2's release binary is built with go1.27.1 (verified locally:
+          # `golangci-lint --version` reports it) and its own go.mod requires
+          # "latest-1" by policy, so it tracks new Go releases deliberately.
+          # Bumping the version surfaced 17 pre-existing findings (2 govet
+          # deprecated-identifier, 15 staticcheck QF1012) from newer default
+          # checks; fixed in this same change rather than leaving Lint red.
+          # Bump this pin together with go.mod's `go` directive.
+          version: v2.13.2
 
   # --- Security Scan ---
   security:
