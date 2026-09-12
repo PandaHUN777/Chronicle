@@ -4,27 +4,48 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/keyxmakerx/chronicle/internal/permissions"
 )
 
 // --- Mocks ---
+//
+// TEST HONESTY (see internal/app/error_handler_api_type_test.go's header,
+// and internal/app/armory_npcs_visibility_leak_test.go): these mocks stub
+// away the REPOSITORY's SQL and the entities plugin's real visibility
+// predicate, so nothing here proves the real SQL enforces visibility — that
+// is what the real-database test in internal/app proves, against the real
+// entities repository. What IS legitimately unit-testable here, without a
+// database, is the SERVICE's own orchestration: does it call the visibility
+// filter for the right roles, does it fail closed with no filter wired, and
+// do ListItems/CountItems agree with each other for the same inputs. These
+// tests are the ones that would NOT have caught the original leak (a mock of
+// the predicate is exactly as trustworthy as the mock says it is) — they
+// only guard the code that decides WHEN to consult the real predicate.
 
 type mockArmoryRepo struct {
-	listItemsFn  func(ctx context.Context, campaignID string, typeIDs []int, role int, userID string, opts ItemListOptions) ([]ItemCard, int, error)
-	countItemsFn func(ctx context.Context, campaignID string, typeIDs []int, role int, userID string) (int, error)
+	listIDsFn    func(ctx context.Context, campaignID string, typeIDs []int, opts ItemListOptions) ([]string, error)
+	getByIDsFn   func(ctx context.Context, campaignID string, ids []string) ([]ItemCard, error)
+	lastByIDsArg []string // records the ids GetItemCardsByIDs was called with, for pagination assertions
 }
 
-func (m *mockArmoryRepo) ListItems(ctx context.Context, campaignID string, typeIDs []int, role int, userID string, opts ItemListOptions) ([]ItemCard, int, error) {
-	if m.listItemsFn != nil {
-		return m.listItemsFn(ctx, campaignID, typeIDs, role, userID, opts)
+func (m *mockArmoryRepo) ListItemIDs(ctx context.Context, campaignID string, typeIDs []int, opts ItemListOptions) ([]string, error) {
+	if m.listIDsFn != nil {
+		return m.listIDsFn(ctx, campaignID, typeIDs, opts)
 	}
-	return nil, 0, nil
+	return nil, nil
 }
 
-func (m *mockArmoryRepo) CountItems(ctx context.Context, campaignID string, typeIDs []int, role int, userID string) (int, error) {
-	if m.countItemsFn != nil {
-		return m.countItemsFn(ctx, campaignID, typeIDs, role, userID)
+func (m *mockArmoryRepo) GetItemCardsByIDs(ctx context.Context, campaignID string, ids []string) ([]ItemCard, error) {
+	m.lastByIDsArg = ids
+	if m.getByIDsFn != nil {
+		return m.getByIDsFn(ctx, campaignID, ids)
 	}
-	return 0, nil
+	cards := make([]ItemCard, len(ids))
+	for i, id := range ids {
+		cards[i] = ItemCard{ID: id, Name: id}
+	}
+	return cards, nil
 }
 
 type mockTypeFinder struct {
@@ -57,30 +78,58 @@ func (m *mockTagLister) ListTagsForEntities(ctx context.Context, entityIDs []str
 	return nil, nil
 }
 
-func newTestArmoryService(repo *mockArmoryRepo, tf *mockTypeFinder) *armoryService {
-	return &armoryService{repo: repo, typeFinder: tf}
+// mockVisibilityFilter records every call it receives and returns a
+// caller-supplied viewable set, so tests can assert exactly which ids were
+// sent to it (never more than the candidate set) and control the outcome.
+type mockVisibilityFilter struct {
+	viewable   map[string]bool
+	err        error
+	calls      int
+	lastRole   int
+	lastUserID string
+	lastEntIDs []string
+}
+
+func (m *mockVisibilityFilter) FilterViewableEntityIDs(_ context.Context, _ string, entityIDs []string, role int, userID string) (map[string]bool, error) {
+	m.calls++
+	m.lastRole = role
+	m.lastUserID = userID
+	m.lastEntIDs = entityIDs
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.viewable, nil
+}
+
+func newTestArmoryService(repo *mockArmoryRepo, tf *mockTypeFinder, vf EntityVisibilityFilter) *armoryService {
+	return &armoryService{repo: repo, typeFinder: tf, entityVisibility: vf}
 }
 
 // --- Tests ---
 
 func TestListItems_Success(t *testing.T) {
 	repo := &mockArmoryRepo{
-		listItemsFn: func(_ context.Context, _ string, typeIDs []int, _ int, _ string, _ ItemListOptions) ([]ItemCard, int, error) {
+		listIDsFn: func(_ context.Context, _ string, typeIDs []int, _ ItemListOptions) ([]string, error) {
 			if len(typeIDs) != 1 || typeIDs[0] != 5 {
 				t.Errorf("expected typeIDs [5], got %v", typeIDs)
 			}
-			return []ItemCard{{ID: "item-1", Name: "Sword"}}, 1, nil
+			return []string{"item-1"}, nil
 		},
 	}
 	tf := &mockTypeFinder{
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{5}, nil },
 	}
-	svc := newTestArmoryService(repo, tf)
-	cards, total, err := svc.ListItems(context.Background(), "camp-1", 2, "user-1", DefaultItemListOptions())
+	// Owner is the only role that bypasses the visibility filter, matching
+	// entities' own visibilityFilter, so these list-mechanics fixtures run as
+	// Owner. A Scribe with a nil filter now fails CLOSED and would return
+	// nothing — correct behaviour, but it would stop this test exercising
+	// pagination and card assembly, which is what it is for.
+	svc := newTestArmoryService(repo, tf, nil)
+	cards, total, err := svc.ListItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1", DefaultItemListOptions())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if total != 1 || len(cards) != 1 || cards[0].Name != "Sword" {
+	if total != 1 || len(cards) != 1 || cards[0].ID != "item-1" {
 		t.Errorf("unexpected result: %d cards, total=%d", len(cards), total)
 	}
 }
@@ -89,8 +138,8 @@ func TestListItems_NoItemTypes(t *testing.T) {
 	tf := &mockTypeFinder{
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return nil, nil },
 	}
-	svc := newTestArmoryService(&mockArmoryRepo{}, tf)
-	cards, total, err := svc.ListItems(context.Background(), "camp-1", 2, "user-1", DefaultItemListOptions())
+	svc := newTestArmoryService(&mockArmoryRepo{}, tf, nil)
+	cards, total, err := svc.ListItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1", DefaultItemListOptions())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -105,8 +154,8 @@ func TestListItems_TypeFinderError(t *testing.T) {
 			return nil, errors.New("db error")
 		},
 	}
-	svc := newTestArmoryService(&mockArmoryRepo{}, tf)
-	_, _, err := svc.ListItems(context.Background(), "camp-1", 2, "user-1", DefaultItemListOptions())
+	svc := newTestArmoryService(&mockArmoryRepo{}, tf, nil)
+	_, _, err := svc.ListItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1", DefaultItemListOptions())
 	if err == nil {
 		t.Error("expected error from type finder")
 	}
@@ -117,12 +166,12 @@ func TestListItems_RepoError(t *testing.T) {
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{1}, nil },
 	}
 	repo := &mockArmoryRepo{
-		listItemsFn: func(_ context.Context, _ string, _ []int, _ int, _ string, _ ItemListOptions) ([]ItemCard, int, error) {
-			return nil, 0, errors.New("repo error")
+		listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+			return nil, errors.New("repo error")
 		},
 	}
-	svc := newTestArmoryService(repo, tf)
-	_, _, err := svc.ListItems(context.Background(), "camp-1", 2, "user-1", DefaultItemListOptions())
+	svc := newTestArmoryService(repo, tf, nil)
+	_, _, err := svc.ListItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1", DefaultItemListOptions())
 	if err == nil {
 		t.Error("expected repo error")
 	}
@@ -130,14 +179,14 @@ func TestListItems_RepoError(t *testing.T) {
 
 func TestListItems_WithTags(t *testing.T) {
 	repo := &mockArmoryRepo{
-		listItemsFn: func(_ context.Context, _ string, _ []int, _ int, _ string, _ ItemListOptions) ([]ItemCard, int, error) {
-			return []ItemCard{{ID: "item-1", Name: "Sword"}, {ID: "item-2", Name: "Shield"}}, 2, nil
+		listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+			return []string{"item-1", "item-2"}, nil
 		},
 	}
 	tf := &mockTypeFinder{
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{1}, nil },
 	}
-	svc := newTestArmoryService(repo, tf)
+	svc := newTestArmoryService(repo, tf, nil)
 	svc.tagLister = &mockTagLister{
 		listFn: func(_ context.Context, ids []string) (map[string][]TagInfo, error) {
 			return map[string][]TagInfo{
@@ -145,7 +194,7 @@ func TestListItems_WithTags(t *testing.T) {
 			}, nil
 		},
 	}
-	cards, _, err := svc.ListItems(context.Background(), "camp-1", 2, "user-1", DefaultItemListOptions())
+	cards, _, err := svc.ListItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1", DefaultItemListOptions())
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -159,15 +208,19 @@ func TestListItems_WithTags(t *testing.T) {
 
 func TestCountItems_Success(t *testing.T) {
 	repo := &mockArmoryRepo{
-		countItemsFn: func(_ context.Context, _ string, _ []int, _ int, _ string) (int, error) {
-			return 42, nil
+		listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+			ids := make([]string, 42)
+			for i := range ids {
+				ids[i] = string(rune('a' + i%26))
+			}
+			return ids, nil
 		},
 	}
 	tf := &mockTypeFinder{
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{1}, nil },
 	}
-	svc := newTestArmoryService(repo, tf)
-	count, err := svc.CountItems(context.Background(), "camp-1", 2, "user-1")
+	svc := newTestArmoryService(repo, tf, nil)
+	count, err := svc.CountItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -180,8 +233,8 @@ func TestCountItems_NoTypes(t *testing.T) {
 	tf := &mockTypeFinder{
 		findIDsFn: func(_ context.Context, _ string) ([]int, error) { return nil, nil },
 	}
-	svc := newTestArmoryService(&mockArmoryRepo{}, tf)
-	count, err := svc.CountItems(context.Background(), "camp-1", 2, "user-1")
+	svc := newTestArmoryService(&mockArmoryRepo{}, tf, nil)
+	count, err := svc.CountItems(context.Background(), "camp-1", permissions.RoleOwner, "user-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -196,12 +249,205 @@ func TestGetItemTypes_Success(t *testing.T) {
 			return []ItemTypeInfo{{ID: 1, Name: "Weapon"}}, nil
 		},
 	}
-	svc := newTestArmoryService(&mockArmoryRepo{}, tf)
+	svc := newTestArmoryService(&mockArmoryRepo{}, tf, nil)
 	types, err := svc.GetItemTypes(context.Background(), "camp-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(types) != 1 || types[0].Name != "Weapon" {
 		t.Errorf("unexpected types: %v", types)
+	}
+}
+
+// --- Visibility orchestration tests (finding 2 regression coverage) ---
+
+// TestVisibleItemIDs_OnlyOwnerBypassesFilter pins the bypass at OWNER, and the
+// history matters. The fix for finding 2 originally bypassed at Scribe, on the
+// reading that Scribe behaviour was out of scope. It is not the same question:
+// the out-of-scope item is whether a co-DM should be PROMOTED in these plugins
+// (booked in .ai/todo.md), and a co-DM arrives here as RolePlayer, below both
+// thresholds either way.
+//
+// Scribe must go through the filter because the canonical policy says so.
+// visibilityFilter (entities/repository.go:1177) returns an empty predicate
+// only for role >= RoleOwner; for a Scribe it still evaluates, and its custom
+// branch requires a matching grant. So a visibility='custom' entity is NOT
+// automatically visible to a Scribe. Bypassing here would have left the
+// gallery showing a Scribe the name and artwork of a page they cannot open --
+// the same disagreement finding 2 was about, in a narrower audience.
+//
+// A Scribe still sees every is_private page, because the filter's default
+// branch admits role >= 2. Only custom-without-grant is withheld.
+func TestVisibleItemIDs_OnlyOwnerBypassesFilter(t *testing.T) {
+	t.Run("owner bypasses entirely", func(t *testing.T) {
+		repo := &mockArmoryRepo{
+			listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+				return []string{"public-item", "restricted-item"}, nil
+			},
+		}
+		vf := &mockVisibilityFilter{viewable: map[string]bool{}} // would hide everything if consulted
+		svc := &armoryService{repo: repo, typeFinder: &mockTypeFinder{}, entityVisibility: vf}
+
+		role := permissions.RoleOwner
+		ids, err := svc.visibleItemIDs(context.Background(), "camp-1", []int{1}, role, "u1", ItemListOptions{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if vf.calls != 0 {
+			t.Errorf("an Owner must not be filtered at all, got %d filter calls", vf.calls)
+		}
+		if len(ids) != 2 {
+			t.Errorf("an Owner must see both ids, got %v", ids)
+		}
+	})
+
+	t.Run("scribe is filtered, not bypassed", func(t *testing.T) {
+		repo := &mockArmoryRepo{
+			listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+				return []string{"public-item", "restricted-item"}, nil
+			},
+		}
+		// The canonical filter admits the public one and withholds the
+		// custom-restricted one, which is what it does for a real Scribe with
+		// no matching grant.
+		vf := &mockVisibilityFilter{viewable: map[string]bool{"public-item": true}}
+		svc := &armoryService{repo: repo, typeFinder: &mockTypeFinder{}, entityVisibility: vf}
+
+		role := permissions.RoleScribe
+		ids, err := svc.visibleItemIDs(context.Background(), "camp-1", []int{1}, role, "u1", ItemListOptions{})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if vf.calls != 1 {
+			t.Errorf("a Scribe must be run through the canonical filter exactly once, got %d calls", vf.calls)
+		}
+		if len(ids) != 1 || ids[0] != "public-item" {
+			t.Errorf("a Scribe must not see the custom-restricted id, got %v", ids)
+		}
+		if vf.lastRole != permissions.RoleScribe {
+			t.Errorf("the Scribe's own role must reach the filter, got %d", vf.lastRole)
+		}
+	})
+}
+
+// TestVisibleItemIDs_PlayerAndAnonymousUseCanonicalFilter proves the service
+// consults EntityVisibilityFilter (not a hand-rolled is_private check) for
+// Player and anonymous, and narrows to exactly what it reports viewable.
+func TestVisibleItemIDs_PlayerAndAnonymousUseCanonicalFilter(t *testing.T) {
+	for _, tc := range []struct {
+		role   int
+		userID string
+	}{
+		{permissions.RolePlayer, "player-1"},
+		{permissions.RoleNone, ""},
+	} {
+		repo := &mockArmoryRepo{
+			listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+				return []string{"public-item", "restricted-item"}, nil
+			},
+		}
+		vf := &mockVisibilityFilter{viewable: map[string]bool{"public-item": true}}
+		svc := newTestArmoryService(repo, &mockTypeFinder{}, vf)
+
+		ids, err := svc.visibleItemIDs(context.Background(), "camp-1", []int{1}, tc.role, tc.userID, ItemListOptions{})
+		if err != nil {
+			t.Fatalf("role %d: unexpected error: %v", tc.role, err)
+		}
+		if vf.calls != 1 {
+			t.Fatalf("role %d: expected EntityVisibilityFilter to be consulted exactly once, got %d", tc.role, vf.calls)
+		}
+		if vf.lastRole != tc.role || vf.lastUserID != tc.userID {
+			t.Errorf("role %d: filter called with role=%d userID=%q, want role=%d userID=%q", tc.role, vf.lastRole, vf.lastUserID, tc.role, tc.userID)
+		}
+		if len(ids) != 1 || ids[0] != "public-item" {
+			t.Errorf("role %d: expected only public-item, got %v", tc.role, ids)
+		}
+	}
+}
+
+// TestVisibleItemIDs_FailsClosedWithNoFilterWired is the defense-in-depth
+// case: if the visibility gate is somehow not wired for a Player/anonymous
+// viewer, the result must be EMPTY, never "everything" — the opposite of the
+// pre-fix bug's failure direction.
+func TestVisibleItemIDs_FailsClosedWithNoFilterWired(t *testing.T) {
+	repo := &mockArmoryRepo{
+		listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+			return []string{"item-1"}, nil
+		},
+	}
+	svc := newTestArmoryService(repo, &mockTypeFinder{}, nil) // entityVisibility == nil
+	ids, err := svc.visibleItemIDs(context.Background(), "camp-1", []int{1}, permissions.RolePlayer, "player-1", ItemListOptions{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(ids) != 0 {
+		t.Errorf("expected fail-CLOSED (no ids) with no visibility filter wired, got %v", ids)
+	}
+}
+
+// TestListAndCountItems_NeverDisagree drives ListItems and CountItems off the
+// same fixture and requires their totals to match, for every role — the
+// "an inflated count is itself a leak" half of finding 2.
+func TestListAndCountItems_NeverDisagree(t *testing.T) {
+	candidateIDs := []string{"public-item", "restricted-item"}
+	tf := &mockTypeFinder{findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{1}, nil }}
+
+	for _, tc := range []struct {
+		name string
+		role int
+	}{
+		{"anonymous", permissions.RoleNone},
+		{"player", permissions.RolePlayer},
+		{"scribe", permissions.RoleScribe},
+		{"owner", permissions.RoleOwner},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockArmoryRepo{
+				listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+					return candidateIDs, nil
+				},
+			}
+			vf := &mockVisibilityFilter{viewable: map[string]bool{"public-item": true}}
+			svc := newTestArmoryService(repo, tf, vf)
+
+			_, total, err := svc.ListItems(context.Background(), "camp-1", tc.role, "u1", DefaultItemListOptions())
+			if err != nil {
+				t.Fatalf("ListItems: %v", err)
+			}
+			count, err := svc.CountItems(context.Background(), "camp-1", tc.role, "u1")
+			if err != nil {
+				t.Fatalf("CountItems: %v", err)
+			}
+			if total != count {
+				t.Errorf("ListItems total=%d, CountItems=%d — must never disagree", total, count)
+			}
+		})
+	}
+}
+
+// TestListItems_PaginatesTheFilteredSet proves pagination is applied AFTER
+// visibility narrowing, not before — the pre-fix pagination happened in SQL
+// against the unfiltered set, which is exactly the shape that let a
+// restricted row occupy a page slot a visible row should have had.
+func TestListItems_PaginatesTheFilteredSet(t *testing.T) {
+	repo := &mockArmoryRepo{
+		listIDsFn: func(_ context.Context, _ string, _ []int, _ ItemListOptions) ([]string, error) {
+			return []string{"a", "restricted", "b", "c"}, nil
+		},
+	}
+	tf := &mockTypeFinder{findIDsFn: func(_ context.Context, _ string) ([]int, error) { return []int{1}, nil }}
+	vf := &mockVisibilityFilter{viewable: map[string]bool{"a": true, "b": true, "c": true}}
+	svc := newTestArmoryService(repo, tf, vf)
+
+	opts := ItemListOptions{Page: 1, PerPage: 2, Sort: "name"}
+	cards, total, err := svc.ListItems(context.Background(), "camp-1", permissions.RolePlayer, "player-1", opts)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if total != 3 {
+		t.Fatalf("total = %d, want 3 (restricted must not count)", total)
+	}
+	if len(cards) != 2 || cards[0].ID != "a" || cards[1].ID != "b" {
+		t.Fatalf("page 1 = %v, want [a b] (restricted skipped, no gap left in the page)", repo.lastByIDsArg)
 	}
 }
