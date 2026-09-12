@@ -9,6 +9,7 @@ import (
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 	"github.com/keyxmakerx/chronicle/internal/patch"
+	"github.com/keyxmakerx/chronicle/internal/permissions"
 	"github.com/keyxmakerx/chronicle/internal/sanitize"
 )
 
@@ -16,6 +17,20 @@ import (
 // Used to prevent cross-campaign entity linking (IDOR prevention).
 type EntityCampaignChecker interface {
 	EntityBelongsToCampaign(ctx context.Context, entityID, campaignID string) (bool, error)
+}
+
+// EntityVisibilityFilter resolves which of a set of entity IDs a viewer
+// (role + userID) may see, applying the entities plugin's own visibility
+// policy (default is_private, custom per-subject grants, tag grants).
+// Wraps entities.EntityService.FilterViewableEntityIDs — the SAME method the
+// relations widget uses to hide private-entity targets — so the sessions
+// plugin never imports the entities repository (rule 8) while still deferring
+// to a single real policy rather than re-deriving one from is_private alone.
+//
+// Used to keep a session's linked-entity list from naming a private entity to
+// a viewer who could not otherwise see it (ADR-055 rule 3).
+type EntityVisibilityFilter interface {
+	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
 
 // SessionService defines the business logic contract for sessions.
@@ -51,6 +66,14 @@ type SessionService interface {
 	LinkEntity(ctx context.Context, sessionID, entityID, role, campaignID string) error
 	UnlinkEntity(ctx context.Context, sessionID, entityID string) error
 	ListSessionEntities(ctx context.Context, sessionID string) ([]SessionEntity, error)
+	// FilterEntitiesForViewer removes session-linked entities a given viewer
+	// may not see. Owners and Scribes (role >= 2) see the list unchanged —
+	// exactly what they saw before this filter existed; only a Player or
+	// anonymous viewer (role < 2) is narrowed, via EntityVisibilityFilter.
+	// Hidden content is ABSENT from the returned slice, never a placeholder
+	// or a count (ADR-055 rule 3). Fails CLOSED (returns nothing) if no
+	// filter is wired, rather than risk showing a name it cannot check.
+	FilterEntitiesForViewer(ctx context.Context, campaignID string, ents []SessionEntity, role int, userID string) ([]SessionEntity, error)
 
 	// Availability scheduler (C-SCHED-P1). See availability_service.go.
 	GetMyAvailability(ctx context.Context, campaignID, userID string) (*MyAvailabilityResponse, error)
@@ -115,15 +138,19 @@ type SessionService interface {
 
 // sessionService implements SessionService.
 type sessionService struct {
-	repo           SessionRepository
-	entityChecker  EntityCampaignChecker
+	repo             SessionRepository
+	entityChecker    EntityCampaignChecker
+	entityVisibility EntityVisibilityFilter
 }
 
 // NewSessionService creates a new session service. The EntityCampaignChecker
 // is used to verify entities belong to the correct campaign when linking,
-// preventing cross-campaign IDOR attacks.
-func NewSessionService(repo SessionRepository, ec EntityCampaignChecker) SessionService {
-	return &sessionService{repo: repo, entityChecker: ec}
+// preventing cross-campaign IDOR attacks. The EntityVisibilityFilter is used
+// to keep a session's linked-entity list from naming an entity a Player
+// could not otherwise see (ADR-055 rule 3); both may be nil in tests that
+// never touch entity linking or the session detail page.
+func NewSessionService(repo SessionRepository, ec EntityCampaignChecker, ev EntityVisibilityFilter) SessionService {
+	return &sessionService{repo: repo, entityChecker: ec, entityVisibility: ev}
 }
 
 // CreateSession validates input and creates a new session.
@@ -403,6 +430,49 @@ func (s *sessionService) UnlinkEntity(ctx context.Context, sessionID, entityID s
 // ListSessionEntities returns entities linked to a session.
 func (s *sessionService) ListSessionEntities(ctx context.Context, sessionID string) ([]SessionEntity, error) {
 	return s.repo.ListSessionEntities(ctx, sessionID)
+}
+
+// FilterEntitiesForViewer narrows a session's linked-entity list to what the
+// given viewer may see (ADR-055 rule 3: hidden content is absent, not greyed
+// or counted). The repository join that builds `ents` has no privacy
+// predicate of its own — see ListSessionEntities — so this is the one place
+// that gate is enforced before the list reaches a template.
+//
+// Owners and Scribes (role >= permissions.RoleScribe) get the list back
+// unchanged: that is what every viewer saw before this filter existed, and
+// narrowing it further (e.g. to match a custom-visibility grant a Scribe
+// isn't on) is a separate, undecided product question, not this fix's scope.
+// A Player or anonymous viewer (role < RoleScribe) is checked against the
+// SAME per-entity visibility policy the entities plugin itself applies, via
+// EntityVisibilityFilter — never a cheaper approximation, so a session page
+// can't disagree with the entity page about what is hidden.
+func (s *sessionService) FilterEntitiesForViewer(ctx context.Context, campaignID string, ents []SessionEntity, role int, userID string) ([]SessionEntity, error) {
+	if role >= permissions.RoleScribe || len(ents) == 0 {
+		return ents, nil
+	}
+
+	if s.entityVisibility == nil {
+		// Fail CLOSED: with no way to check, a linked entity's name must not
+		// reach a viewer who might not be allowed to see it.
+		return nil, nil
+	}
+
+	ids := make([]string, len(ents))
+	for i, e := range ents {
+		ids[i] = e.EntityID
+	}
+	viewable, err := s.entityVisibility.FilterViewableEntityIDs(ctx, campaignID, ids, role, userID)
+	if err != nil {
+		return nil, apperror.NewInternal(fmt.Errorf("filtering session entities: %w", err))
+	}
+
+	visible := make([]SessionEntity, 0, len(ents))
+	for _, e := range ents {
+		if viewable[e.EntityID] {
+			visible = append(visible, e)
+		}
+	}
+	return visible, nil
 }
 
 // SearchSessions returns sessions matching a query for the quick search system.

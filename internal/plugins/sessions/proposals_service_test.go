@@ -54,7 +54,7 @@ func TestCreateProposal_ConvertsWallClockToUTC(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	// 7pm–11pm EDT on 2026-07-18 -> 23:00Z .. 03:00Z(+1).
 	_, err := svc.CreateProposal(context.Background(), "camp-1", "dm-1", CreateProposalRequest{
 		Title: "Next session",
@@ -81,7 +81,7 @@ func TestCreateProposal_ConvertsWallClockToUTC(t *testing.T) {
 }
 
 func TestCreateProposal_Validation(t *testing.T) {
-	svc := NewSessionService(&mockSessionRepo{}, nil)
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
 	base := func() CreateProposalRequest {
 		return CreateProposalRequest{Title: "T", TZ: "UTC", Options: []ProposalOptionInput{{Date: "2026-07-18", StartMinute: 60, EndMinute: 120}}}
 	}
@@ -127,7 +127,7 @@ func TestRespondToOption_IDORAndClosed(t *testing.T) {
 				return &SlotProposalOption{ID: "o9", ProposalID: "OTHER"}, nil
 			},
 		}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if err := svc.RespondToOption(context.Background(), "c1", "p1", "o9", "u1", ResponseYes); err == nil {
 			t.Error("expected IDOR rejection for mismatched option/proposal")
 		}
@@ -139,14 +139,14 @@ func TestRespondToOption_IDORAndClosed(t *testing.T) {
 				return closedProposal, nil, nil
 			},
 		}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if err := svc.RespondToOption(context.Background(), "c1", "p1", "o1", "u1", ResponseYes); err == nil {
 			t.Error("expected rejection for closed proposal")
 		}
 	})
 
 	t.Run("invalid response value rejected", func(t *testing.T) {
-		svc := NewSessionService(&mockSessionRepo{}, nil)
+		svc := NewSessionService(&mockSessionRepo{}, nil, nil)
 		if err := svc.RespondToOption(context.Background(), "c1", "p1", "o1", "u1", "perhaps"); err == nil {
 			t.Error("expected rejection for invalid response value")
 		}
@@ -163,7 +163,7 @@ func TestRespondToOption_IDORAndClosed(t *testing.T) {
 			},
 			upsertProposalResponseFn: func(_ context.Context, r *SlotProposalResponse) error { upserted = r; return nil },
 		}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if err := svc.RespondToOption(context.Background(), "c1", "p1", "o1", "u1", ResponseMaybe); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -197,7 +197,7 @@ func TestRedeemProposalToken(t *testing.T) {
 		repo := &mockSessionRepo{findProposalTokenFn: func(_ context.Context, _ string) (*SlotProposalToken, error) {
 			return &SlotProposalToken{Token: "x", OptionID: "o1", UserID: "u1", Response: ResponseYes, ExpiresAt: past}, nil
 		}}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if _, err := svc.ApplyProposalToken(context.Background(), "x"); err == nil {
 			t.Error("expected expiry rejection")
 		}
@@ -207,7 +207,7 @@ func TestRedeemProposalToken(t *testing.T) {
 		repo := &mockSessionRepo{findProposalTokenFn: func(_ context.Context, _ string) (*SlotProposalToken, error) {
 			return &SlotProposalToken{Token: "x", OptionID: "o1", UserID: "u1", Response: ResponseYes, ExpiresAt: future, UsedAt: &used}, nil
 		}}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if _, err := svc.ApplyProposalToken(context.Background(), "x"); err == nil {
 			t.Error("expected used-token rejection")
 		}
@@ -224,7 +224,7 @@ func TestRedeemProposalToken(t *testing.T) {
 		repo.findProposalByIDFn = func(_ context.Context, _ string) (*SlotProposal, error) {
 			return &SlotProposal{ID: "p1", CampaignID: "c1", Status: ProposalClosed}, nil
 		}
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if _, err := svc.ApplyProposalToken(context.Background(), "x"); err == nil {
 			t.Error("expected closed-proposal rejection (7-day-TTL gate)")
 		}
@@ -243,7 +243,7 @@ func TestRedeemProposalToken(t *testing.T) {
 			upsertProposalResponseFn: func(_ context.Context, r *SlotProposalResponse) error { upserted = r; return nil },
 			markProposalTokenUsedFn:  func(_ context.Context, tok string) error { marked = tok; return nil },
 		})
-		svc := NewSessionService(repo, nil)
+		svc := NewSessionService(repo, nil, nil)
 		if _, err := svc.ApplyProposalToken(context.Background(), "tok"); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
@@ -262,7 +262,7 @@ func TestCreateProposalTokens_ThreeResponses(t *testing.T) {
 		created = append(created, tok)
 		return nil
 	}}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	toks, err := svc.CreateProposalTokens(context.Background(), "o1", "u1")
 	if err != nil {
 		t.Fatalf("error: %v", err)
@@ -298,7 +298,7 @@ func TestGetProposalView_TalliesAndDetailGating(t *testing.T) {
 	}
 
 	t.Run("member sees counts + own response but no responders", func(t *testing.T) {
-		svc := NewSessionService(newRepo(), nil)
+		svc := NewSessionService(newRepo(), nil, nil)
 		v, err := svc.GetProposalView(context.Background(), "c1", "p1", "viewer", "UTC", false)
 		if err != nil {
 			t.Fatalf("error: %v", err)
@@ -316,7 +316,7 @@ func TestGetProposalView_TalliesAndDetailGating(t *testing.T) {
 	})
 
 	t.Run("owner sees per-responder detail", func(t *testing.T) {
-		svc := NewSessionService(newRepo(), nil)
+		svc := NewSessionService(newRepo(), nil, nil)
 		v, err := svc.GetProposalView(context.Background(), "c1", "p1", "viewer", "UTC", true)
 		if err != nil {
 			t.Fatalf("error: %v", err)
@@ -335,7 +335,7 @@ func TestNotifyProposalCreated_WritesPerRecipient(t *testing.T) {
 		written = append(written, n)
 		return nil
 	}}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	if err := svc.NotifyProposalCreated(context.Background(), "c1", "p1", "Next session", []string{"a", "b", ""}); err != nil {
 		t.Fatalf("error: %v", err)
 	}
@@ -357,7 +357,7 @@ func TestNotifyProposalResponse_NotifiesCreator(t *testing.T) {
 		},
 		createNotificationFn: func(_ context.Context, n *Notification) error { written = n; return nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	if err := svc.NotifyProposalResponse(context.Background(), "c1", "p1", "Bianca", ResponseYes); err != nil {
 		t.Fatalf("error: %v", err)
 	}

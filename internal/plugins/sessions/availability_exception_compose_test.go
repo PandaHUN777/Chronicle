@@ -174,7 +174,7 @@ func TestDB_AddExceptionKeepsTheRestOfTheDay(t *testing.T) {
 	}
 	db := newScratchDB(t)
 	campID, userID := seedCampaign(t, db)
-	svc := NewSessionService(NewSessionRepository(db), nil)
+	svc := NewSessionService(NewSessionRepository(db), nil, nil)
 	ctx := context.Background()
 
 	// The member's usual Tuesday, painted in the grid.

@@ -353,6 +353,7 @@ func (a *addonListerAdapter) ListForPluginHub(ctx context.Context, campaignID st
 			AddonID:        ca.AddonID,
 			Slug:           ca.AddonSlug,
 			Name:           ca.AddonName,
+			Description:    ca.AddonDescription,
 			Icon:           ca.AddonIcon,
 			Category:       string(ca.AddonCategory),
 			Enabled:        ca.Enabled,
@@ -496,6 +497,20 @@ func (a *entityCampaignCheckerAdapter) EntityBelongsToCampaign(ctx context.Conte
 		return false, err
 	}
 	return entity.CampaignID == campaignID, nil
+}
+
+// entityVisibilityFilterAdapter wraps entities.EntityService to implement the
+// sessions.EntityVisibilityFilter interface, so the sessions plugin can hide a
+// linked entity's name from a viewer who could not see that entity directly
+// (ADR-055 rule 3) without importing the entities plugin's repository.
+type entityVisibilityFilterAdapter struct {
+	svc entities.EntityService
+}
+
+// FilterViewableEntityIDs delegates to the entities plugin's own visibility
+// policy — the same one entity pages and the relations widget already apply.
+func (a *entityVisibilityFilterAdapter) FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error) {
+	return a.svc.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, userID)
 }
 
 // CALV5-PLACEHOLDER: ten cross-plugin bridge adapters stood here, wiring the
@@ -2470,7 +2485,7 @@ func (a *App) RegisterRoutes() {
 	// Sessions plugin: game session scheduling, linked entities, RSVP tracking.
 	// Entity campaign checker prevents cross-campaign entity linking (IDOR).
 	sessionsRepo := sessions.NewSessionRepository(a.DB)
-	sessionsService := sessions.NewSessionService(sessionsRepo, &entityCampaignCheckerAdapter{svc: entityService})
+	sessionsService := sessions.NewSessionService(sessionsRepo, &entityCampaignCheckerAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	sessionsHandler := sessions.NewHandler(sessionsService)
 	sessionsHandler.SetMemberLister(campaignService)
 	sessionsHandler.SetMailSender(smtpService, a.Config.BaseURL)
@@ -2537,7 +2552,7 @@ func (a *App) RegisterRoutes() {
 	entityNotesNotifier := &entityNotesNotifierHolder{}
 	entityNotesService := entity_notes.NewService(entityNotesRepo, entityNotesNotifier.Notify)
 	entityNotesHandler := entity_notes.NewHandler(entityNotesService)
-	entity_notes.RegisterRoutes(e, entityNotesHandler, campaignService, authService)
+	entity_notes.RegisterRoutes(e, entityNotesHandler, campaignService, authService, addonService)
 
 	// Tags widget: campaign-scoped entity tagging (CRUD + entity associations).
 	// Created before sync API so the tag service is available for the REST API handler.

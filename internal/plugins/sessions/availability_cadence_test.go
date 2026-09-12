@@ -206,7 +206,7 @@ func TestSaveMyAvailability_EmptyGridStillCountsAsAnswering(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	if err := svc.SaveMyAvailability(context.Background(), "c1", "u1",
 		SaveAvailabilityRequest{TZ: "America/New_York", Blocks: nil}); err != nil {
 		t.Fatalf("saving an empty grid failed: %v", err)
@@ -223,7 +223,7 @@ func TestSaveMyAvailability_EmptyGridStillCountsAsAnswering(t *testing.T) {
 }
 
 func TestSaveMyAvailability_RejectsAnUnknownCadence(t *testing.T) {
-	svc := NewSessionService(&mockSessionRepo{}, nil)
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
 	err := svc.SaveMyAvailability(context.Background(), "c1", "u1", SaveAvailabilityRequest{
 		TZ: "UTC",
 		Blocks: []AvailabilityBlockDTO{{
@@ -246,7 +246,7 @@ func TestSaveMyAvailability_SameSlotOnBothTracksSurvives(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	err := svc.SaveMyAvailability(context.Background(), "c1", "u1", SaveAvailabilityRequest{
 		TZ: "UTC",
 		Blocks: []AvailabilityBlockDTO{
@@ -279,7 +279,7 @@ func TestNudge_AsksOnlyTheSilentOnes(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	res, err := svc.NudgeUnansweredAvailability(context.Background(), "c1", "/link", []overlayMemberInput{
 		{UserID: "u_answered", Name: "Ada"},
 		{UserID: "u_silent", Name: "Bo"},
@@ -307,7 +307,7 @@ func TestNudge_WithNobodySilentSendsNothing(t *testing.T) {
 		},
 		createNotificationFn: func(_ context.Context, _ *Notification) error { sent++; return nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	res, err := svc.NudgeUnansweredAvailability(context.Background(), "c1", "/link",
 		[]overlayMemberInput{{UserID: "u1", Name: "Ada"}})
 	if err != nil {
@@ -329,7 +329,7 @@ func TestOverlay_CarriesHasAnswered(t *testing.T) {
 			return map[string]time.Time{"u_answered": time.Now().UTC()}, nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	ov, err := svc.BuildOverlay(context.Background(), "c1", []overlayMemberInput{
 		{UserID: "u_answered", Name: "Ada"},
 		{UserID: "u_silent", Name: "Bo"},
@@ -361,7 +361,7 @@ func TestOverlay_DoesNotMutateTheCallersRoster(t *testing.T) {
 			return map[string]time.Time{"u1": time.Now().UTC()}, nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	roster := []overlayMemberInput{{UserID: "u1", Name: "Ada"}}
 	if _, err := svc.BuildOverlay(context.Background(), "c1", roster, "2026-08-17", "UTC", true); err != nil {
 		t.Fatalf("BuildOverlay: %v", err)
@@ -384,7 +384,7 @@ func TestGetMyAvailability_LabelsAreDerivedInTheMembersZone(t *testing.T) {
 			}}, nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	resp, err := svc.GetMyAvailability(context.Background(), "c1", "u1")
 	if err != nil {
 		t.Fatalf("GetMyAvailability: %v", err)
@@ -443,14 +443,14 @@ func nudgeRequest(t *testing.T, h *Handler, role campaigns.Role, isCoDM bool) in
 }
 
 func TestNudge_IsRefusedToAPlainPlayer(t *testing.T) {
-	h := NewHandler(NewSessionService(&mockSessionRepo{}, nil))
+	h := NewHandler(NewSessionService(&mockSessionRepo{}, nil, nil))
 	if code := nudgeRequest(t, h, campaigns.RolePlayer, false); code != http.StatusForbidden {
 		t.Fatalf("a plain player got %d, want 403 — they could bell the whole campaign", code)
 	}
 }
 
 func TestNudge_IsAllowedToTheOwnerAndToACoDM(t *testing.T) {
-	h := NewHandler(NewSessionService(&mockSessionRepo{}, nil))
+	h := NewHandler(NewSessionService(&mockSessionRepo{}, nil, nil))
 	if code := nudgeRequest(t, h, campaigns.RoleOwner, false); code == http.StatusForbidden {
 		t.Fatal("the owner was refused their own nudge")
 	}

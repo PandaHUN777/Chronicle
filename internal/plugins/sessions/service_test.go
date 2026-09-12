@@ -405,13 +405,13 @@ func (m *mockEntityChecker) EntityBelongsToCampaign(ctx context.Context, entityI
 // and no entity checker (nil). Use newTestSessionServiceWithChecker when
 // testing entity linking.
 func newTestSessionService(repo *mockSessionRepo) SessionService {
-	return NewSessionService(repo, nil)
+	return NewSessionService(repo, nil, nil)
 }
 
 // newTestSessionServiceWithChecker creates a session service with both a
 // mock repo and a mock entity campaign checker.
 func newTestSessionServiceWithChecker(repo *mockSessionRepo, checker *mockEntityChecker) SessionService {
-	return NewSessionService(repo, checker)
+	return NewSessionService(repo, checker, nil)
 }
 
 // assertAppError asserts that err is a non-nil *apperror.AppError with the

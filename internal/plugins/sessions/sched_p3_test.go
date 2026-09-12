@@ -80,7 +80,7 @@ func TestConfirmProposalWinner_ClosesAndCreatesSession(t *testing.T) {
 		setProposalWinnerAndCloseFn: func(_ context.Context, pid, oid string) error { closedPID, closedOID = pid, oid; return nil },
 		createFn:                    func(_ context.Context, _ string, s *Session) error { created = s; return nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 
 	session, err := svc.ConfirmProposalWinner(context.Background(), "c1", "p1", "o1", "dm-user", "America/New_York")
 	if err != nil {
@@ -118,7 +118,7 @@ func TestConfirmProposalWinner_RejectsClosedProposal(t *testing.T) {
 		},
 		setProposalWinnerAndCloseFn: func(_ context.Context, _, _ string) error { closed = true; return nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	if _, err := svc.ConfirmProposalWinner(context.Background(), "c1", "p1", "o1", "dm", "UTC"); err == nil {
 		t.Error("expected rejection when confirming an already-closed proposal")
 	}
@@ -140,7 +140,7 @@ func TestConfirmProposalWinner_ConcurrentCloseNoDuplicateSession(t *testing.T) {
 		setProposalWinnerAndCloseFn: func(_ context.Context, _, _ string) error { return errProposalAlreadyClosed },
 		createFn:                    func(_ context.Context, _ string, _ *Session) error { created = true; return nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	if _, err := svc.ConfirmProposalWinner(context.Background(), "c1", "p1", "o1", "dm", "UTC"); err == nil {
 		t.Error("expected an already-confirmed rejection on a lost close race")
 	}
@@ -168,7 +168,7 @@ func TestGenerateNextOccurrence_CarriesScheduledTime(t *testing.T) {
 		createFn:        func(_ context.Context, _ string, s *Session) error { next = s; return nil },
 		listAttendeesFn: func(_ context.Context, _ string) ([]Attendee, error) { return nil, nil },
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 
 	if _, err := svc.UpdateSession(context.Background(), "s1", UpdateSessionInput{
 		Name: patch.Of("Weekly Game"), Status: patch.Of(StatusCompleted),
@@ -205,7 +205,7 @@ func proposalTokenHandler(applied *bool, members []campaigns.CampaignMember) *Ha
 		upsertProposalResponseFn: func(_ context.Context, _ *SlotProposalResponse) error { *applied = true; return nil },
 		markProposalTokenUsedFn:  func(_ context.Context, _ string) error { return nil },
 	}
-	return &Handler{svc: NewSessionService(repo, nil), memberLister: &stubMemberLister{members: members}, userDir: &stubUserDir{tz: "UTC"}}
+	return &Handler{svc: NewSessionService(repo, nil, nil), memberLister: &stubMemberLister{members: members}, userDir: &stubUserDir{tz: "UTC"}}
 }
 
 func tokenCtx(method, token string) (echo.Context, *httptest.ResponseRecorder) {
@@ -291,7 +291,7 @@ func TestRSVPToken_GetDoesNotApply(t *testing.T) {
 		},
 	}
 	h := &Handler{
-		svc:          NewSessionService(repo, nil),
+		svc:          NewSessionService(repo, nil, nil),
 		memberLister: &stubMemberLister{members: []campaigns.CampaignMember{{UserID: "u1"}}},
 	}
 
@@ -331,7 +331,7 @@ func TestProposalEmail_EscapesTitleAndCampaign(t *testing.T) {
 	repo := &mockSessionRepo{
 		createProposalTokenFn: func(_ context.Context, _ *SlotProposalToken) error { return nil },
 	}
-	h := &Handler{svc: NewSessionService(repo, nil), mailer: mailer, userDir: &stubUserDir{tz: "UTC"}, baseURL: "https://x.test"}
+	h := &Handler{svc: NewSessionService(repo, nil, nil), mailer: mailer, userDir: &stubUserDir{tz: "UTC"}, baseURL: "https://x.test"}
 
 	proposal := &SlotProposal{ID: "p1", Title: `<script>alert(1)</script>`}
 	options := []ProposalOptionView{{Option: SlotProposalOption{ID: "o1", StartsAtUTC: time.Now().UTC(), EndsAtUTC: time.Now().UTC().Add(time.Hour)}}}
@@ -353,7 +353,7 @@ func TestRSVPEmail_EscapesSessionName(t *testing.T) {
 	repo := &mockSessionRepo{
 		createRSVPTokenFn: func(_ context.Context, _ *RSVPToken) error { return nil },
 	}
-	h := &Handler{svc: NewSessionService(repo, nil), mailer: mailer, baseURL: "https://x.test"}
+	h := &Handler{svc: NewSessionService(repo, nil, nil), mailer: mailer, baseURL: "https://x.test"}
 
 	date := "2026-07-18"
 	session := &Session{ID: "s1", Name: `<img src=x onerror=alert(1)>`, ScheduledDate: &date}
@@ -391,7 +391,7 @@ func TestProposalEmail_NeverPrintsABlankZone(t *testing.T) {
 			repo := &mockSessionRepo{
 				createProposalTokenFn: func(_ context.Context, _ *SlotProposalToken) error { return nil },
 			}
-			h := &Handler{svc: NewSessionService(repo, nil), mailer: mailer,
+			h := &Handler{svc: NewSessionService(repo, nil, nil), mailer: mailer,
 				userDir: &stubUserDir{tz: tc.stored}, baseURL: "https://x.test"}
 
 			proposal := &SlotProposal{ID: "p1", Title: "Session times"}
