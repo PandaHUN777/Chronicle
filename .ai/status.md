@@ -20,6 +20,39 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### Three sweeps, three ADRs, and the "twenty unaudited structs" booking discharged (2026-09-12)
+
+Three read-only sweeps on 2026-09-12, every finding hand-verified before it was
+acted on: the `Update*Input` partial-update class, visibility across maps /
+notes / timeline / sessions, and every owner-facing toggle against what it
+actually gates. The rulings are **ADR-054** (the sync API checks the same locks
+as the web — six routes were coarser), **ADR-055** (visibility models stay
+per-subsystem; the read-path rule is the one shared invariant; the campaign
+default stays entity-only), **ADR-056** (a toggle says what it does — code
+where the label is a promise, copy where it is a name; the "Private" default
+option is removed rather than built).
+
+**Live now, confirmed:** a Player's browser session reads fog of war through
+`/api/v1` (web requires Owner); session pages name linked private entities;
+Player Notes' five routes ignore the toggle. **Loaded, no caller yet:** a
+position-only token update flips `IsHidden` to false; renaming a timeline wipes
+its per-user visibility rules (the handler's request struct has no field for
+them, so every call sends blank — and blank means everyone); renaming a DM-only
+tag turns off DM-only; renaming a map unlinks its image. All four reproduced by
+a temporary test that was then deleted.
+
+**The guard for that class is half-blind:** `partial_update_contract_test.go`
+matches only `Update*Input`; `Update*Request` structs are invisible to it. Its
+`notYetSwept` map has exactly 20 entries — that IS the number the todo carried
+for a month; the sweep has now walked all of them.
+
+**Held on purpose:** fog, layers and map-write tightening wait until the
+operator's Foundry key has been read from a live instance (ADR-054 §4) — the
+module reads fog, and role-from-creator is only safe if the creator is who we
+think. Everything else proceeds on `claude/determined-davinci-5ut5f5`. Nothing
+merges until the operator has deployed the calendar demolition and confirmed it.
+
+
 ### The campaign "Sync API" toggle did nothing; it now refuses Bearer keys (2026-09-11)
 
 Branch `claude/determined-davinci-5ut5f5` (pushed, not merged). ADR-053.

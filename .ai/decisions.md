@@ -4722,3 +4722,215 @@ module in order to reach the toggle at all.
   `EnableForCampaignBySlug`, `HasCampaignAddonRecord`
 - Tests: `internal/plugins/syncapi/addon_gate_test.go`,
   `internal/plugins/syncapi/reconcile_addon_enablement_test.go`
+
+## ADR-054: The sync API is a second door to the same rooms, and it checks the same locks
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** three read-only sweeps on 2026-09-12 (partial-update structs,
+visibility across subsystems, toggle truth), findings verified by hand.
+
+### Context
+
+Six features across three plugins have the same defect: the web route enforces
+a role and the `/api/v1` twin enforces only a permission tier.
+
+| Resource | Web | `/api/v1` |
+|---|---|---|
+| fog of war (read) | `RequireRole(RoleOwner)` | `RequirePermission(PermRead)` |
+| fog of war (write/reset) | Owner | `PermWrite` — a Scribe |
+| map layers incl. `gm` | role-checked | no filter at all |
+| marker/drawing/token delete | Owner | `PermWrite` — a Scribe |
+| Player Notes toggle | hides the panel | five routes, zero checks |
+| Notes toggle | hides the notebook | journal page + API open |
+
+The mechanism is one function. `RequireAuthOrAPIKey` synthesises an `APIKey`
+from a browser session with `permissionsForCampaignRole(role)` — Owner gets
+`[read, write, sync]`, Scribe `[read, write]`, Player `[read]` — and every
+syncapi route then checks a *permission*. Any resource whose web rule is finer
+than "can read" or "can write" loses that rule on the way through. A player's
+ordinary session therefore reads fog of war that the web refuses them. Nobody
+built this as a hole; the API was built as a second, coarser vocabulary and
+routes were added to it one at a time without asking what the web twin required.
+
+### Decision
+
+**1. The invariant, stated once.** For every resource reachable through
+`/api/v1`, the API route's authorisation is at least as strict as the web
+route's for the same action. The API is not a different product with its own
+rules; it is another door into the same rooms.
+
+**2. The mechanism: routes declare a role floor, not only a permission.** Where
+a web route says `RequireRole(RoleOwner)`, its syncapi twin says so too. The
+role comes from:
+- the session, for the synthetic key — it already carries the member's role;
+- **the key's creating user, resolved live**, for a real Bearer key. A key acts
+  with its creator's *current* standing, never more. Demoting the creator
+  narrows every key they made, which is the intended reading of "demote".
+
+This is chosen over a fourth permission tier (`PermGM`) precisely because of
+the operator's Foundry key: that key was created by the Owner, so under
+role-from-creator it keeps reading fog and layers **without being re-issued**.
+A new tier would have required every existing integration key to be re-minted
+before map sync worked again, which is an outage dressed as a security fix.
+Role-from-creator only ever *narrows* the synthetic-session path — the one that
+is actually leaking — and leaves every legitimate key exactly as it is.
+
+**3. The guard: a contract test pairs each syncapi route with its web twin.**
+Modelled on `wire_contract_test.go`. For each `(resource, verb)` exposed on both
+surfaces, it asserts the API's role floor is ≥ the web's. A route with no web
+twin must say so explicitly in the pairing table. This is the part that makes
+the fix permanent: the sweep found six; without the guard the seventh is
+whoever adds the next route.
+
+**4. Ordering.** Fog, layers and map writes are **held** until the Foundry
+key's creating user and permissions have been read from a live instance —
+the operator's map sync depends on that route, and role-from-creator is only
+safe if the creator is who we think. Everything else under this ADR proceeds.
+
+### Rejected
+
+- **Collapsing syncapi into the plugins' own handlers.** Right in the long run —
+  one handler, one lock — and wrong now: it is a rewrite on the scale of the
+  calendar, and the calendar is the lesson.
+- **A `PermGM` tier.** Expresses one distinction, breaks every existing key
+  (above).
+- **Treating the six as six tickets.** They are one habit — "gate what you can
+  see" — and one habit needs one guard.
+
+### VERIFY at build
+
+How a real key's `UserID` resolves to a campaign role today, and whether Scribes
+can mint keys. If they can, a Scribe-minted key acts as Scribe, which is correct
+and should be pinned by a test.
+
+---
+
+## ADR-055: Visibility stays per-subsystem; the read-path rule is the one thing they share
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** the 2026-09-12 visibility sweep across maps, notes, timeline,
+sessions, following the entity default-visibility fix (`3349269`).
+
+### Context
+
+Chronicle carries five visibility models because it carries five kinds of
+content:
+
+| Subsystem | Model |
+|---|---|
+| entities | `is_private` bool, plus `custom` mode with per-subject grants |
+| markers, drawings, timeline | `visibility` enum + `visibility_rules` allow/deny |
+| tokens | `is_hidden` |
+| notes | owner / `is_shared` / `shared_with` — starts most-private |
+| maps, sessions | none — shared by nature |
+
+The campaign `DefaultVisibility` setting is scoped to **entities** in its doc
+comment, in the settings copy (three times), and in the only code that reads
+it. The sweep found no creation-path inconsistency elsewhere: every marker,
+drawing, token and timeline path defaults to `"everyone"` identically, web and
+API alike. The obvious "fix" — make the campaign default reach everything — was
+considered and is the thing this ADR exists to refuse.
+
+What the sweep did find were four **read-path** leaks: a session page names
+linked entities without checking their privacy; fog of war and GM layers are
+listed to any player through the API; timeline `EventCount` still leaks the
+existence of events hidden by per-user rules.
+
+### Decision
+
+**1. The models stay separate.** A note is personal by nature; a marker on a
+shared map is public by nature; an entity is the thing a DM curates. They have
+different shapes because the content does. Unifying them is a rewrite, and the
+calendar is what a rewrite costs here.
+
+**2. The campaign default stays entity-only.** Recorded so nobody "fixes"
+markers or timelines to honour it. If a DM wants a hidden marker they hide the
+marker; that is one click on an object, not a campaign-wide policy.
+
+**3. The one rule every subsystem shares is on the read side:** *any query that
+returns content to a non-Owner filters by that subsystem's own visibility
+model, server-side, so hidden content is absent — not greyed, not counted, not
+named, not ordered around.* This was already the repo's stated principle. It
+now has an ADR number so a leak can cite what it violates.
+
+**4. The four leaks are fixed under rule 3**, each with its own model, none by
+inventing a shared one. Session entity names and the timeline count go now;
+fog and layers wait on ADR-054 §4.
+
+### Rejected
+
+- **A campaign-wide visibility default for everything.** Rejected above.
+- **"Private" as a creator-only visibility mode** for entities. The setting
+  promised it; the code never did; see ADR-056 for why the promise goes
+  rather than the code arriving.
+
+---
+
+## ADR-056: A toggle says what it does — code where the label is a promise, copy where the label is a name
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** the 2026-09-12 toggle-truth sweep over 14 addon toggles and 3
+settings switches, every gate verdict confirmed by reading the route.
+
+### Context
+
+Two toggles were found wrong on 2026-09-11 in two different ways: Sync API
+promised to cut off access and cut off nothing (**overpromised**); Sessions was
+assumed dead and gated exactly one dashboard block while its real routes sat
+under Calendar (**misnamed**). The sweep then found the same two shapes across
+the rest of the catalogue, plus a third defect that is neither: **8 of 14
+addons show "Campaign extension." as their entire description on the page
+where an owner decides whether to enable them** — the real descriptions exist
+in `builtinAddons` and never reach the screen because `PluginHubAddon` has no
+`Description` field.
+
+Every one of these needed the same question answered before it could be fixed:
+is this a bug in the gate, or a bug in the words?
+
+### Decision
+
+**The test.** *If an owner would flip this believing it protects something or
+cuts something off, the gate must be real — code. If the label merely points
+at the wrong thing, the label moves — copy.* A control that lies about
+protection is worse than no control, because the owner stops worrying.
+
+Applied:
+
+| Toggle | Verdict | Fix |
+|---|---|---|
+| Sync API | overpromised | **code** — done, ADR-053 |
+| Player Notes | overpromised (five routes ungated) | **code** — gate the routes on the addon for every caller; it is a feature toggle, not an integration one, so no session short-circuit |
+| Notes (floating) | overpromised (journal page + API open) | **code**, lower priority — same treatment |
+| Sessions | misnamed | **copy** — describe the widget it gates; say Sessions lives under Calendar |
+| Co-DM "control the live world-state" | promises a capability no route can exercise | **copy** now — drop the clause while the calendar is mid-rebuild; **code** when V5 wires `RequireCapability` |
+| Calendar card | honest gate, undisclosed rebuild | **copy** — the disclosure every other surface already carries |
+| Media Gallery "upload" | names an action that is deliberately never gated | **copy** — drop the word |
+| Default Visibility "Private" | promises creator-only; delivers DM-only | **copy — remove the option.** See below |
+| 8 generic descriptions | information missing | **code** — thread `Description` through `PluginHubAddon` |
+| `settingsFeaturesTab` chain (~900 lines) | dead, drifted duplicate of the hub | **code** — delete |
+
+**On "Private".** Two options that do the same thing is one option with a lie
+attached. The honest alternatives were to build creator-only visibility or to
+remove the claim. Creator-only already exists — per entity, via `custom` mode
+with a user-subject grant — and a campaign-wide creator-only default would hide
+a DM's work from their own co-DM, which is a niche want dressed as a default.
+The option goes. Campaigns already storing `"private"` keep behaving exactly as
+they do today (it collapses to `is_private=true`); the constant stays for
+compatibility; the radio button does not. Removing a lying option beats
+building what it lied about.
+
+**Also under this ADR:** the partial-update contract test only recognises
+structs named `Update*Input`; every `Update*Request` is invisible to it, and
+the worst finding of the sweep (`tags.UpdateTagRequest`, a rename turns off
+DM-only) lives exactly there. The scanner widens to `*Request`. A guard that
+can see half the surface is a guard that certifies the other half by silence.
+
+### Rejected
+
+- **Fixing the descriptions by hand-editing the switch statement.** The text
+  already exists once, in `builtinAddons`; a second copy is the drift the sweep
+  found in the dead template.
+- **Gating Player Notes with the Sync-API-style session short-circuit.** That
+  short-circuit exists because `sync-api` is an *integration* toggle and
+  first-party widgets share its routes. Player Notes is a *feature* toggle; off
+  means off for everyone, or the toggle is decorative again.
