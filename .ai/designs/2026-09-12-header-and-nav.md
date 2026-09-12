@@ -91,3 +91,40 @@ same bar as Appearance.
 signed mockup (headless Chromium); the `reviewer` pass. H1–H3 additionally:
 the re-baseline table is linked in the PR and every D-number it keeps is
 cited at the code that implements it.
+
+
+## Addendum — operator rulings 2026-09-12 (round 2 of the renders)
+
+Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
+(Chrome page). Four rulings, in the operator's words, then what they change:
+
+1. "the chronicle in the top left … needs to be able to be changed by the
+   owner as well" → the brand in the **sidebar header** (logo + name) is
+   Owner-editable **in place**: pencil on hover opens the name as an input,
+   Enter saves through `UpdateBranding` (40-char cap unchanged), Esc
+   cancels; click the logo to change it. D13's in-place editing moves from
+   the header to the sidebar header. The Appearance field stays as the
+   fallback.
+2. "Wouldn't it be better to have campaigns in the navbar, vs the header?"
+   → **one way to switch, in the nav.** The switcher folds into the sidebar
+   brand (menu: current ✓, others, All campaigns = the old list page, New).
+   The header picker (`app.templ:1190-1217`) and the sidebar "Campaigns"
+   link both retire. **D16's brand card in the header is superseded**; the
+   header's left slot shows the current path instead (see direction C).
+3. "Journal, NPCs, Armory, Characters, etc should be in an apps drawer,
+   kinda like how the parent categories work" → **N1 (new slice): Apps
+   drawer.** Zone 2 becomes Dashboard · Apps ▸ · Categories ▸ · My
+   Characters. Apps opens the same slide-over the categories use (Back row,
+   then the addon shortcuts in owner order). The sidebar editor edits drawer
+   items inside the drawer (reorder, hide) over the same unified `items`
+   model — no second model. This supersedes N0's "no structural redesign".
+4. "the ability to just have a page customized for the header, like if they
+   wanted an image" → **H3 becomes its own Customize → Header page**: brand
+   (name, logo), background (solid / gradient / animated gradient / image
+   still-or-animated ≤1.5 MB with scrim / sky-deferred), widget list, one
+   staged save. Today's Top Bar Style + Topbar Content cards fold into it.
+
+**Open (operator picks):** how the current page is shown — A rail-and-tint,
+B sliding marker (200 ms, jumps under reduced motion), C echo in the header
+(the freed left slot reads the path), or a mix. N0's hover-glow verify still
+stands; the glow itself is no longer sacred if the pick replaces it.

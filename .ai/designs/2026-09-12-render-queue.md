@@ -14,7 +14,13 @@ what a Player sees (no icon). Working files were in this session's scratchpad
 (`glance/*.dc.html`, `canvas.json`) — ephemeral; re-extract from the artifact
 if they are gone. **Unblocks ADR-057 slices 3–4.** Slices 1–2 never needed it.
 
-**Editors and chrome — DRAWN 2026-09-12, awaiting the operator's look.**
+**Editors and chrome — ROUND 2 drawn 2026-09-12, awaiting picks.**
+Round 1 "looked good" with four rulings and two open questions (below);
+round 2 is on the same canvas. **Open picks:** (1) permissions editor —
+Option A (in the edit page, restyled to the form's density) or Option B
+(the widget's existing slide-in card opened from the glance icon; would
+amend ADR-057's "editing lives in edit mode"); (2) how the current page is
+shown — A rail-and-tint, B sliding marker, C echo in the header, or a mix.
 Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 Two pages. *Permissions:* Owner editing (three modes, role / member / group
 rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank

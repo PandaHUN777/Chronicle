@@ -4940,7 +4940,7 @@ can see half the surface is a guard that certifies the other half by silence.
 
 ## ADR-057: One visibility glance, shown to those who can change it, edited only in edit mode
 
-**Date:** 2026-09-12 · **Status:** Accepted; render signed by the operator 2026-09-12 ·
+**Date:** 2026-09-12 · **Status:** Accepted; render signed by the operator 2026-09-12 · **Pending amendment (2026-09-12 round 2):** the operator asked to see the editor either inside the full edit page or as a slide-out from the glance icon; if the slide-out is picked, "editing lives in edit mode" becomes "editing opens from the icon, Owner only" — the widget's existing right-edge card, only the trigger moves.
 **Context:** operator ask ("a basic nice looking icon that the owner/scribes/
 co-owners see, that tells them who has access at a glance, maybe with a hover
 over key, and clicking edit is where you should see the permissions — which
