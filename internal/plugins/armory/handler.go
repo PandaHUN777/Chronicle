@@ -72,7 +72,13 @@ func (h *Handler) Index(c echo.Context) error {
 	}
 
 	userID := auth.GetUserID(c)
-	cards, total, err := h.svc.ListItems(c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), userID, opts)
+	// VisibilityRole() promotes a DM-granted co-DM to Owner for visibility
+	// purposes (operator ruling, .ai/todo.md 2026-09-12: the co-DM promotion
+	// crosses plugin lines) — same promotion every entity path already
+	// applies, so a co-DM sees dm_only/custom-restricted armory items too.
+	// This is a SEEING change only: Purchase and CanUserActAsBuyer stay on
+	// the raw MemberRole because those gate an economic/edit action.
+	cards, total, err := h.svc.ListItems(c.Request().Context(), cc.Campaign.ID, cc.VisibilityRole(), userID, opts)
 	if err != nil {
 		return apperror.NewInternal(err)
 	}
@@ -109,7 +115,9 @@ func (h *Handler) CountAPI(c echo.Context) error {
 	}
 
 	userID := auth.GetUserID(c)
-	count, err := h.svc.CountItems(c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), userID)
+	// See the matching comment in Index: co-DMs are promoted for visibility
+	// so this badge count agrees with what ListItems actually shows them.
+	count, err := h.svc.CountItems(c.Request().Context(), cc.Campaign.ID, cc.VisibilityRole(), userID)
 	if err != nil {
 		return apperror.NewInternal(err)
 	}

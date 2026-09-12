@@ -3003,7 +3003,15 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		cards, err := npcHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, int(bctx.CC.MemberRole), "", limit)
+		// Promoted role, not the raw one: a co-DM must see in this
+		// embedded NPC block exactly what they see in the full
+		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
+		// system-assigned, so Chronicle honours it everywhere). The
+		// handlers themselves were fixed in the same change; this call
+		// site supplies the role as a PARAMETER, so it would have kept
+		// narrowing a co-DM to Player and the two surfaces would have
+		// disagreed about the same content on the same page.
+		cards, err := npcHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
 		}
@@ -3017,7 +3025,15 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		cards, err := armoryHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, int(bctx.CC.MemberRole), "", limit)
+		// Promoted role, not the raw one: a co-DM must see in this
+		// embedded armory block exactly what they see in the full
+		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
+		// system-assigned, so Chronicle honours it everywhere). The
+		// handlers themselves were fixed in the same change; this call
+		// site supplies the role as a PARAMETER, so it would have kept
+		// narrowing a co-DM to Player and the two surfaces would have
+		// disagreed about the same content on the same page.
+		cards, err := armoryHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
 		}

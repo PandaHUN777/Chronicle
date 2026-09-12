@@ -73,13 +73,22 @@ func (h *Handler) requireTimelineInCampaign(c echo.Context, timelineID, campaign
 }
 
 // effectiveRole returns the role to use for content filtering. When
-// "view as player" mode is active, owners see content as a player would.
+// "view as player" mode is active, owners see content as a player would —
+// that branch MUST win over the promotion below: an Owner (co-DM or not)
+// deliberately previewing the player experience needs the actual player
+// view, not their own promoted-for-visibility role.
+//
+// Outside preview mode, a DM-granted co-DM is promoted to Owner for
+// visibility via cc.VisibilityRole() (operator ruling, .ai/todo.md
+// 2026-09-12: the co-DM promotion crosses plugin lines) — the same
+// promotion every entity path already applies, so a co-DM sees dm_only
+// timeline events too.
 func effectiveRole(c echo.Context, cc *campaigns.CampaignContext) int {
 	ctx := c.Request().Context()
 	if layouts.IsViewingAsPlayer(ctx) {
 		return int(campaigns.RolePlayer)
 	}
-	return int(cc.MemberRole)
+	return cc.VisibilityRole()
 }
 
 // Index lists all timelines for a campaign.
