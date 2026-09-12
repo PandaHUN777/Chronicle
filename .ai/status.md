@@ -31,6 +31,49 @@ order and standing rules: `.ai/designs/2026-09-12-build-order.md`** — start
 with P-1 (permissions glance + slide-out), Sonnet `go-dev` + `reviewer`, one
 PR per slice, nothing merges until the demolition deploy is confirmed.
 
+### ADR-057 slice 3 — one visibilityGlance component, seven copies replaced (2026-09-12)
+
+Working-tree change (no commit/PR from this pass — see the branch's own PR
+for review status). Replaced all seven hand-rolled globe/lock/shield copies
+the census in `.ai/designs/2026-09-12-permissions-indicator.md` found with
+one `visibilityGlance` templ component (`entities/visibility_glance.templ`):
+`visibility_badge.templ` (header) and `entity_card.templ` (card) are now thin
+calls to it; `show.templ`'s `blockDetails` and child-entity-list, and
+`category_dashboard.templ`'s table row and tree node, call it directly. The
+DM-team gate (`VisibilityRole() >= RoleScribe`) lives INSIDE the component —
+not at call sites — fixing two defects at once: three of the seven had no
+gate at all (shown to Players), and all seven gated on raw `MemberRole` (no
+co-DM ever saw one). Colour is tokens only (`var(--color-accent)` /
+`var(--color-fg-muted)`); every hard-coded `#0d9488` is gone from the
+entities plugin, and the amber "private" colour vocabulary on the category
+table row is gone with it.
+
+**Deleted per ADR-057 decision 5** (editing lives in edit mode only):
+`blockPermissions` + its `"permissions"` block registration,
+`EnsurePermissionsBlockInDefaults` (service method + interface method — its
+one caller in `internal/app/routes.go` had ALSO already been removed,
+independently, by the time this landed — see that file's boot-reconciler
+comment), and every generated/preset `row-perm` row
+(`model.go`'s `DefaultLayout`/`CharacterLayout`,
+`layout_preset_service.go`'s `permissionsRow()` + its 3 call sites). A layout
+already stored in the database with a `row-perm` row still renders — minus
+the block — because `RenderBlock` already drops an unregistered block type
+silently; pinned by `TestStoredRowPermRendersWithoutPermissionsBlock` rather
+than a migration (Chronicle's migrations are append-only/schema-only).
+
+Guard: `visibility_glance_guard_test.go` scans the entities plugin's own
+`.templ` sources (not the whole tree — `static/js/widgets/db_explorer.js:22`
+carries the same `#0d9488` hex as an unrelated calendar swatch) for the hex,
+for `fa-shield-halved` outside `visibility_glance.templ`, and for a literal
+`data-visibility-badge="..."` attribute outside it. New tests
+(`visibility_glance_render_test.go`) render the REAL call sites (not a
+fixture) and were red-first verified against a temporarily-reintroduced
+raw-`MemberRole` gate and a temporarily-reintroduced "no gate" state before
+being restored to green.
+
+Not built this pass (separate slices per the design doc): slice 4's hover
+popover, and the icon-click edit trigger from the ADR-057 amendment.
+
 ### ADR-054 task #6 — the six loaded-but-uncocked partial-update guns, fixed (2026-09-12)
 
 Follow-up to the sweep below, same day, same branch. The four "Loaded, no

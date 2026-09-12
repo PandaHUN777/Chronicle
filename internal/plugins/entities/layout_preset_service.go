@@ -240,7 +240,6 @@ func wideContentLayout() EntityTypeLayout {
 					},
 				},
 			},
-			permissionsRow(),
 		},
 	}
 }
@@ -269,25 +268,6 @@ func sidebarLeftLayout() EntityTypeLayout {
 							{ID: "blk-entry", Type: "entry"},
 						},
 					},
-				},
-			},
-			permissionsRow(),
-		},
-	}
-}
-
-// permissionsRow returns a full-width row with a single permissions
-// block. Shared by every preset so freshly seeded entity types include
-// the per-entity sharing UI by default.
-func permissionsRow() TemplateRow {
-	return TemplateRow{
-		ID: "row-perm",
-		Columns: []TemplateColumn{
-			{
-				ID:    "col-perm",
-				Width: 12,
-				Blocks: []TemplateBlock{
-					{ID: "blk-perm", Type: "permissions"},
 				},
 			},
 		},
@@ -337,7 +317,6 @@ func compactProfileLayout() EntityTypeLayout {
 					},
 				},
 			},
-			permissionsRow(),
 		},
 	}
 }

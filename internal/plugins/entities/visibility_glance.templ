@@ -1,0 +1,65 @@
+// visibility_glance.templ renders the single shared visibility indicator for
+// the entities plugin (ADR-057 slice 3): one globe/lock/shield glyph beside
+// content only the DM team can act on. It replaces seven independent
+// hand-rolled copies of the same three-glyph vocabulary that had drifted —
+// three of the seven had no role gate at all (Players saw them), and every
+// one of the seven gated on raw MemberRole, so a DM-granted co-DM (Player +
+// IsDmGranted) never saw any of them either. See
+// .ai/designs/2026-09-12-permissions-indicator.md, "Census correction".
+package entities
+
+import "github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
+
+// visibilityGlanceVisible is the single gate predicate (ADR-057 decision 2):
+// the DM team — Owner, Scribe, and any co-DM promoted by VisibilityRole() —
+// sees the glance; a Player or anonymous visitor gets no element at all, not
+// a greyed one. A badge saying "custom" on something a Player *can* see would
+// itself leak that others can't (ADR-055 rule 3).
+//
+// Exposed as a function rather than inlined only in the templ block below so
+// the category-dashboard table view — which must keep its "Visibility" <th>
+// column in sync with whether the glance renders inside each row's <td> —
+// uses this exact decision instead of a second, independently-drifting copy
+// of it. That is not "the gate living at the call site": both places read
+// the one predicate.
+func visibilityGlanceVisible(cc *campaigns.CampaignContext) bool {
+	return cc != nil && cc.VisibilityRole() >= int(campaigns.RoleScribe)
+}
+
+// visibilityGlance is the one indicator: globe (everyone) / lock (dm_only) /
+// shield (custom). Colour comes from tokens (ADR-057 decision 3): shield uses
+// var(--color-accent), globe and lock use var(--color-fg-muted) — the one
+// hard-coded teal hex the seven prior copies shared is gone.
+//
+// ev carries the tag-widening safety contract (C-PERM-W1-TAG-GRANTS): when a
+// tag grant exposes an otherwise-hidden entity, the amber corner dot and the
+// tooltip naming the tag must appear — a tag must never silently expose
+// content. Pass ev when the caller has already computed it (today, only the
+// show-page header); pass nil everywhere else and the glance still renders
+// the entity's *configured* state correctly, it just can't report a tag
+// widening it was never given.
+templ visibilityGlance(cc *campaigns.CampaignContext, entity *Entity, ev *EffectiveVisibility) {
+	if visibilityGlanceVisible(cc) {
+		{{ state := baseVisibilityState(entity) }}
+		{{ widened := ev != nil && ev.WidenedByTags }}
+		<span
+			class="relative inline-flex items-center ml-1.5 shrink-0"
+			title={ visibilityGlanceTooltip(cc, entity, ev) }
+			data-visibility-badge={ state }
+			if widened {
+				data-tag-widened="true"
+			}
+		>
+			if state == VisStateCustom {
+				<i class="fa-solid fa-shield-halved text-[11px]" style="color: var(--color-accent);"></i>
+			} else if state == VisStateDMOnly {
+				<i class="fa-solid fa-lock text-[11px]" style="color: var(--color-fg-muted);"></i>
+			} else {
+				<i class="fa-solid fa-globe text-[11px]" style="color: var(--color-fg-muted);"></i>
+			}
+			if widened {
+				<span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 ring-1 ring-surface" aria-hidden="true"></span>
+			}
+		</span>
+	}
+}

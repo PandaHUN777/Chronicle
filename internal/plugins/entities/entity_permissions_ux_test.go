@@ -20,7 +20,19 @@ import (
 
 func renderEntityCard(t *testing.T, entity *Entity, role campaigns.Role) string {
 	t.Helper()
-	cc := &campaigns.CampaignContext{Campaign: &campaigns.Campaign{ID: "camp-1", Name: "Test"}, MemberRole: role}
+	return renderEntityCardOnCampaign(t, entity, role, false)
+}
+
+// renderEntityCardOnCampaign renders a card on a campaign whose IsPublic is
+// set explicitly. The glance's "everyone" wording depends on it — a logged-out
+// reader can open pages of a public campaign and nothing at all of a private
+// one — so a helper that hard-coded one of the two would let the other rot.
+func renderEntityCardOnCampaign(t *testing.T, entity *Entity, role campaigns.Role, isPublic bool) string {
+	t.Helper()
+	cc := &campaigns.CampaignContext{
+		Campaign:   &campaigns.Campaign{ID: "camp-1", Name: "Test", IsPublic: isPublic},
+		MemberRole: role,
+	}
 	var buf bytes.Buffer
 	if err := EntityCard(entity, cc).Render(context.Background(), &buf); err != nil {
 		t.Fatalf("render card: %v", err)
@@ -29,6 +41,18 @@ func renderEntityCard(t *testing.T, entity *Entity, role campaigns.Role) string 
 }
 
 // Part 1 — each visibility state renders its distinct badge for Scribe+.
+// ADR-057 slice 3 unified this card badge with the six other hand-rolled
+// copies into the shared visibilityGlance component, which also unified their
+// tooltip wording: the card used to say "Everyone — visible to all campaign
+// members" while the header said "Public — visible to everyone, including
+// logged-out visitors" for the identical state.
+//
+// Consolidating onto the header's wording was wrong and was corrected: that
+// sentence is only true on a PUBLIC campaign, since a logged-out reader
+// cannot open any page of a private one. The fixture below builds a campaign
+// with IsPublic unset, so the expected fragment is the members-only wording.
+// The public branch is pinned separately, both directions, by
+// TestEffectiveVisibilityTooltip_VisitorsOnlyWhenCampaignIsPublic.
 func TestEntityCard_VisibilityBadge_States(t *testing.T) {
 	cases := []struct {
 		name       string
@@ -42,7 +66,7 @@ func TestEntityCard_VisibilityBadge_States(t *testing.T) {
 			entity:     &Entity{ID: "e1", Name: "Town", Visibility: VisibilityDefault, IsPrivate: false},
 			wantBadge:  `data-visibility-badge="everyone"`,
 			wantIcon:   "fa-globe",
-			wantTitleX: "Everyone",
+			wantTitleX: "everyone in this campaign",
 		},
 		{
 			name:       "dm_only",
@@ -166,4 +190,23 @@ func lineageSnippet(html string) string {
 		end = len(html)
 	}
 	return html[i:end]
+}
+
+// TestEntityCard_EveryoneBadge_MentionsVisitorsOnlyOnAPublicCampaign is the
+// render-level twin of the tooltip unit test: it proves the campaign's
+// publicness actually reaches the glance through the component's call chain,
+// not merely that the helper branches correctly. Without this, threading
+// could be dropped at the templ call site and the unit test would stay green.
+func TestEntityCard_EveryoneBadge_MentionsVisitorsOnlyOnAPublicCampaign(t *testing.T) {
+	ent := &Entity{ID: "e1", Name: "Town", Visibility: VisibilityDefault, IsPrivate: false}
+
+	private := renderEntityCardOnCampaign(t, ent, campaigns.RoleScribe, false)
+	if strings.Contains(private, "logged-out visitors") {
+		t.Errorf("a private campaign's card must not claim strangers can read the page; got %q", private)
+	}
+
+	public := renderEntityCardOnCampaign(t, ent, campaigns.RoleScribe, true)
+	if !strings.Contains(public, "logged-out visitors") {
+		t.Errorf("a public campaign's card must warn that strangers can read the page; got %q", public)
+	}
 }

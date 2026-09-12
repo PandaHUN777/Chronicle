@@ -28,26 +28,26 @@ func indexOf(ss []string, want string) int {
 	return -1
 }
 
-// TestDefaultLayout_IncludesEntityNotesBeforePermissions pins the item-7 fix:
-// new entity types must carry the Player Notes block, positioned above the
-// admin permissions strip.
-func TestDefaultLayout_IncludesEntityNotesBeforePermissions(t *testing.T) {
+// TestDefaultLayout_IncludesEntityNotes pins the item-7 fix: new entity types
+// must carry the Player Notes block. It used to also assert a trailing
+// permissions block; ADR-057 decision 5 removed that from the generated
+// default layout (visibility editing moved into edit mode only), so that half
+// of the old assertion is gone — this is no longer testing a permissions
+// position, just that entity_notes is present.
+func TestDefaultLayout_IncludesEntityNotes(t *testing.T) {
 	order := blockTypeOrder(DefaultLayout())
-	notes, perm := indexOf(order, "entity_notes"), indexOf(order, "permissions")
-	if notes < 0 {
+	if indexOf(order, "entity_notes") < 0 {
 		t.Fatalf("DefaultLayout must include an entity_notes block, got %v", order)
 	}
-	if perm < 0 {
-		t.Fatalf("DefaultLayout must still include a permissions block, got %v", order)
-	}
-	if notes > perm {
-		t.Errorf("entity_notes (%d) should come before permissions (%d): %v", notes, perm, order)
+	if indexOf(order, "permissions") >= 0 {
+		t.Errorf("DefaultLayout must not auto-append a permissions block (ADR-057 decision 5), got %v", order)
 	}
 }
 
 // TestCharacterLayout_IncludesEntityNotes pins that PC types get Player Notes
 // too, without disturbing the character_surface-first invariant that
-// ensure_pc_type_test.go relies on.
+// ensure_pc_type_test.go relies on. Also no longer carries a permissions
+// block (ADR-057 decision 5).
 func TestCharacterLayout_IncludesEntityNotes(t *testing.T) {
 	l := CharacterLayout()
 	order := blockTypeOrder(l)
@@ -57,9 +57,8 @@ func TestCharacterLayout_IncludesEntityNotes(t *testing.T) {
 	if l.Rows[0].Columns[0].Blocks[0].Type != "character_surface" {
 		t.Errorf("character_surface must remain the first block, got %v", order)
 	}
-	notes, perm := indexOf(order, "entity_notes"), indexOf(order, "permissions")
-	if notes > perm {
-		t.Errorf("entity_notes (%d) should come before permissions (%d): %v", notes, perm, order)
+	if indexOf(order, "permissions") >= 0 {
+		t.Errorf("CharacterLayout must not auto-append a permissions block (ADR-057 decision 5), got %v", order)
 	}
 }
 
