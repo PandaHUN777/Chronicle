@@ -26,6 +26,24 @@ at the bottom goes away; Players see nothing.
 - `internal/plugins/campaigns/model.go:248-263` — `VisibilityRole()`.
 - `internal/plugins/entities/service.go:2340-2375` — `CheckEntityAccess`.
 
+## P-1 status: slices 1-2 SHIPPED and reviewed (2026-09-12)
+
+Commits on `claude/determined-davinci-5ut5f5`: `e5b9155b` (slice 1),
+`c59cf778` (slice 2), then the review follow-ups `b5993038` (widget) and
+`e7003a2a` (the promotion widened to eight more sites). A 27-agent
+adversarial review over five lenses found 11 findings; 8 survived two
+independent refuters, 3 were refuted and dropped. Everything confirmed is
+fixed except the cross-plugin question booked in `.ai/todo.md`.
+
+**The lesson slice 3 must inherit:** ADR-057 said "every `CheckEntityAccess`
+caller" and listed nine. The tree has twelve, and the same visibility rule is
+reached through four paths that do not carry that name (`GetChildren`,
+`filterByTargetVisibility`, `GetFilteredGraphData`,
+`ListRecentForDashboard`). An enumeration grepped from one function name is
+not a census of a rule. Slice 3's own census was corrected the same way
+(below: seven icon copies, not four) — before writing it off as complete,
+grep for the BEHAVIOUR and state which spellings were searched.
+
 ## Census correction (2026-09-12, measured during build, Opus lead)
 
 ADR-057 counted **four** implementations. A fresh grep for the teal shield
