@@ -49,7 +49,7 @@ func zoneHandler(roster []string, blocks []AvailabilityBlock, accountZones map[s
 		},
 	}
 	return &Handler{
-		svc:          NewSessionService(repo, nil),
+		svc:          NewSessionService(repo, nil, nil),
 		memberLister: &stubMemberLister{members: members},
 		userDir:      &zoneUserDir{byUser: accountZones},
 	}
@@ -142,7 +142,7 @@ func TestCampaignMemberZones_OneReadPerRoster(t *testing.T) {
 		{UserID: "u3", DisplayName: "C", Role: campaigns.RolePlayer},
 	}
 	h := &Handler{
-		svc:          NewSessionService(repo, nil),
+		svc:          NewSessionService(repo, nil, nil),
 		memberLister: &stubMemberLister{members: members},
 		userDir:      &zoneUserDir{},
 	}

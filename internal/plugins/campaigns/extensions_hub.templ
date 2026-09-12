@@ -156,7 +156,7 @@ templ extensionsHubCard(cc *CampaignContext, addon PluginHubAddon, csrfToken str
 						</span>
 					}
 				</div>
-				<p class="text-xs text-fg-muted mt-0.5">{ pluginDescription(addon.Slug) }</p>
+				<p class="text-xs text-fg-muted mt-0.5">{ addon.Description }</p>
 			</div>
 			@extensionsHubToggle(cc, addon, csrfToken)
 		</div>

@@ -278,6 +278,9 @@ func (r *addonRepository) ListForCampaign(ctx context.Context, campaignID string
 			return nil, fmt.Errorf("scanning campaign addon: %w", err)
 		}
 		ca.CampaignID = campaignID
+		if desc != nil {
+			ca.AddonDescription = *desc
+		}
 		if enabledAt.Valid {
 			ca.EnabledAt = enabledAt.Time
 		}

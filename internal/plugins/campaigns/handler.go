@@ -100,9 +100,13 @@ type AuditLogger interface {
 // `ListForPluginHub` is already the operator-facing catalog; carrying the
 // capability flags here keeps a single source of truth.
 type PluginHubAddon struct {
-	AddonID        int
-	Slug           string
-	Name           string
+	AddonID int
+	Slug    string
+	Name    string
+	// Description is the addon's canonical one-line blurb (ADR-056: sourced
+	// from the addons service's single builtinAddons copy, not re-derived or
+	// hand-maintained per render site — see pluginDescription's removal).
+	Description    string
 	Icon           string
 	Category       string
 	Enabled        bool
@@ -113,7 +117,7 @@ type PluginHubAddon struct {
 	// extension settings/onboarding page). NeedsSetup is true when that page has
 	// outstanding, actionable checks for this campaign — the card shows a "Setup"
 	// nudge until the owner completes or dismisses it.
-	HasSetup  bool
+	HasSetup   bool
 	NeedsSetup bool
 }
 
@@ -156,17 +160,17 @@ type SystemLister interface {
 // Handler handles HTTP requests for campaign operations. Handlers are thin:
 // bind request, call service, render response. No business logic lives here.
 type Handler struct {
-	service       CampaignService
-	groupSvc      GroupService
-	entityLister  EntityTypeLister
-	layoutFetcher EntityTypeLayoutFetcher
-	recentLister  RecentEntityLister
-	auditLogger   AuditLogger
-	addonLister       AddonLister
+	service            CampaignService
+	groupSvc           GroupService
+	entityLister       EntityTypeLister
+	layoutFetcher      EntityTypeLayoutFetcher
+	recentLister       RecentEntityLister
+	auditLogger        AuditLogger
+	addonLister        AddonLister
 	systemAddonEnabler SystemAddonEnabler
-	mediaUploader     MediaUploader
-	smtpChecker       SMTPChecker
-	systemLister      SystemLister
+	mediaUploader      MediaUploader
+	smtpChecker        SMTPChecker
+	systemLister       SystemLister
 	// extraSettingsTabs holds factory functions other plugins
 	// contribute via RegisterSettingsTab (see settings_tabs.go).
 	// Each factory is invoked per-request with the live
