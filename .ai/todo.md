@@ -15,7 +15,24 @@
   Worth pairing with a check that the run's name is the workflow's `name:` —
   a run labelled with the FILE PATH is the tell that it never compiled.
 
-- **OPERATOR RULING NEEDED — does the co-DM promotion cross plugin lines?**
+- **RULED 2026-09-12 by the operator: YES, the co-DM promotion crosses plugin
+  lines.** In their words: "I'd think the codm would have essentially the same
+  access as the dm/owner (keep in mind that title is determined by the
+  system)." The co-DM flag is system-assigned, not a label a member types, so
+  it is an identity Chronicle grants deliberately and must honour everywhere.
+  Armory, NPCs and timeline therefore pass `cc.VisibilityRole()` like every
+  entity path already does. Timeline must keep its view-as-player branch:
+  previewing as a player still returns RolePlayer, and only the non-preview
+  branch promotes.
+  **"Essentially" is doing real work and is NOT read as full ownership.** The
+  operator has already drawn that line once, on the Foundry key: "the owner is
+  always the one that would/could create that. I could see the Co-DM being able
+  to refresh it as a troubleshooting step." So this ruling is SEEING, not
+  owning. Unchanged and still raw-role: armory's `Purchase` and
+  `CanUserActAsBuyer`, which read CanEdit and are economic actions rather than
+  visibility. If the operator wants those too, that is a second ruling.
+
+- **(superseded) The original question, kept for the reasoning:**
   ADR-057 slice 1 promotes a DM-granted member to Owner *for visibility* on
   entity paths. An adversarial review of the shipped fix (2026-09-12) showed
   the same raw-role pattern in plugins whose content is NOT entities. The
