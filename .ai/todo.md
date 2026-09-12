@@ -1,5 +1,33 @@
 # Chronicle Backlog
 
+## Booked 2026-09-12 from the operator's answers (read before the sections below)
+
+- [ ] **Fog / GM layers / map-write API parity (ADR-054 §4) — UNBLOCKED.** The
+  operator confirms the Foundry API key was created by the Owner account, so
+  role-from-creator is safe. Ship the three fixes as ONE PR with the ADR-054
+  contract test that pairs each `/api/v1` route with its web twin. Plan:
+  `.ai/designs/2026-09-12-security-plan.md` §S7.
+- [ ] **API keys: a Co-DM may refresh (rotate) the key as a troubleshooting
+  step; every key action by Owner or Co-DM is logged.** Operator, 2026-09-12 —
+  "I'd write that down in the to do vs things we are doing now." Not now.
+- [ ] **Plugin-isolation guard: allow `internal/plugins/addons/service.go`.**
+  `builtinAddons` is the table that names every plugin slug by design; the
+  guard reads any edited line there as a new cross-plugin reference, so every
+  future description edit will trip it. The remedy is a one-line allowlist
+  entry with a citing comment — a CI change, so a human applies it. Then
+  restore the Calendar card's rebuild disclosure (ADR-056), reverted in
+  `9a243138` to keep the branch pushable.
+- [ ] **Calendar — the operator's vision, restated 2026-09-12:** the calendar
+  is a widget; there is also a dashboard showing every calendar the viewer
+  has permission to see, switching between them in place without a page load,
+  everything permission-checked server-side. **This is [HUB-1], signed
+  2026-08-10** (`Cordinator/decisions/2026-08-10-operator-answers-hub-eip-realtime-sky.md`)
+  — no new decision; recorded so the rebuild plan cites it. Design on a canvas
+  when the calendar's turn comes, after the operator has played without one.
+- [ ] **ADR-055 §4 overstates:** the timeline `EventCount` rules-delta was not
+  built. Booked in the security plan §S6; amend the ADR when it is.
+
+
 <!-- ====================================================================== -->
 <!-- Category: DYNAMIC                                                        -->
 <!-- Purpose: Single source of truth for what needs to be done, priorities,    -->

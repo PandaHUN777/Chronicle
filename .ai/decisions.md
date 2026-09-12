@@ -4799,7 +4799,10 @@ safe if the creator is who we think. Everything else under this ADR proceeds.
 
 ### VERIFY at build
 
-How a real key's `UserID` resolves to a campaign role today, and whether Scribes
+**2026-09-12, later the same day — operator confirms the Foundry API key was
+created by the Owner account.** §4's hold is lifted; the three held fixes ship
+as one PR with the contract test. Still to verify at build:
+how a real key's `UserID` resolves to a campaign role today, and whether Scribes
 can mint keys. If they can, a Scribe-minted key acts as Scribe, which is correct
 and should be pinned by a test.
 
