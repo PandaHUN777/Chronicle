@@ -21,8 +21,10 @@ Option A (in the edit page, restyled to the form's density) or Option B
 (the widget's existing slide-in card opened from the glance icon) —
 **PICKED B, 2026-09-12; ADR-057 amended.** (2) how the current page is
 shown — A rail-and-tint, B sliding marker, C echo in the header, or a mix
-— **recommended A + C** (row lights; header slot reads the path, which the
-drawers make necessary); awaiting the operator's nod.
+— **recommended A + C**; operator leans C + A and asked for three more,
+drawn round 3: D traced ring (theirs), E icon fills, F folder tab. Still
+open. Also drawn round 3: the campaign switcher as a right-edge panel with
+search and filters (ruled, see the header-and-nav addendum item 5).
 Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 Two pages. *Permissions:* Owner editing (three modes, role / member / group
 rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank

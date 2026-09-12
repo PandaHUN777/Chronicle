@@ -2,6 +2,15 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **Calendar V5 timing (operator, 2026-09-12): not now.** The operator is at
+  half the weekly usage across projects and is wary of the calendar's size.
+  Sequence when it starts: (1) a Sonnet research pass on the open-source
+  bases the operator asked to build on, read-only, one table; (2) a Fable
+  pass on decisions only, no renders unless asked; (3) Sonnet executors on
+  slices. HUB-1 (one dashboard over every calendar the viewer may see,
+  switching without a reload) stands as the vision. Nothing in chrome,
+  permissions or security waits on it.
+
 - [ ] **Fog / GM layers / map-write API parity (ADR-054 §4) — UNBLOCKED.** The
   operator confirms the Foundry API key was created by the Owner account, so
   role-from-creator is safe. Ship the three fixes as ONE PR with the ADR-054

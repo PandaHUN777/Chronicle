@@ -131,3 +131,20 @@ A + C.** The row lights in the sidebar; the header slot reads the path,
 because inside a drawer the sidebar cannot show the leaf page. B adds
 motion with nowhere to glide once drawers exist. N0's hover-glow verify still
 stands; the glow itself is no longer sacred if the pick replaces it.
+
+5. (round 3) "Can the campaign selector actually be a slide out from the
+   right side … a search bar and filters inside of it?" → **yes, ruled.**
+   Clicking the brand opens the same right-edge card the permissions widget
+   ships (420px, 280ms, backdrop): search box, role chips (All / Owner /
+   Scribe / Player with counts), Active / Archived, current campaign first
+   then by last played, New at the foot, Manage = the old list page. Search
+   and filters render only past a handful of campaigns. This replaces the
+   dropdown drawn in round 2. Reuse the card's shell; do not build a second
+   slide-in mechanism.
+
+**Where-am-I, round 3:** the operator leans C + A and asked for three more:
+D traced ring (their idea: on click a 2px line runs the button's perimeter,
+direction random, ~350ms, then settles into the lit row; reduced motion =
+no trace), E the icon fills (ripple from the icon, icon stays solid), F
+folder tab (the active row takes the page colour and joins it at the edge).
+All drawn with C's header path alongside. **Still open.**
