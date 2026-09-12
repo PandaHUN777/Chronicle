@@ -126,5 +126,8 @@ Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 
 **Open (operator picks):** how the current page is shown — A rail-and-tint,
 B sliding marker (200 ms, jumps under reduced motion), C echo in the header
-(the freed left slot reads the path), or a mix. N0's hover-glow verify still
+(the freed left slot reads the path), or a mix. **Lead's recommendation:
+A + C.** The row lights in the sidebar; the header slot reads the path,
+because inside a drawer the sidebar cannot show the leaf page. B adds
+motion with nowhere to glide once drawers exist. N0's hover-glow verify still
 stands; the glow itself is no longer sacred if the pick replaces it.

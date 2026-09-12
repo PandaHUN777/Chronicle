@@ -4940,7 +4940,7 @@ can see half the surface is a guard that certifies the other half by silence.
 
 ## ADR-057: One visibility glance, shown to those who can change it, edited only in edit mode
 
-**Date:** 2026-09-12 · **Status:** Accepted; render signed by the operator 2026-09-12 · **Pending amendment (2026-09-12 round 2):** the operator asked to see the editor either inside the full edit page or as a slide-out from the glance icon; if the slide-out is picked, "editing lives in edit mode" becomes "editing opens from the icon, Owner only" — the widget's existing right-edge card, only the trigger moves.
+**Date:** 2026-09-12 · **Status:** Accepted; render signed by the operator 2026-09-12 · **AMENDED 2026-09-12 (operator picked Option B):** editing opens from the glance icon — click, Owner only — as the widget's existing right-edge slide-in card (`permissions.js` default layout, 420px, 280ms, backdrop). Hover stays the read-only key; the edit form's inline mount (`form.templ` `data-layout="inline"`) retires once the icon trigger ships. Optional continuity: the icon pulses once as the card enters and the card header repeats the shield — CSS only, inside the motion budget. A hover-opened editor was considered and rejected: hover already means "tell me", and an editor that dismisses on mouse drift loses toggles.
 **Context:** operator ask ("a basic nice looking icon that the owner/scribes/
 co-owners see, that tells them who has access at a glance, maybe with a hover
 over key, and clicking edit is where you should see the permissions — which
