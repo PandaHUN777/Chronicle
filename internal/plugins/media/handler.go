@@ -19,10 +19,20 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// MemberChecker verifies campaign membership without importing the full
-// campaigns service. Implemented via an adapter in app/routes.go.
+// MemberChecker verifies campaign membership and role without importing the
+// full campaigns service. Implemented via an adapter in app/routes.go.
 type MemberChecker interface {
 	IsCampaignMember(campaignID, userID string) bool
+
+	// MemberRole returns the caller's membership role in campaignID as an
+	// int on campaigns.Role's own scale (RoleNone=0, RolePlayer=1,
+	// RoleScribe=2, RoleOwner=3), or RoleNone if the user is not a member.
+	// Used to gate campaign-scoped media writes (Upload) at the same
+	// Scribe+ threshold every other campaign media write route already
+	// enforces (routes.go: CampaignDeleteMedia is Owner, the media-picker
+	// list and entity image endpoints are Scribe) — finding 1 of
+	// .ai/designs/2026-09-12-security-audit-findings.md.
+	MemberRole(campaignID, userID string) int
 }
 
 // SecurityEventLogger records security events for the admin security dashboard.
@@ -75,6 +85,29 @@ func (h *Handler) Upload(c echo.Context) error {
 	userID := auth.GetUserID(c)
 	if userID == "" {
 		return apperror.NewUnauthorized("authentication required")
+	}
+
+	// Authorize the write BEFORE touching the file: campaign_id is caller-
+	// supplied form data, and until this check existed nothing verified the
+	// caller belonged to that campaign at all — any authenticated user who
+	// knew a campaign UUID could write into its media space, and the dedup
+	// short-circuit in mediaService.Upload (FindByContentHash) would hand
+	// back an EXISTING file's id/signed URL for that campaign on a byte
+	// match (finding 1, .ai/designs/2026-09-12-security-audit-findings.md).
+	// Scribe+ matches every other campaign-scoped media write route: the
+	// picker list and entity image endpoints require Scribe, and
+	// CampaignDeleteMedia requires Owner. A blank campaign_id (avatars,
+	// backdrops — routed through /account/avatar and /campaigns/:id/backdrop
+	// respectively, never this endpoint today) stays unscoped, as before;
+	// this gate only applies once the caller names a campaign.
+	if campaignID := c.FormValue("campaign_id"); campaignID != "" {
+		if h.memberChecker == nil || h.memberChecker.MemberRole(campaignID, userID) < int(campaigns.RoleScribe) {
+			slog.Warn("media upload: rejected, insufficient campaign role",
+				slog.String("user_id", userID),
+				slog.String("campaign_id", campaignID),
+			)
+			return apperror.NewForbidden("insufficient permissions to upload media to this campaign")
+		}
 	}
 
 	file, err := c.FormFile("file")

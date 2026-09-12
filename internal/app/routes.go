@@ -1114,6 +1114,17 @@ func (a *mediaMemberCheckerAdapter) IsCampaignMember(campaignID, userID string) 
 	return err == nil && member != nil
 }
 
+// MemberRole returns the caller's membership role in the campaign, or
+// campaigns.RoleNone if they are not a member (including "campaign doesn't
+// exist" and any other lookup error — fail closed, never guess a role).
+func (a *mediaMemberCheckerAdapter) MemberRole(campaignID, userID string) int {
+	member, err := a.svc.GetMember(context.Background(), campaignID, userID)
+	if err != nil || member == nil {
+		return int(campaigns.RoleNone)
+	}
+	return int(member.Role)
+}
+
 // storageLimiterAdapter wraps settings.SettingsService to implement the
 // media.StorageLimiter interface without creating a circular import.
 type storageLimiterAdapter struct {
@@ -2598,6 +2609,9 @@ func (a *App) RegisterRoutes() {
 	if urlSigner != nil {
 		mediaAPIHandler.SetURLSigner(urlSigner)
 	}
+	// Needed to resolve the caller's role for ListMedia's Scribe+ gate
+	// (finding 3, .ai/designs/2026-09-12-security-audit-findings.md).
+	mediaAPIHandler.SetCampaignService(campaignService)
 
 	// Sync mapping handler for Foundry VTT bidirectional sync.
 	// Reuses the sync mapping service created earlier for the owner dashboard.
@@ -2620,8 +2634,13 @@ func (a *App) RegisterRoutes() {
 	}
 
 	// NPC plugin: gallery/hub view for revealed character entities.
+	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
+	// adapter wired into sessions above — so the NPC gallery's Player/
+	// anonymous view is narrowed by the entities plugin's own canonical
+	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
+	// .ai/designs/2026-09-12-security-audit-findings.md).
 	npcRepo := npcs.NewNPCRepository(a.DB)
-	npcSvc := npcs.NewNPCService(npcRepo, &npcEntityTypeFinderAdapter{svc: entityService})
+	npcSvc := npcs.NewNPCService(npcRepo, &npcEntityTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	npcHandler := npcs.NewHandler(npcSvc)
 	npcHandler.SetVisibilityToggler(&npcVisibilityTogglerAdapter{svc: entityService})
 	npcs.RegisterRoutes(e, npcHandler, campaignService, authService, addonService)
@@ -2631,8 +2650,13 @@ func (a *App) RegisterRoutes() {
 	entityHandler.SetNPCSectionProvider(npcHandler)
 
 	// Armory plugin: gallery/hub view for item-category entities.
+	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
+	// adapter wired into sessions above — so the Armory gallery's Player/
+	// anonymous view is narrowed by the entities plugin's own canonical
+	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
+	// .ai/designs/2026-09-12-security-audit-findings.md).
 	armoryRepo := armory.NewArmoryRepository(a.DB)
-	armorySvc := armory.NewArmoryService(armoryRepo, &armoryItemTypeFinderAdapter{svc: entityService})
+	armorySvc := armory.NewArmoryService(armoryRepo, &armoryItemTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	armoryHandler := armory.NewHandler(armorySvc)
 
 	// Instance service: named inventory collections per campaign.

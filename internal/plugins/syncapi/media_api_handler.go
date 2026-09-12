@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
+	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 	"github.com/keyxmakerx/chronicle/internal/plugins/media"
 )
 
@@ -18,9 +19,10 @@ import (
 // External clients (Foundry VTT, custom scripts) use these endpoints to
 // list, upload, and delete campaign media files via API key authentication.
 type MediaAPIHandler struct {
-	syncSvc  SyncAPIService
-	mediaSvc media.MediaService
-	signer   *media.URLSigner
+	syncSvc     SyncAPIService
+	mediaSvc    media.MediaService
+	signer      *media.URLSigner
+	campaignSvc campaigns.CampaignService
 }
 
 // NewMediaAPIHandler creates a new media API handler.
@@ -35,6 +37,43 @@ func NewMediaAPIHandler(syncSvc SyncAPIService, mediaSvc media.MediaService) *Me
 // API responses. Called during wiring in app/routes.go.
 func (h *MediaAPIHandler) SetURLSigner(signer *media.URLSigner) {
 	h.signer = signer
+}
+
+// SetCampaignService wires campaign membership lookups, needed to resolve
+// the caller's role for ListMedia's visibility gate (finding 3,
+// .ai/designs/2026-09-12-security-audit-findings.md). Called during wiring
+// in app/routes.go.
+func (h *MediaAPIHandler) SetCampaignService(svc campaigns.CampaignService) {
+	h.campaignSvc = svc
+}
+
+// resolveRole returns the caller's effective campaign role for ListMedia's
+// visibility gate. This intentionally mirrors only the ROLE half of
+// APIHandler.resolveRole (api_handler.go) — not its key-owner-degraded
+// signal, which is orthogonal to what a caller may read and isn't needed
+// here:
+//   - A session-authed caller (synthetic key, ID == synthKeySessionID) gets
+//     their live campaign membership role.
+//   - A real stored Bearer key always resolves to Owner (keys are strictly
+//     Owner-minted; see APIHandler.resolveRole's doc comment for the full
+//     rationale). Every existing integration (Foundry included) authenticates
+//     this way, so this gate never affects it.
+//
+// Returns campaigns.RoleNone if no campaign service is wired or no key is
+// present — fails closed into the "must filter" branch, never open.
+func (h *MediaAPIHandler) resolveRole(c echo.Context) int {
+	key := GetAPIKey(c)
+	if key == nil || h.campaignSvc == nil {
+		return int(campaigns.RoleNone)
+	}
+	if key.ID == synthKeySessionID {
+		member, err := h.campaignSvc.GetMember(c.Request().Context(), key.CampaignID, key.UserID)
+		if err != nil {
+			return int(campaigns.RoleNone)
+		}
+		return int(member.Role)
+	}
+	return int(campaigns.RoleOwner)
 }
 
 // apiMediaFileResponse is the API-safe representation of a media file.
@@ -88,6 +127,17 @@ func (h *MediaAPIHandler) toAPIResponse(file *media.MediaFile) apiMediaFileRespo
 
 // ListMedia returns paginated media files for the campaign.
 // GET /api/v1/campaigns/:id/media?page=1&per_page=20
+//
+// Gated at Scribe+ (in addition to the route's RequirePermission(PermRead)):
+// this endpoint has no entity-visibility filter to apply — media_files
+// carries no reference to the entity it illustrates, so there is no cheap
+// "only what this caller can see" query (finding 3's structural note,
+// .ai/designs/2026-09-12-security-audit-findings.md). Below Scribe it
+// returns an empty page rather than every row's id, filename and a signed
+// URL. This mirrors the threshold the web app already uses for bulk
+// campaign media access (media/routes.go: the picker list and campaign
+// media browser are both Scribe+/Owner) — a Player has never had a "list
+// all campaign media" surface, in the app or here.
 func (h *MediaAPIHandler) ListMedia(c echo.Context) error {
 	campaignID := c.Param("id")
 	ctx := c.Request().Context()
@@ -99,6 +149,15 @@ func (h *MediaAPIHandler) ListMedia(c echo.Context) error {
 	}
 	if perPage < 1 || perPage > 100 {
 		perPage = 20
+	}
+
+	if h.resolveRole(c) < int(campaigns.RoleScribe) {
+		return c.JSON(http.StatusOK, map[string]any{
+			"data":     []apiMediaFileResponse{},
+			"total":    0,
+			"page":     page,
+			"per_page": perPage,
+		})
 	}
 
 	files, total, err := h.mediaSvc.ListCampaignMedia(ctx, campaignID, page, perPage)

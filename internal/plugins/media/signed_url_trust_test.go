@@ -32,9 +32,12 @@ import (
 )
 
 // stubMemberChecker is a tiny MemberChecker for tests. members[campaignID]
-// holds the set of userIDs that "are" members.
+// holds the set of userIDs that "are" members. roles optionally overrides
+// the role MemberRole reports for a given (campaignID, userID) pair — tests
+// that only care about membership (not role granularity) can leave it nil.
 type stubMemberChecker struct {
 	members map[string]map[string]bool
+	roles   map[string]map[string]int
 }
 
 func (s *stubMemberChecker) IsCampaignMember(campaignID, userID string) bool {
@@ -42,6 +45,23 @@ func (s *stubMemberChecker) IsCampaignMember(campaignID, userID string) bool {
 		return false
 	}
 	return s.members[campaignID][userID]
+}
+
+// MemberRole returns the stubbed role for (campaignID, userID). Falls back
+// to RolePlayer (1) for a plain member (a test only populated `members`)
+// and RoleNone (0) otherwise — the roles map is for tests that need a
+// specific tier (e.g. Scribe vs Player) rather than a bare yes/no.
+func (s *stubMemberChecker) MemberRole(campaignID, userID string) int {
+	if userID == "" {
+		return 0
+	}
+	if r, ok := s.roles[campaignID][userID]; ok {
+		return r
+	}
+	if s.members[campaignID][userID] {
+		return 1 // RolePlayer
+	}
+	return 0 // RoleNone
 }
 
 // boolPtr is a one-line helper because Go requires named storage for
