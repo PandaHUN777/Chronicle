@@ -1,5 +1,9 @@
 # Header customization and nav polish — build plan
 
+**APPROVED overall by the operator 2026-09-12 after six render rounds; the
+addenda below supersede the July layout where they conflict. Order of work:
+`2026-09-12-build-order.md`.**
+
 **Ruling:** the customizable header was designed in July, signed by the
 operator, and never built. **Revive it; do not redesign it.** The nav's
 structural work (one item model, one reorder mechanic — C-NAV-V3) shipped and

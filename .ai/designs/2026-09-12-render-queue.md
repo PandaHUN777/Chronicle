@@ -14,7 +14,8 @@ what a Player sees (no icon). Working files were in this session's scratchpad
 (`glance/*.dc.html`, `canvas.json`) — ephemeral; re-extract from the artifact
 if they are gone. **Unblocks ADR-057 slices 3–4.** Slices 1–2 never needed it.
 
-**Editors and chrome — ROUND 2 drawn 2026-09-12, awaiting picks.**
+**Editors and chrome — APPROVED overall by the operator 2026-09-12 (after
+round 6). Build order: `2026-09-12-build-order.md`.**
 Round 1 "looked good" with four rulings and two open questions (below);
 round 2 is on the same canvas. **Open picks:** (1) permissions editor —
 Option A (in the edit page, restyled to the form's density) or Option B

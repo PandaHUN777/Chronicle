@@ -20,6 +20,17 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### Chrome, permissions and Customize designs — APPROVED (2026-09-12)
+
+Six render rounds on one canvas
+(https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90);
+the operator approved overall. Rulings and specs: `.ai/designs/2026-09-12-
+header-and-nav.md` (addenda), ADR-057 as amended (permissions editing
+opens from the glance icon), `2026-09-12-permissions-indicator.md`. **Build
+order and standing rules: `.ai/designs/2026-09-12-build-order.md`** — start
+with P-1 (permissions glance + slide-out), Sonnet `go-dev` + `reviewer`, one
+PR per slice, nothing merges until the demolition deploy is confirmed.
+
 ### ADR-054 task #6 — the six loaded-but-uncocked partial-update guns, fixed (2026-09-12)
 
 Follow-up to the sweep below, same day, same branch. The four "Loaded, no
