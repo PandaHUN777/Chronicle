@@ -65,7 +65,7 @@ package) that was run against the unfixed code first.
 (`packages.*`, `entities.UpdateEntityTypeInput`, `campaigns.UpdateCampaignInput`,
 the three CALV5-salvage calendar inputs, etc.) — out of this task's named
 scope. `internal/plugins/sessions/`, `internal/widgets/entity_notes/` and
-`internal/plugins/campaigns/` were not touched (another agent's worktree).
+`internal/plugins/campaigns/` were changed by the parallel worktree agent (56ed8d91) and merged in 93de5c6a.
 `make verify` green.
 
 ### Three sweeps, three ADRs, and the "twenty unaudited structs" booking discharged (2026-09-12)
@@ -81,8 +81,8 @@ where the label is a promise, copy where it is a name; the "Private" default
 option is removed rather than built).
 
 **Live now, confirmed:** a Player's browser session reads fog of war through
-`/api/v1` (web requires Owner); session pages name linked private entities;
-Player Notes' five routes ignore the toggle. **Loaded, no caller yet:** a
+`/api/v1` (web requires Owner); session pages named linked private entities;
+Player Notes' five routes ignored the toggle — BOTH FIXED in 56ed8d91, merged 93de5c6a. **Loaded, no caller yet:** a
 position-only token update flips `IsHidden` to false; renaming a timeline wipes
 its per-user visibility rules (the handler's request struct has no field for
 them, so every call sends blank — and blank means everyone); renaming a DM-only

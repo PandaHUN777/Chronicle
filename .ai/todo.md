@@ -24,6 +24,15 @@
   2026-08-10** (`Cordinator/decisions/2026-08-10-operator-answers-hub-eip-realtime-sky.md`)
   — no new decision; recorded so the rebuild plan cites it. Design on a canvas
   when the calendar's turn comes, after the operator has played without one.
+- [ ] **Review follow-ups from 9a243138 (non-blocking):** (a) the partial-update
+  comments in `maps/drawing.go:152-159`, `syncapi/map_api_handler.go:~350` and
+  `timeline/model.go` narrate incidents that never fired — no caller hit those
+  paths; demote to the conditional as the drawing/layer comments already are.
+  (b) `sessions/service.go` `FilterEntitiesForViewer` fails closed on a nil
+  filter and nothing pins it — add the test before anyone "simplifies" it.
+  (c) `addons.RequireAddon` answers 303→HTML on the entity-notes JSON routes;
+  `entity_notes.js` would throw on the body. Same precedent as sessions; a
+  JSON-aware refusal is the right shape when someone is in there.
 - [ ] **ADR-055 §4 overstates:** the timeline `EventCount` rules-delta was not
   built. Booked in the security plan §S6; amend the ADR when it is.
 

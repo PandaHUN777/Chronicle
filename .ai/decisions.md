@@ -4881,7 +4881,7 @@ Two toggles were found wrong on 2026-09-11 in two different ways: Sync API
 promised to cut off access and cut off nothing (**overpromised**); Sessions was
 assumed dead and gated exactly one dashboard block while its real routes sat
 under Calendar (**misnamed**). The sweep then found the same two shapes across
-the rest of the catalogue, plus a third defect that is neither: **8 of 14
+the rest of the catalogue, plus a third defect that is neither: **7 of 14
 addons show "Campaign extension." as their entire description on the page
 where an owner decides whether to enable them** — the real descriptions exist
 in `builtinAddons` and never reach the screen because `PluginHubAddon` has no
