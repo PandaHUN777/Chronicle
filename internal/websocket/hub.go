@@ -168,6 +168,23 @@ func (h *Hub) Run() {
 					continue
 				}
 
+				// Per-user visibility_rules gate (S1). RequiresDM above
+				// only covers the binary dm_only case; a "specific"
+				// visibility marker/drawing isn't dm_only at all, so it
+				// needs its own allowed_users/denied_users check or it
+				// reaches everyone. DM-equivalent clients bypass this
+				// too, matching the HTTP list path (maps' ListMarkers /
+				// ListDrawings): Owners see every marker and drawing
+				// regardless of visibility_rules. Everyone else must
+				// clear messageAudienceAllows, which mirrors those same
+				// queries' SQL predicate — the two MUST stay in lockstep
+				// or a marker/drawing becomes more or less visible over
+				// the wire than the HTTP list shows, which is exactly
+				// the leak this gate exists to close.
+				if !permissions.CanSeeDmOnly(client.Role, client.IsDmGranted) && !messageAudienceAllows(msg, client.UserID) {
+					continue
+				}
+
 				select {
 				case client.send <- data:
 				default:
@@ -183,6 +200,35 @@ func (h *Hub) Run() {
 			h.mu.RUnlock()
 		}
 	}
+}
+
+// messageAudienceAllows reports whether userID is in msg's audience per
+// its AllowedUsers/DeniedUsers lists (S1). Callers must apply this only
+// to non-DM-equivalent clients — Owners/DM-granted users bypass it
+// entirely, same as the HTTP list path.
+//
+// Mirrors maps.VisibilityRules' SQL predicate byte-for-byte (repository.go's
+// ListMarkers, drawing_repository.go's ListDrawings): an explicit deny
+// always excludes; a non-empty AllowedUsers is a strict allowlist and only
+// its members pass; an empty (or absent, i.e. both lists nil) rule set
+// means "everyone" — deliberately duplicated here rather than imported
+// from the maps package, since this package is generic transport
+// infrastructure with no business importing a specific plugin's types.
+func messageAudienceAllows(msg *Message, userID string) bool {
+	for _, id := range msg.DeniedUsers {
+		if id == userID {
+			return false
+		}
+	}
+	if len(msg.AllowedUsers) == 0 {
+		return true
+	}
+	for _, id := range msg.AllowedUsers {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }
 
 // Broadcast sends a message to all clients in the specified campaign.

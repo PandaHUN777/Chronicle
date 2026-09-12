@@ -43,7 +43,7 @@ func (r *mockDrawingRepo) UpdateDrawing(ctx context.Context, d *Drawing) error {
 	return r.updateDrawingFn(ctx, d)
 }
 func (r *mockDrawingRepo) DeleteDrawing(context.Context, string) error { return nil }
-func (r *mockDrawingRepo) ListDrawings(context.Context, string, int) ([]Drawing, error) {
+func (r *mockDrawingRepo) ListDrawings(context.Context, string, int, string) ([]Drawing, error) {
 	return nil, nil
 }
 

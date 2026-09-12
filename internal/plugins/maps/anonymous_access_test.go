@@ -24,7 +24,9 @@ type guardAuthSvc struct{ auth.AuthService } // ValidateSession never called: an
 
 type guardAddonSvc struct{ addons.AddonService }
 
-func (guardAddonSvc) IsEnabledForCampaign(_ context.Context, _, _ string) (bool, error) { return true, nil }
+func (guardAddonSvc) IsEnabledForCampaign(_ context.Context, _, _ string) (bool, error) {
+	return true, nil
+}
 
 type guardCampaignSvc struct {
 	campaigns.CampaignService
@@ -54,7 +56,7 @@ type guardDrawingSvc struct {
 	DrawingService
 }
 
-func (guardDrawingSvc) ListDrawings(_ context.Context, _ string, _ int) ([]Drawing, error) {
+func (guardDrawingSvc) ListDrawings(_ context.Context, _ string, _ int, _ string) ([]Drawing, error) {
 	return []Drawing{}, nil
 }
 func (guardDrawingSvc) ListTokens(_ context.Context, _ string, _ int) ([]Token, error) {

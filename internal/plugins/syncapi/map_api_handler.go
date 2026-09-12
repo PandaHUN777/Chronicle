@@ -136,7 +136,17 @@ func (h *MapAPIHandler) ListDrawings(c echo.Context) error {
 		return err
 	}
 	role := h.resolveRole(c)
-	drawings, err := h.drawingSvc.ListDrawings(c.Request().Context(), m.ID, role)
+
+	// Resolve user ID from API key for per-player visibility_rules
+	// filtering (S1 — matches ListMarkers above; ListDrawings previously
+	// ignored caller identity entirely, so a drawing's rules had no
+	// effect over this API either).
+	userID := ""
+	if key := GetAPIKey(c); key != nil {
+		userID = key.UserID
+	}
+
+	drawings, err := h.drawingSvc.ListDrawings(c.Request().Context(), m.ID, role, userID)
 	if err != nil {
 		return apperror.NewInternal(fmt.Errorf("failed to list drawings"))
 	}

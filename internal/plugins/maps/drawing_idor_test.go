@@ -39,13 +39,15 @@ func (r *idorRepo) DeleteLayer(context.Context, string) error { r.mutated = true
 func (r *idorRepo) DeleteFog(context.Context, string) error   { r.mutated = true; return nil }
 
 // Unused-by-these-tests methods round out the interface.
-func (r *idorRepo) CreateDrawing(context.Context, *Drawing) error                { return nil }
-func (r *idorRepo) ListDrawings(context.Context, string, int) ([]Drawing, error) { return nil, nil }
-func (r *idorRepo) CreateToken(context.Context, *Token) error                    { return nil }
-func (r *idorRepo) ListTokens(context.Context, string, int) ([]Token, error)     { return nil, nil }
-func (r *idorRepo) CreateLayer(context.Context, *Layer) error                    { return nil }
-func (r *idorRepo) ListLayers(context.Context, string) ([]Layer, error)          { return nil, nil }
-func (r *idorRepo) CreateFog(context.Context, *FogRegion) error                  { return nil }
+func (r *idorRepo) CreateDrawing(context.Context, *Drawing) error { return nil }
+func (r *idorRepo) ListDrawings(context.Context, string, int, string) ([]Drawing, error) {
+	return nil, nil
+}
+func (r *idorRepo) CreateToken(context.Context, *Token) error                { return nil }
+func (r *idorRepo) ListTokens(context.Context, string, int) ([]Token, error) { return nil, nil }
+func (r *idorRepo) CreateLayer(context.Context, *Layer) error                { return nil }
+func (r *idorRepo) ListLayers(context.Context, string) ([]Layer, error)      { return nil, nil }
+func (r *idorRepo) CreateFog(context.Context, *FogRegion) error              { return nil }
 func (r *idorRepo) GetFog(_ context.Context, id string) (*FogRegion, error) {
 	return &FogRegion{ID: id, MapID: "map-B"}, nil
 }

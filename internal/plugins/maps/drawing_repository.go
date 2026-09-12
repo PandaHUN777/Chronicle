@@ -16,7 +16,10 @@ type DrawingRepository interface {
 	GetDrawing(ctx context.Context, id string) (*Drawing, error)
 	UpdateDrawing(ctx context.Context, d *Drawing) error
 	DeleteDrawing(ctx context.Context, id string) error
-	ListDrawings(ctx context.Context, mapID string, role int) ([]Drawing, error)
+	// ListDrawings filters by role AND userID (S1): a non-owner only sees
+	// drawings whose visibility_rules admit userID, matching ListMarkers'
+	// signature and semantics exactly.
+	ListDrawings(ctx context.Context, mapID string, role int, userID string) ([]Drawing, error)
 
 	// Token CRUD.
 	CreateToken(ctx context.Context, t *Token) error
@@ -58,11 +61,11 @@ func (r *drawingRepo) CreateDrawing(ctx context.Context, d *Drawing) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO map_drawings (id, map_id, layer_id, drawing_type, points,
 			stroke_color, stroke_width, fill_color, fill_alpha, text_content,
-			font_size, rotation, visibility, created_by, foundry_id)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			font_size, rotation, visibility, visibility_rules, created_by, foundry_id)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		d.ID, d.MapID, d.LayerID, d.DrawingType, d.Points,
 		d.StrokeColor, d.StrokeWidth, d.FillColor, d.FillAlpha, d.TextContent,
-		d.FontSize, d.Rotation, d.Visibility, d.CreatedBy, d.FoundryID,
+		d.FontSize, d.Rotation, d.Visibility, d.VisibilityRules, d.CreatedBy, d.FoundryID,
 	)
 	if err != nil {
 		return apperror.NewInternal(err)
@@ -71,17 +74,26 @@ func (r *drawingRepo) CreateDrawing(ctx context.Context, d *Drawing) error {
 }
 
 // GetDrawing retrieves a drawing by ID.
+//
+// Selects visibility_rules (S1) even though no CreateDrawingInput /
+// UpdateDrawingInput field can set it today: UpdateDrawing and
+// DeleteDrawing both load the row through this method before publishing
+// their WebSocket event (see drawing_service.go), so if this SELECT
+// omitted the column, every update/delete on a drawing that DOES carry
+// rules (set some other way) would publish with VisibilityRules=nil —
+// reopening the S1 leak from the read side even after the write side is
+// fixed.
 func (r *drawingRepo) GetDrawing(ctx context.Context, id string) (*Drawing, error) {
 	var d Drawing
 	err := r.db.QueryRowContext(ctx, `
 		SELECT id, map_id, layer_id, drawing_type, points, stroke_color,
 			stroke_width, fill_color, fill_alpha, text_content, font_size,
-			rotation, visibility, created_by, foundry_id, created_at, updated_at
+			rotation, visibility, visibility_rules, created_by, foundry_id, created_at, updated_at
 		FROM map_drawings WHERE id = ?`, id,
 	).Scan(
 		&d.ID, &d.MapID, &d.LayerID, &d.DrawingType, &d.Points,
 		&d.StrokeColor, &d.StrokeWidth, &d.FillColor, &d.FillAlpha,
-		&d.TextContent, &d.FontSize, &d.Rotation, &d.Visibility,
+		&d.TextContent, &d.FontSize, &d.Rotation, &d.Visibility, &d.VisibilityRules,
 		&d.CreatedBy, &d.FoundryID, &d.CreatedAt, &d.UpdatedAt,
 	)
 	if err == sql.ErrNoRows {
@@ -124,19 +136,72 @@ func (r *drawingRepo) DeleteDrawing(ctx context.Context, id string) error {
 	return nil
 }
 
-// ListDrawings returns all drawings for a map, filtered by role visibility.
-func (r *drawingRepo) ListDrawings(ctx context.Context, mapID string, role int) ([]Drawing, error) {
-	query := `
-		SELECT id, map_id, layer_id, drawing_type, points, stroke_color,
-			stroke_width, fill_color, fill_alpha, text_content, font_size,
-			rotation, visibility, created_by, foundry_id, created_at, updated_at
-		FROM map_drawings WHERE map_id = ?`
-	if !permissions.CanSeeDmOnly(role) { // Non-owners don't see dm_only drawings.
-		query += ` AND visibility != 'dm_only'`
-	}
-	query += ` ORDER BY created_at ASC`
+// drawingCols is the shared column list for GetDrawing/ListDrawings scans.
+const drawingCols = `id, map_id, layer_id, drawing_type, points, stroke_color,
+	stroke_width, fill_color, fill_alpha, text_content, font_size,
+	rotation, visibility, visibility_rules, created_by, foundry_id, created_at, updated_at`
 
-	rows, err := r.db.QueryContext(ctx, query, mapID)
+// scanDrawing scans one row using drawingCols' exact column order. Shared
+// by ListDrawings' two branches so the column list and the Scan targets
+// can't drift apart from each other.
+func scanDrawing(rows *sql.Rows) (Drawing, error) {
+	var d Drawing
+	err := rows.Scan(
+		&d.ID, &d.MapID, &d.LayerID, &d.DrawingType, &d.Points,
+		&d.StrokeColor, &d.StrokeWidth, &d.FillColor, &d.FillAlpha,
+		&d.TextContent, &d.FontSize, &d.Rotation, &d.Visibility, &d.VisibilityRules,
+		&d.CreatedBy, &d.FoundryID, &d.CreatedAt, &d.UpdatedAt,
+	)
+	return d, err
+}
+
+// ListDrawings returns all drawings for a map, filtered by role AND user
+// (S1). Owners see everything, matching ListMarkers' owner branch. Non-
+// owners see 'everyone'/'specific' drawings whose visibility_rules admit
+// userID — the identical predicate ListMarkers applies (repository.go),
+// so a marker and a drawing carrying the same rule are visible to exactly
+// the same people. This SQL is what drawing_repository.go's doc comment
+// and the S1 design promise "the drawing read filter matches the marker
+// one" against; if the two queries below and ListMarkers' ever diverge,
+// this comment is the tripwire.
+func (r *drawingRepo) ListDrawings(ctx context.Context, mapID string, role int, userID string) ([]Drawing, error) {
+	if permissions.CanSeeDmOnly(role) {
+		rows, err := r.db.QueryContext(ctx,
+			`SELECT `+drawingCols+`
+			 FROM map_drawings WHERE map_id = ?
+			 ORDER BY created_at ASC`, mapID)
+		if err != nil {
+			return nil, apperror.NewInternal(err)
+		}
+		defer rows.Close()
+
+		var drawings []Drawing
+		for rows.Next() {
+			d, err := scanDrawing(rows)
+			if err != nil {
+				return nil, apperror.NewInternal(err)
+			}
+			drawings = append(drawings, d)
+		}
+		return drawings, rows.Err()
+	}
+
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT `+drawingCols+`
+		 FROM map_drawings
+		 WHERE map_id = ?
+		   AND visibility != 'dm_only'
+		   AND (
+		     visibility_rules IS NULL
+		     OR (
+		       NOT JSON_CONTAINS(visibility_rules, JSON_QUOTE(?), '$.denied_users')
+		       AND (
+		         JSON_LENGTH(COALESCE(JSON_EXTRACT(visibility_rules, '$.allowed_users'), '[]')) = 0
+		         OR JSON_CONTAINS(visibility_rules, JSON_QUOTE(?), '$.allowed_users')
+		       )
+		     )
+		   )
+		 ORDER BY created_at ASC`, mapID, userID, userID)
 	if err != nil {
 		return nil, apperror.NewInternal(err)
 	}
@@ -144,19 +209,13 @@ func (r *drawingRepo) ListDrawings(ctx context.Context, mapID string, role int) 
 
 	var drawings []Drawing
 	for rows.Next() {
-		var d Drawing
-		err := rows.Scan(
-			&d.ID, &d.MapID, &d.LayerID, &d.DrawingType, &d.Points,
-			&d.StrokeColor, &d.StrokeWidth, &d.FillColor, &d.FillAlpha,
-			&d.TextContent, &d.FontSize, &d.Rotation, &d.Visibility,
-			&d.CreatedBy, &d.FoundryID, &d.CreatedAt, &d.UpdatedAt,
-		)
+		d, err := scanDrawing(rows)
 		if err != nil {
 			return nil, apperror.NewInternal(err)
 		}
 		drawings = append(drawings, d)
 	}
-	return drawings, nil
+	return drawings, rows.Err()
 }
 
 // --- Token ---

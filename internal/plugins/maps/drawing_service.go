@@ -44,7 +44,7 @@ type DrawingService interface {
 	// (audit-R2 Finding 2 — IDOR).
 	UpdateDrawing(ctx context.Context, id, mapID string, input UpdateDrawingInput) error
 	DeleteDrawing(ctx context.Context, id, mapID string, expectedUpdatedAt *time.Time) error
-	ListDrawings(ctx context.Context, mapID string, role int) ([]Drawing, error)
+	ListDrawings(ctx context.Context, mapID string, role int, userID string) ([]Drawing, error)
 
 	// Token CRUD.
 	CreateToken(ctx context.Context, input CreateTokenInput) (*Token, error)
@@ -238,9 +238,10 @@ func (s *drawingService) DeleteDrawing(ctx context.Context, id, mapID string, ex
 	return nil
 }
 
-// ListDrawings returns all drawings for a map, filtered by role.
-func (s *drawingService) ListDrawings(ctx context.Context, mapID string, role int) ([]Drawing, error) {
-	return s.repo.ListDrawings(ctx, mapID, role)
+// ListDrawings returns all drawings for a map, filtered by role and user
+// (S1 — matches ListMarkers).
+func (s *drawingService) ListDrawings(ctx context.Context, mapID string, role int, userID string) ([]Drawing, error) {
+	return s.repo.ListDrawings(ctx, mapID, role, userID)
 }
 
 // --- Token ---

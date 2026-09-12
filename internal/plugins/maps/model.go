@@ -29,6 +29,45 @@ func ParseVisibilityRules(raw *string) *VisibilityRules {
 	return &rules
 }
 
+// Allows reports whether userID may see content gated by these rules,
+// under the non-owner branch of a visibility check — Owners bypass
+// VisibilityRules entirely (see ListMarkers/ListDrawings) and never call
+// this. A nil receiver (no rules at all) always allows.
+//
+// Mirrors the SQL predicate in repository.go's ListMarkers and
+// drawing_repository.go's ListDrawings byte-for-byte, and is also the
+// spec the WebSocket hub's per-recipient gate follows (S1,
+// internal/websocket/hub.go's messageAudienceAllows) — duplicated there
+// rather than called from there, since that package must not import a
+// plugin's types, but the three MUST stay in lockstep or a marker/drawing
+// becomes visible over one channel and not another for no reason a user
+// could see.
+//
+// The default for a user named in NEITHER list depends on whether
+// AllowedUsers is in use: empty means "everyone except DeniedUsers"
+// (default-allow); non-empty is a strict allowlist that excludes anyone
+// not on it (default-deny). That asymmetry is the existing HTTP contract,
+// verified against ListMarkers' SQL, not introduced here.
+func (v *VisibilityRules) Allows(userID string) bool {
+	if v == nil {
+		return true
+	}
+	for _, id := range v.DeniedUsers {
+		if id == userID {
+			return false
+		}
+	}
+	if len(v.AllowedUsers) == 0 {
+		return true
+	}
+	for _, id := range v.AllowedUsers {
+		if id == userID {
+			return true
+		}
+	}
+	return false
+}
+
 // Map is an interactive map with a background image and positioned markers.
 type Map struct {
 	ID          string  `json:"id"`

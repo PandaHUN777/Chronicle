@@ -60,7 +60,9 @@ func (h *DrawingHandler) ListDrawings(c echo.Context) error {
 	}
 
 	role := cc.VisibilityRole()
-	drawings, err := h.drawingSvc.ListDrawings(c.Request().Context(), mapID, role)
+	// userID for per-player visibility_rules filtering (S1) — matches how
+	// the marker list endpoint resolves it (handler.go's ListMarkers).
+	drawings, err := h.drawingSvc.ListDrawings(c.Request().Context(), mapID, role, getUserID(c))
 	if err != nil {
 		return err
 	}

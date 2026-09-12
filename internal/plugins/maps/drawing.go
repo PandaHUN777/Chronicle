@@ -23,10 +23,20 @@ type Drawing struct {
 	FontSize    *int            `json:"font_size,omitempty"`
 	Rotation    float64         `json:"rotation"`
 	Visibility  string          `json:"visibility"` // everyone, dm_only
-	CreatedBy   *string         `json:"created_by,omitempty"`
-	FoundryID   *string         `json:"foundry_id,omitempty"`
-	CreatedAt   time.Time       `json:"created_at"`
-	UpdatedAt   time.Time       `json:"updated_at"`
+	// VisibilityRules mirrors Marker.VisibilityRules — per-player
+	// allow/deny overrides (S1). The map_drawings.visibility_rules
+	// column has existed since migration 002 (added alongside markers'
+	// in the same statement) but was never selected or enforced
+	// anywhere: a rule set on a drawing did nothing, not on the HTTP
+	// list and not over the WebSocket feed. ListDrawings now selects
+	// and enforces it (drawing_repository.go, matching ListMarkers'
+	// predicate) and the WS publisher now honors it too (routes.go's
+	// mapEventPublisherAdapter).
+	VisibilityRules *string   `json:"visibility_rules,omitempty"`
+	CreatedBy       *string   `json:"created_by,omitempty"`
+	FoundryID       *string   `json:"foundry_id,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
 }
 
 // CreateDrawingInput is the validated input for creating a drawing.

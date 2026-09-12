@@ -516,14 +516,14 @@ func (a *entityVisibilityFilterAdapter) FilterViewableEntityIDs(ctx context.Cont
 // CALV5-PLACEHOLDER: ten cross-plugin bridge adapters stood here, wiring the
 // calendar to the rest of Chronicle in both directions:
 //
-//   toward the calendar — timelineForCalendarAdapter, calendarSyncLinkAdapter,
-//   calendarEntityCreatorAdapter, calendarRSVPNotifierAdapter,
-//   calendarAvailabilityAdapter (member zones, exception dates, offered
-//   windows), calendarBenchScheduleAdapter, calendarOwnWeekAdapter;
+//	toward the calendar — timelineForCalendarAdapter, calendarSyncLinkAdapter,
+//	calendarEntityCreatorAdapter, calendarRSVPNotifierAdapter,
+//	calendarAvailabilityAdapter (member zones, exception dates, offered
+//	windows), calendarBenchScheduleAdapter, calendarOwnWeekAdapter;
 //
-//   away from it — calendarListerAdapter, calendarEventListerAdapter and
-//   calendarEraListerAdapter, which fed timeline its CalendarRef /
-//   CalendarEventRef / CalendarEra.
+//	away from it — calendarListerAdapter, calendarEventListerAdapter and
+//	calendarEraListerAdapter, which fed timeline its CalendarRef /
+//	CalendarEventRef / CalendarEra.
 //
 // The outward three are simply not wired now; timeline already treats those
 // interfaces as optional and nil-guards them (service.go's calEras returns
@@ -858,12 +858,25 @@ type mapEventPublisherAdapter struct {
 	bus ws.EventBus
 }
 
-// publishWithAudience wraps ws.NewMessage with the RequiresDM audience
-// flag derived from the source row. Pulled out so every map sub-resource
+// publishWithAudience wraps ws.NewMessage with the audience derived from
+// the source row: the binary RequiresDM (dm_only) flag, plus — for
+// markers and drawings, which carry per-user visibility_rules — the
+// explicit allowed/denied user sets. Pulled out so every map sub-resource
 // emit funnels the same way — one place to audit, not five.
-func (a *mapEventPublisherAdapter) publishWithAudience(msgType ws.MessageType, campaignID, resourceID string, payload any, dmOnly bool) {
+//
+// rules is nil for source kinds that don't carry per-user overrides
+// (tokens, fog); those pass dmOnly with rules=nil, same as before S1.
+// The hub (internal/websocket/hub.go) is what actually enforces this per
+// recipient — this method only COMPUTES the audience, per ADR-055 rule 3
+// applied to this channel: broadcast to everyone and hope the client
+// hides it, or send a redacted stub, are both the thing rule 3 forbids.
+func (a *mapEventPublisherAdapter) publishWithAudience(msgType ws.MessageType, campaignID, resourceID string, payload any, dmOnly bool, rules *maps.VisibilityRules) {
 	msg := ws.NewMessage(msgType, campaignID, resourceID, payload)
 	msg.RequiresDM = dmOnly
+	if rules != nil {
+		msg.AllowedUsers = rules.AllowedUsers
+		msg.DeniedUsers = rules.DeniedUsers
+	}
 	a.bus.Publish(msg)
 }
 
@@ -883,7 +896,7 @@ func (a *mapEventPublisherAdapter) PublishDrawingEvent(eventType string, campaig
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, drawing.ID, drawing, drawing.Visibility == "dm_only")
+	a.publishWithAudience(msgType, campaignID, drawing.ID, drawing, drawing.Visibility == "dm_only", maps.ParseVisibilityRules(drawing.VisibilityRules))
 }
 
 // PublishTokenEvent translates map token domain events into WebSocket messages.
@@ -904,7 +917,7 @@ func (a *mapEventPublisherAdapter) PublishTokenEvent(eventType string, campaignI
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, token.ID, token, token.IsHidden)
+	a.publishWithAudience(msgType, campaignID, token.ID, token, token.IsHidden, nil)
 }
 
 // PublishTokenPositionEvent broadcasts a token position update via WebSocket.
@@ -984,7 +997,7 @@ func (a *mapEventPublisherAdapter) PublishFogEvent(eventType string, campaignID,
 	if region != nil {
 		payload["region"] = region
 	}
-	a.publishWithAudience(msgType, campaignID, mapID, payload, true)
+	a.publishWithAudience(msgType, campaignID, mapID, payload, true, nil)
 }
 
 // PublishMarkerEvent translates map marker domain events into WebSocket messages.
@@ -1003,7 +1016,7 @@ func (a *mapEventPublisherAdapter) PublishMarkerEvent(eventType string, campaign
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, marker.ID, marker, marker.IsDMOnly())
+	a.publishWithAudience(msgType, campaignID, marker.ID, marker, marker.IsDMOnly(), maps.ParseVisibilityRules(marker.VisibilityRules))
 }
 
 // (foundryVTTBannerAdapter + GetFoundryModuleBanner removed in NW-2.2
@@ -1601,25 +1614,22 @@ func (a *App) RegisterRoutes() {
 	}()
 
 	// One-shot boot reconcilers for entity_types, run SERIALLY in a single
-	// goroutine. The permissions and player-notes backfills both read a full
-	// pre-backfill snapshot and then rewrite the whole layout_json per row, so
-	// running them as two uncoordinated goroutines let the second clobber the
-	// first's block on a type missing BOTH — a type would end up with only one
-	// of {permissions, entity_notes} until the next boot (#514 backfill
-	// lost-update race, coordinator verification). Chaining them serializes
-	// the writes: permissions completes before player-notes reads. The
+	// goroutine. The permissions-block backfill that used to lead this chain
+	// is gone: ADR-057 decision 5 removed the permissions block from the read
+	// page, so there is nothing to backfill into a layout any more. Its
+	// lesson is kept because the hazard is not — any two reconcilers that
+	// each read a full pre-backfill snapshot and then rewrite the whole
+	// layout_json per row will have the second clobber the first's block on a
+	// type missing BOTH, leaving that type with only one of them until the
+	// next boot (#514 backfill lost-update race). So a new layout_json
+	// reconciler joins THIS chain rather than starting its own goroutine. The
 	// gm_only field-flag sync runs last; it touches a different column
-	// (fields, not layout_json) so it can't clobber the layout backfills, but
-	// keeping all entity_types reconcilers in one ordered goroutine is the
-	// simplest guarantee. Each step is idempotent; a failure is logged and the
-	// chain continues so one bad step can't strand the others.
+	// (fields, not layout_json) so it cannot clobber the layout backfills,
+	// but keeping all entity_types reconcilers in one ordered goroutine is
+	// the simplest guarantee. Each step is idempotent; a failure is logged
+	// and the chain continues so one bad step can't strand the others.
 	go func() {
 		ctx := context.Background()
-		if n, err := entityService.EnsurePermissionsBlockInDefaults(ctx); err != nil {
-			slog.Warn("entity_types: permissions block backfill failed", slog.Any("error", err))
-		} else if n > 0 {
-			slog.Info("entity_types: permissions block backfill added to layouts", slog.Int("rows", n))
-		}
 
 		// Player Notes was only wired into new default layouts, so custom
 		// sub-categories created earlier never showed the block even with the
@@ -2446,7 +2456,6 @@ func (a *App) RegisterRoutes() {
 	// NOTE FOR V5: that public API is a SECOND calendar REST surface, separate
 	// from syncapi's. Both served Foundry and they overlapped. Rebuild one, not
 	// two — syncapi's is the newer and the one the module's contract documents.
-
 
 	// Bestiary plugin: community creature sharing with ratings, favorites, import.
 	bestiaryRepo := bestiary.NewBestiaryRepository(a.DB)
