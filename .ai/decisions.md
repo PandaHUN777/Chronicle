@@ -4934,3 +4934,87 @@ can see half the surface is a guard that certifies the other half by silence.
   short-circuit exists because `sync-api` is an *integration* toggle and
   first-party widgets share its routes. Player Notes is a *feature* toggle; off
   means off for everyone, or the toggle is decorative again.
+
+## ADR-057: One visibility glance, shown to those who can change it, edited only in edit mode
+
+**Date:** 2026-09-12 · **Status:** Accepted, build gated on a signed render ·
+**Context:** operator ask ("a basic nice looking icon that the owner/scribes/
+co-owners see, that tells them who has access at a glance, maybe with a hover
+over key, and clicking edit is where you should see the permissions — which
+currently show as a random icon that doesn't match theme at the bottom") plus
+the 2026-09-12 permissions research, every claim read from source.
+
+### Context
+
+There is not one visibility indicator; there are **four**, each its own
+implementation of the same three-glyph vocabulary (`fa-globe` / `fa-lock` /
+`fa-shield-halved`):
+
+| Where | File | Who sees it | Colour |
+|---|---|---|---|
+| Header, beside the name | `entities/visibility_badge.templ:10-32` | Scribe+ (raw `MemberRole`) | `#0d9488` hard-coded |
+| List-grid card | `entities/entity_card.templ:78-100` | Scribe+ | `#0d9488` hard-coded |
+| **"Details" card, bottom right** | `entities/show.templ:432-457` `blockDetails` | **everyone who can open the page — Players included** | `#0d9488` hard-coded |
+| "Permissions" row, last row of every page | `permissions.js` via `blockPermissions`, `show.templ:618-636`, auto-appended by `EnsurePermissionsBlockInDefaults` (`service.go:2653-2699`) | Owner only | theme tokens (the only one) |
+
+The third row is the operator's "random icon at the bottom": no role parameter
+at all, shown to Players, painted a colour no theme defines. The fourth is the
+editor, bolted onto the read page.
+
+Two defects were found alongside: **a Co-DM cannot open a DM-only entity.**
+`VisibilityRole()` promotes a DM-granted member to Owner for list filtering
+(`campaigns/model.go:248-263`) and its doc comment says that is the design —
+but every one of the nine `CheckEntityAccess` call sites passes raw
+`MemberRole` instead (`entities/handler.go:599,1714,1800,1866,2096,3171,3246,
+3486`; `syncapi/api_handler.go:374`). `BacklinksFragment` does both in one
+function, lines 3229 and 3246: the Co-DM sees the list and is 404'd on the
+target. No test covers it. And **a Scribe editing a DM-only entity is shown
+"Permissions · Everyone"**: the widget's `load()` fires a GET the Scribe cannot
+make (route is Owner-only), swallows the 403, and renders its init defaults
+(`permissions.js:47-48,170-174,607-666`). An actively wrong glance.
+
+### Decision
+
+1. **One component.** `visibilityGlance(state, viewer)` in the entities
+   plugin replaces all four. Same three glyphs — they are learned. The header
+   position (beside the name) is the one that stays; it is where the eye
+   already goes for the name and it is what the operator asked for.
+2. **Seen by the DM team, never by Players or visitors.** The gate is
+   `VisibilityRole() >= RoleScribe`, so a Co-DM sees it. A Player never does:
+   a badge saying "custom" on something they *can* see tells them others
+   cannot, which is evidence of hidden structure — ADR-055 rule 3 forbids
+   exactly that. The indicator is a tool for people who can change access,
+   not a label for people subject to it.
+3. **Colour from tokens.** `var(--color-accent)` for custom, `--color-fg-muted`
+   for everyone and DM-only. `#0d9488` is deleted from the tree; the guard is a
+   grep in the render-contract test.
+4. **Hover is a key, not a tooltip.** A popover, portalled to `<body>`, that
+   names who has access: "Everyone in the campaign" · "DM team only (Owner,
+   Scribes, co-DMs)" · for custom, the actual grants — role tiers, named
+   members, groups — plus the tag-widening line the existing tooltip already
+   builds (`visibility_glance.go:94-121`). Native `title=` goes.
+5. **Editing lives in edit mode only.** The auto-appended "Permissions" row
+   and its heal goroutine are removed from the read page. The edit form's
+   inline widget (`form.templ:281-296`) is the one editor. This is the half
+   of the ask that is a subtraction, and it is the bigger improvement.
+6. **The two defects are fixed under this ADR, first**, because they need no
+   design: every `CheckEntityAccess` caller passes `VisibilityRole()`; the
+   widget renders nothing on a failed load, never a default.
+7. **`public` as a grant subject is finished as its own later slice.**
+   Migration `000028` added it to the enum so an owner could reveal an entity
+   to logged-out visitors; the list filter honours it; `ValidSubjectType`
+   refuses to write it and `GetEffectivePermission` ignores it. Half-wired is
+   worse than absent. It gets wired, not deleted — after the glance ships.
+8. **No "the party" audience this pass.** Groups are manual and unseeded; a
+   `role:1` grant ("every Player") is the working equivalent. A seeded
+   "Party" group is booked as a nicety.
+9. **The build waits on a render the operator has signed.** Standing order.
+
+### Rejected
+
+- **Keeping four implementations and fixing the colour.** The colour is the
+  symptom; the fourth copy is the disease.
+- **A reduced indicator for Players** ("you can see this"). Any Player-facing
+  state is a leak of the other states.
+- **Merging with tag grants.** Tags widen visibility additively through a
+  separate table; the glance *reports* that in the popover and must not own it.
