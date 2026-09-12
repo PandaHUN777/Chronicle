@@ -1,7 +1,7 @@
 // visibility_rules_allows_test.go — pins VisibilityRules.Allows as the
 // canonical Go-language statement of the SQL predicate in repository.go's
 // ListMarkers and drawing_repository.go's ListDrawings (S1). Both the
-// WebSocket hub's messageAudienceAllows (internal/websocket/hub.go) and
+// WebSocket Message.AudienceAllows (internal/websocket/hub.go) and
 // this method must agree with the SQL; this test is what "verified
 // against the code, not assumed" means for the "what's the default for a
 // user named in neither list" question the S1 task asked to be settled.

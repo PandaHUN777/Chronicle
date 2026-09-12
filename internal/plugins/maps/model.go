@@ -37,7 +37,7 @@ func ParseVisibilityRules(raw *string) *VisibilityRules {
 // Mirrors the SQL predicate in repository.go's ListMarkers and
 // drawing_repository.go's ListDrawings byte-for-byte, and is also the
 // spec the WebSocket hub's per-recipient gate follows (S1,
-// internal/websocket/hub.go's messageAudienceAllows) — duplicated there
+// internal/websocket's Message.AudienceAllows) — duplicated there
 // rather than called from there, since that package must not import a
 // plugin's types, but the three MUST stay in lockstep or a marker/drawing
 // becomes visible over one channel and not another for no reason a user
