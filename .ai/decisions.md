@@ -5021,3 +5021,102 @@ make (route is Owner-only), swallows the 403, and renders its init defaults
   state is a leak of the other states.
 - **Merging with tag grants.** Tags widen visibility additively through a
   separate table; the glance *reports* that in the popover and must not own it.
+
+## ADR-058: A picture inherits the permissions of the pages that use it
+
+**Date:** 2026-09-12 · **Status:** Accepted; operator-ruled. Implementation in
+slices, see `.ai/designs/2026-09-12-security-audit-findings.md` for the audit
+this answers.
+
+### Context
+
+The 2026-09-12 audit found that `checkMediaAccess`
+(`internal/plugins/media/handler.go`) decides from: the file's campaign,
+whether that campaign is public, the signature pair, the caller's user id,
+campaign membership, and site-admin. Membership is ROLE-BLIND
+(`GetMember(...) != nil`). It never consults the visibility of the entity the
+file hangs off, because `media_files` carries no reference to one.
+
+So **any member of a campaign, of any role, can read any image in that
+campaign** — DM-only pages, custom-restricted pages, GM map layers. Three
+doors that handed out file ids wholesale were closed the same day
+(`61af48c5`, `901df82b`), but closing doors is not the same as locking the
+room: anyone who learns an id another way still reads the image.
+
+Two further facts shape the answer, and the second is the one that is easy to
+miss:
+
+1. **One file, many pages.** A picture can be referenced by several entities —
+   as the main image, as a cover, or inline in entry HTML.
+2. **Chronicle MERGES identical uploads.** `service.go:189` looks up
+   `FindByContentHash(ctx, campaignID, hash)` and reuses the existing row. So
+   two uploads of the same bytes become one file, and a file can end up shared
+   between pages nobody deliberately linked. The operator's question — "a
+   picture can be used multiple places?" — is what surfaced this.
+
+### Decision
+
+1. **A picture is readable if AT LEAST ONE page using it is visible to the
+   viewer.** Not "hidden if any page using it is hidden".
+   The strict rule is worse, not safer: a picture on both a public page and a
+   hidden one would break the public page with a dead image, and a dead image
+   where a picture obviously belongs is itself evidence that something is being
+   withheld — the exact shape ADR-055 rule 3 forbids. It is also futile: the
+   picture is already on screen on a page the viewer may open.
+2. **This protects the picture, not the fact of reuse.** Putting a hidden
+   page's artwork onto a visible page publishes that artwork, and no access
+   rule can undo it. That is true today; this decision makes it the explicit
+   reason rather than an accident. Hence 4 and 5.
+3. **Files no page references keep today's behaviour** — campaign membership
+   at the existing threshold. Avatars, campaign backdrops and freshly uploaded
+   files have no owning entity by construction, and failing them closed would
+   break the app.
+4. **The "where is this used" list becomes part of the permissions story.** It
+   exists (`FindReferences`) and is shown only in one Owner-only fragment. An
+   owner must be able to see, before publishing, what else a picture is on.
+5. **Merging across different permission levels is refused, and the author is
+   told.** A silent merge is how a secret map's artwork becomes reachable
+   months later with nobody deciding anything. Both halves were ruled by the
+   operator ("Yes please to both"): do not merge when the existing file's pages
+   and the new upload's destination do not agree, and say so when it happens.
+6. **A signed URL is bound to the viewer.** Today it is an HMAC over
+   `fileID:expires` only, valid an hour, so it is a bearer token: whoever holds
+   the link uses it. Binding the identity in means a copied link is inert for
+   anyone else. This does not replace 1 — a member can still mint their own —
+   it stops the link LEAVING.
+7. **A public campaign stops serving every file unsigned.** `allowUnsignedAccess`
+   returns true for any file whose campaign is public, so today the whole
+   internet can read every image in a public campaign, DM-only artwork
+   included. Unsigned anonymous access is narrowed to pictures used by pages an
+   anonymous viewer may actually see, which is decision 1 with `RoleNone`.
+
+### Consequences, including the unwelcome ones
+
+- **A lookup per image request.** Mitigated by caching the decision per
+  (file, viewer) — Chronicle already runs Redis — and by 3's cheap path for
+  unreferenced files. If the cache is unavailable the rule still applies; it
+  gets slower, not laxer.
+- **`FindReferences` is incomplete and must be fixed FIRST.**
+  `repository.go:444-456` unions `entities.image_path` and an `entry_html LIKE`
+  — it does NOT look at `cover_image_path`. A cover image would therefore look
+  unreferenced and fall through to decision 3, which is the whole rule leaking
+  through a missing column. This is not optional and is not a later slice.
+- **The `LIKE` on `entry_html` is a scan.** It is acceptable per-request only
+  behind the cache. If it proves too slow, the answer is an explicit
+  media-to-entity link table, not relaxing the rule.
+- **Someone will lose access to an image they can see today.** That is the
+  point. It is a behaviour change on a live system and belongs in release
+  notes, not in a silent deploy.
+
+### Rejected
+
+- **Adding an `entity_id` to `media_files`.** A single owner is wrong: one
+  file legitimately serves many pages, and a merge makes that common rather
+  than exceptional. A join table is the honest schema and is the fallback if
+  the query cost bites — deliberately not built first, since the rule can ship
+  without a migration.
+- **Relying on unguessable ids.** They are v4 UUIDs from crypto/rand, so
+  enumeration is not viable — but "you cannot guess it" is not an access
+  control, and every leak fixed today was a way of being handed one.
+- **Shortening the TTL alone.** It narrows the window and changes nothing
+  about who may read. Worth doing, not a substitute.
