@@ -35,9 +35,22 @@ import (
 // holds the set of userIDs that "are" members. roles optionally overrides
 // the role MemberRole reports for a given (campaignID, userID) pair — tests
 // that only care about membership (not role granularity) can leave it nil.
+// dmGranted optionally marks a (campaignID, userID) pair as co-DM/dm_only
+// granted — ADR-058's promotion source; tests that don't care leave it nil
+// (IsUserDmGranted then reports false for everyone, same as an unwired
+// campaign).
 type stubMemberChecker struct {
-	members map[string]map[string]bool
-	roles   map[string]map[string]int
+	members   map[string]map[string]bool
+	roles     map[string]map[string]int
+	dmGranted map[string]map[string]bool
+}
+
+// IsUserDmGranted reports the stubbed co-DM grant for (campaignID, userID).
+// Defaults to false (not granted) when dmGranted is nil or the pair is
+// absent — mirrors mediaMemberCheckerAdapter's fail-to-false-on-error
+// posture in production.
+func (s *stubMemberChecker) IsUserDmGranted(campaignID, userID string) bool {
+	return s.dmGranted[campaignID][userID]
 }
 
 func (s *stubMemberChecker) IsCampaignMember(campaignID, userID string) bool {
@@ -137,12 +150,18 @@ func publicMediaFile() *MediaFile {
 }
 
 // newTestHandler returns a Handler wired with a signer + member checker
-// for the access-control tests. Service is nil — checkMediaAccess
-// doesn't touch it. Members map can be customized per test.
+// for the access-control tests. Service is a no-references stub (ADR-058:
+// checkMediaAccess now always asks for a file's references before falling
+// back to plain membership, so every one of these pre-existing tests —
+// which are all decision-3 "no owning entity" scenarios — needs a
+// FindReferences that returns empty rather than nil, exactly like an
+// avatar or backdrop would). Members map can be customized per test.
 func newTestHandler(secret string, members map[string]map[string]bool) *Handler {
 	h := &Handler{
-		signer:        NewURLSigner(secret),
-		memberChecker: &stubMemberChecker{members: members},
+		signer:           NewURLSigner(secret),
+		memberChecker:    &stubMemberChecker{members: members},
+		service:          &fakeAccessMediaService{},
+		entityVisibility: &fakeEntityVisibilityFilter{},
 	}
 	return h
 }

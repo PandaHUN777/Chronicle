@@ -79,6 +79,26 @@
 - [ ] **API keys: a Co-DM may refresh (rotate) the key as a troubleshooting
   step; every key action by Owner or Co-DM is logged.** Operator, 2026-09-12 —
   "I'd write that down in the to do vs things we are doing now." Not now.
+- [ ] **ADR-058 decisions 4-7 — the remaining slices.** Decisions 1-3
+  (a media file inherits the visibility of the entity pages that reference
+  it, cover_image_path added to `FindReferences`, cached per file+viewer)
+  are done — see `.ai/status.md`'s 2026-09-12 entry. Still open, each its
+  own slice per the ADR: **4** surface `FindReferences`/"where is this used"
+  as part of the permissions story (an owner must see it before publishing,
+  not only in the Owner-only media-browser fragment); **5** refuse a
+  content-hash merge across differing permission levels and tell the
+  uploader why; **6** bind the signed media URL to the requesting viewer's
+  identity (today it's a bearer token: HMAC over `fileID:expires` only,
+  valid up to 1h, so a copied link works for anyone until it expires); **7**
+  narrow unsigned/anonymous access on a PUBLIC campaign to files an
+  anonymous viewer may actually see (`RoleNone` through the same decision-1
+  rule), instead of `allowUnsignedAccess` serving every file in a public
+  campaign to the whole internet. Also flagged, not fixed (out of scope for
+  1-3, may matter to a future slice): `maps.image_id` / `map_tokens.
+  image_path` are media references outside the `entities` table that
+  neither the old nor the new rule covers — a map background/token image
+  still relies on plain campaign membership regardless of any per-marker/
+  per-layer visibility on the map itself.
 - [ ] **Plugin-isolation guard: allow `internal/plugins/addons/service.go`.**
   `builtinAddons` is the table that names every plugin slug by design; the
   guard reads any edited line there as a new cross-plugin reference, so every

@@ -1125,6 +1125,24 @@ func (a *mediaMemberCheckerAdapter) MemberRole(campaignID, userID string) int {
 	return int(member.Role)
 }
 
+// IsUserDmGranted reports whether the campaign Owner has granted the user
+// co-DM/dm_only visibility (ADR-058: the media plugin needs the SAME
+// promotion campaigns.CampaignContext.VisibilityRole() applies elsewhere,
+// but has no *CampaignContext to call it on — /media/:id carries no
+// :campaignId to hang campaigns.RequireCampaignAccess off of). Delegates to
+// the campaign service's own IsUserDmGranted rather than re-deriving the
+// DmGrantIDs check here, so this stays a thin signal, not a second copy of
+// that predicate. Any lookup error resolves to false (not granted) — the
+// safe direction, since a wrongly-withheld promotion only lowers a
+// viewer's role, never raises it.
+func (a *mediaMemberCheckerAdapter) IsUserDmGranted(campaignID, userID string) bool {
+	granted, err := a.svc.IsUserDmGranted(context.Background(), campaignID, userID)
+	if err != nil {
+		return false
+	}
+	return granted
+}
+
 // storageLimiterAdapter wraps settings.SettingsService to implement the
 // media.StorageLimiter interface without creating a circular import.
 type storageLimiterAdapter struct {
@@ -1863,6 +1881,19 @@ func (a *App) RegisterRoutes() {
 
 	// Wire campaign membership checker for private media access control.
 	mediaHandler.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
+
+	// ADR-058 decision 1: a picture inherits the visibility of the pages
+	// that use it. Reuses the SAME entityVisibilityFilterAdapter sessions,
+	// npcs and armory already wire above/below — media does not get a
+	// fourth copy of the entity visibility predicate, only another
+	// pointer at the one canonical seam.
+	mediaHandler.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
+
+	// ADR-058 Consequences: caches the entity-scoped access decision per
+	// (file, viewer) so a lookup isn't repeated on every image request.
+	// Same *redis.Client every other Redis-backed cache in this codebase
+	// uses (e.g. entities.Handler.SetCache); nil-safe if Redis init failed.
+	mediaHandler.SetCache(a.Redis)
 
 	media.RegisterRoutes(e, mediaHandler, authService, resolveMaxUpload, a.Config.Upload.ServeRateLimit)
 	// Campaign media routes registered after addon service init (needs media-gallery addon gating).

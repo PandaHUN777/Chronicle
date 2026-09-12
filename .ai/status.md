@@ -20,6 +20,71 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### ADR-058 decisions 1-3 — a media file inherits page visibility (2026-09-12)
+
+Working-tree change (no commit/PR from this pass — see the branch's own PR
+for review status). Implements ADR-058 decisions 1-3 and Consequences 1-2
+only; decisions 4-7 (the "where is this used" UI, merge refusal, signed-URL
+identity binding, public-campaign narrowing) are a separate slice and were
+NOT touched here.
+
+- **Step 1 (mandatory, done first): `media.FindReferences` now also matches
+  `cover_image_path`.** It previously unioned only `image_path` + an
+  `entry_html` scan — `db/migrations/000004_cover_image.up.sql`'s column was
+  never in it, so a cover-only image looked unreferenced and would have
+  leaked through decision 3's plain-membership fallback. A cover match is
+  reported as `ref_type: "image"` (same label as a profile-image match) so
+  the existing "where is this used" fragment (decision 4, untouched) isn't
+  given a value it doesn't render.
+- **Other reference columns found, NOT wired into this rule (reported per
+  the task, not fixed here):** `maps.image_id` (FK to `media_files`) and
+  `map_tokens.image_path` are real media references outside the `entities`
+  table entirely. They are OUT OF SCOPE for decisions 1-3 (which are
+  specifically about entity-page visibility) and are unaffected either way
+  — a map's background image was never covered by entity visibility before
+  this change and still isn't; it keeps the pre-existing plain-membership
+  behavior via decision 3's fallback. `users.avatar_path` /
+  `campaigns.backdrop_path` are the ADR's own named exceptions (no owning
+  entity by construction) and are correctly left alone.
+- **Step 2: `checkMediaAccess`** (`internal/plugins/media/handler.go`) now
+  calls `checkEntityScopedAccess`: if `FindReferences` returns nothing,
+  behavior is byte-for-byte unchanged (decision 3); if it returns entities,
+  the file is readable iff `entities.EntityService.FilterViewableEntityIDs`
+  (reached through a new `EntityVisibilityFilter` seam, reusing the SAME
+  `entityVisibilityFilterAdapter` sessions/npcs/armory already wire in
+  `routes.go` — no fourth copy of the predicate) says at least one
+  referencing entity is visible. The viewer's role is promoted exactly like
+  `campaigns.CampaignContext.VisibilityRole()` (co-DM → Owner) via a new
+  `MemberChecker.IsUserDmGranted` method, since the unscoped `/media/:id`
+  route has no `*CampaignContext` to call that method on directly.
+- **Step 3: caching.** The has-references decision is cached in Redis per
+  (file id, viewer id), key `media:access:<fileID>:<userID>`, 60s TTL —
+  short enough that a hidden-then-republished image loses stale readers
+  within about a minute (well under the up-to-1-hour window a signed URL
+  already tolerates today), long enough to absorb one page load's repeated
+  `<img>`/thumbnail requests. A cache miss/error/unavailability always
+  falls through to a fresh, real computation — never a laxer answer. The
+  no-references (decision 3) path is deliberately left UNCACHED (it was
+  already cheap, and caching it would add a membership-revocation staleness
+  window the ADR never asked for).
+- **Fails closed throughout**, pinned by tests: a `FindReferences` or
+  `FilterViewableEntityIDs` error denies, never falls back to "unreferenced"
+  or "visible". A misconfigured (nil) `EntityVisibilityFilter` also denies
+  rather than silently skipping decision 1.
+- **Tests:** `internal/plugins/media/entity_visibility_access_test.go`
+  (fakes; fast) + `entity_visibility_access_integration_test.go` (drives the
+  REAL `entities.EntityRepository.FilterViewableEntityIDs` and the REAL
+  fixed `FindReferences` SQL against a scratch-schema MariaDB, same pattern
+  as `sessions/dbtest_support_test.go`). Both files' headers say plainly
+  what they do and do not prove. Red-first evidence (reverting the fix and
+  re-running the same suite, all-new tests) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-inherit-red.txt`
+  (session-local scratchpad, not part of the repo).
+- **Not built this pass:** decisions 4 (surfacing "where is this used" as
+  part of the permissions story), 5 (merge refusal across permission
+  levels), 6 (signed-URL identity binding), 7 (public-campaign unsigned
+  narrowing) — each is its own slice per the ADR.
+
 ### Chrome, permissions and Customize designs — APPROVED (2026-09-12)
 
 Six render rounds on one canvas
