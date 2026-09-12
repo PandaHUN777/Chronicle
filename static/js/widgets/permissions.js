@@ -51,6 +51,17 @@ Chronicle.register('permissions', {
       permissions: [],
       tagGrants: [],
       loading: true,
+      // loadFailed is the ADR-057 guard: the fields above are just the
+      // widget's initial guess, never a real answer. A Scribe's GET
+      // .../permissions 403s (the route is Owner-only) or the network can
+      // fail outright; either way state.visibility/isPrivate are still sat
+      // at their untouched init values afterward. Without this flag,
+      // getMode() cannot tell "loaded and Everyone" apart from "never
+      // loaded, defaulted to Everyone" -- which is exactly how a Scribe
+      // editing a DM-only entity used to see "Permissions - Everyone".
+      // renderTrigger()/renderBody() must check this BEFORE calling
+      // getMode(), not rely on the defaults being "probably right".
+      loadFailed: false,
       saving: false,
       saved: false,
       error: null,
@@ -234,6 +245,19 @@ Chronicle.register('permissions', {
     function renderTrigger() {
       if (!trigger) return;
       trigger.innerHTML = '';
+      // ADR-057: a failed load means the real mode is unknown, so nothing
+      // mode-shaped is drawn -- no glyph, no "Everyone"/"DM Only"/"Custom"
+      // word, no mode badge, no tag-widened glance dot. getMode() is never
+      // called here in this branch.
+      if (state.loadFailed) {
+        var unknownIcon = document.createElement('i');
+        unknownIcon.className = 'fa-solid fa-circle-question text-xs';
+        trigger.appendChild(unknownIcon);
+        var unknownLabel = document.createElement('span');
+        unknownLabel.textContent = 'Permissions';
+        trigger.appendChild(unknownLabel);
+        return;
+      }
       var mode = getMode();
       var icon = mode === 'everyone' ? 'fa-globe' : mode === 'dm_only' ? 'fa-lock' : 'fa-shield-halved';
       var iconEl = document.createElement('i');
@@ -329,6 +353,16 @@ Chronicle.register('permissions', {
         });
         errDiv.appendChild(dismissBtn);
         bodyEl.appendChild(errDiv);
+      }
+
+      // ADR-057: a failed load has already said everything it honestly can
+      // via the perm-error region above. Rendering the mode picker or the
+      // read-only badge below this point would fall back to state's
+      // untouched init defaults (getMode() reading visibility: 'default',
+      // isPrivate: false) and repaint the same wrong "Everyone" claim the
+      // trigger used to make. Stop here instead -- an honest blank body.
+      if (state.loadFailed) {
+        return;
       }
 
       var mode = getMode();
@@ -657,6 +691,11 @@ Chronicle.register('permissions', {
         })
         .catch(function (err) {
           state.loading = false;
+          // Covers both a non-2xx response (the 403 a Scribe gets from the
+          // Owner-only route) and an outright network failure -- either way
+          // state.visibility/isPrivate were never replaced by a real answer,
+          // so render must not treat them as one (ADR-057).
+          state.loadFailed = true;
           state.error = err.message || 'Failed to load permissions';
           state.errorCategory = err.category || 'internal';
           renderTrigger();
