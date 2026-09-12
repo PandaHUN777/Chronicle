@@ -147,11 +147,15 @@ func (s *mapService) UpdateMap(ctx context.Context, id string, input UpdateMapIn
 		return apperror.NewValidation("map name is required")
 	}
 
+	// Load-merge-write (sweep R4 / ADR-054 #4). `m` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything. Before this, a rename-only PUT
+	// unlinked the map's image and wiped its description.
 	m.Name = input.Name
-	m.Description = input.Description
-	m.ImageID = input.ImageID
-	m.ImageWidth = input.ImageWidth
-	m.ImageHeight = input.ImageHeight
+	m.Description = input.Description.Ptr(m.Description)
+	m.ImageID = input.ImageID.Ptr(m.ImageID)
+	m.ImageWidth = input.ImageWidth.Val(m.ImageWidth)
+	m.ImageHeight = input.ImageHeight.Val(m.ImageHeight)
 	// BackgroundColor tri-state per the input docstring: nil leaves
 	// unchanged; pointer-to-empty clears the override; any other value
 	// sets it. Maps the empty-string clear to a nil DB value so

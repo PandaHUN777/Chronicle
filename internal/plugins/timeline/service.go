@@ -63,16 +63,16 @@ type CalendarEra struct {
 // CalendarEventRef is a lightweight reference to a calendar event used in the
 // event picker when linking events to a timeline.
 type CalendarEventRef struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Year        int     `json:"year"`
-	Month       int     `json:"month"`
-	Day         int     `json:"day"`
-	Category    *string `json:"category,omitempty"`
-	Visibility  string  `json:"visibility"`
-	EntityID    *string `json:"entity_id,omitempty"`
-	EntityName  string  `json:"entity_name,omitempty"`
-	EntityIcon  string  `json:"entity_icon,omitempty"`
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Year       int     `json:"year"`
+	Month      int     `json:"month"`
+	Day        int     `json:"day"`
+	Category   *string `json:"category,omitempty"`
+	Visibility string  `json:"visibility"`
+	EntityID   *string `json:"entity_id,omitempty"`
+	EntityName string  `json:"entity_name,omitempty"`
+	EntityIcon string  `json:"entity_icon,omitempty"`
 }
 
 // TimelineService defines business logic for the timeline plugin.
@@ -282,36 +282,48 @@ func (s *timelineService) UpdateTimeline(ctx context.Context, timelineID string,
 		return apperror.NewNotFound("timeline not found")
 	}
 
-	if input.Name == "" {
+	// Load-merge-write (sweep R4 / ADR-054 #2). `t` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything. Name is the one exception, matching
+	// pre-existing behavior: it stays REQUIRED on every call (fails loudly
+	// with 400 when blank) rather than falling back to the stored value —
+	// see the input's doc comment.
+	name := input.Name
+	if name == "" {
 		return apperror.NewValidation("timeline name is required")
 	}
-	if len(input.Name) > 255 {
+	if len(name) > 255 {
 		return apperror.NewValidation("timeline name must be 255 characters or less")
 	}
-	if input.Visibility != "everyone" && input.Visibility != "dm_only" {
+	visibility := input.Visibility.Val(t.Visibility)
+	if visibility != "everyone" && visibility != "dm_only" {
 		return apperror.NewValidation("visibility must be 'everyone' or 'dm_only'")
 	}
-	if !IsValidZoom(input.ZoomDefault) {
+	zoom := input.ZoomDefault.Val(t.ZoomDefault)
+	if !IsValidZoom(zoom) {
 		return apperror.NewValidation("invalid zoom default level")
 	}
-	if input.Icon != "" && !iconPattern.MatchString(input.Icon) {
+	icon := input.Icon.Val(t.Icon)
+	if icon != "" && !iconPattern.MatchString(icon) {
 		return apperror.NewValidation("icon must be a valid FontAwesome class name")
 	}
-	if input.Color != "" && !colorPattern.MatchString(input.Color) {
+	color := input.Color.Val(t.Color)
+	if color != "" && !colorPattern.MatchString(color) {
 		return apperror.NewValidation("color must be a valid hex color")
 	}
-	if err := validateVisibilityRules(input.VisibilityRules); err != nil {
+	visRules := input.VisibilityRules.Ptr(t.VisibilityRules)
+	if err := validateVisibilityRules(visRules); err != nil {
 		return err
 	}
 
-	t.Name = input.Name
-	t.Description = input.Description
-	t.DescriptionHTML = input.DescriptionHTML
-	t.Color = input.Color
-	t.Icon = input.Icon
-	t.Visibility = input.Visibility
-	t.VisibilityRules = input.VisibilityRules
-	t.ZoomDefault = input.ZoomDefault
+	t.Name = name
+	t.Description = input.Description.Ptr(t.Description)
+	t.DescriptionHTML = input.DescriptionHTML.Ptr(t.DescriptionHTML)
+	t.Color = color
+	t.Icon = icon
+	t.Visibility = visibility
+	t.VisibilityRules = visRules
+	t.ZoomDefault = zoom
 
 	if err := s.repo.Update(ctx, t); err != nil {
 		return fmt.Errorf("update timeline: %w", err)
@@ -361,10 +373,10 @@ func (s *timelineService) LinkEvent(ctx context.Context, timelineID, eventID str
 	}
 
 	link := &EventLink{
-		TimelineID:   timelineID,
-		EventID:      eventID,
-		DisplayOrder: count,
-		Label:        input.Label,
+		TimelineID:    timelineID,
+		EventID:       eventID,
+		DisplayOrder:  count,
+		Label:         input.Label,
 		ColorOverride: input.ColorOverride,
 	}
 

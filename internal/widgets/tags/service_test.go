@@ -11,15 +11,15 @@ import (
 // --- Mock Repository ---
 
 type mockTagRepo struct {
-	createFn             func(ctx context.Context, tag *Tag) error
-	findByIDFn           func(ctx context.Context, id int) (*Tag, error)
-	listByCampaignFn     func(ctx context.Context, campaignID string, includeDmOnly bool) ([]Tag, error)
-	updateFn             func(ctx context.Context, tag *Tag) error
-	deleteFn             func(ctx context.Context, id int) error
-	addTagToEntityFn     func(ctx context.Context, entityID string, tagID int) error
+	createFn              func(ctx context.Context, tag *Tag) error
+	findByIDFn            func(ctx context.Context, id int) (*Tag, error)
+	listByCampaignFn      func(ctx context.Context, campaignID string, includeDmOnly bool) ([]Tag, error)
+	updateFn              func(ctx context.Context, tag *Tag) error
+	deleteFn              func(ctx context.Context, id int) error
+	addTagToEntityFn      func(ctx context.Context, entityID string, tagID int) error
 	removeTagFromEntityFn func(ctx context.Context, entityID string, tagID int) error
-	getEntityTagsFn      func(ctx context.Context, entityID string, includeDmOnly bool) ([]Tag, error)
-	getEntityTagsBatchFn func(ctx context.Context, entityIDs []string, includeDmOnly bool) (map[string][]Tag, error)
+	getEntityTagsFn       func(ctx context.Context, entityID string, includeDmOnly bool) ([]Tag, error)
+	getEntityTagsBatchFn  func(ctx context.Context, entityIDs []string, includeDmOnly bool) (map[string][]Tag, error)
 }
 
 func (m *mockTagRepo) Create(ctx context.Context, tag *Tag) error {
@@ -288,7 +288,8 @@ func TestUpdate_Success(t *testing.T) {
 	}
 	svc := newTestService(repo)
 
-	result, err := svc.Update(context.Background(), 1, "New Name", "#ff5733", true)
+	color, dmOnly := "#ff5733", true
+	result, err := svc.Update(context.Background(), 1, UpdateTagInput{Name: "New Name", Color: &color, DmOnly: &dmOnly})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -314,7 +315,7 @@ func TestUpdate_NotFound(t *testing.T) {
 	}
 	svc := newTestService(repo)
 
-	_, err := svc.Update(context.Background(), 999, "Name", "", false)
+	_, err := svc.Update(context.Background(), 999, UpdateTagInput{Name: "Name"})
 	assertAppError(t, err, 404)
 }
 
@@ -322,7 +323,7 @@ func TestUpdate_EmptyName(t *testing.T) {
 	repo := &mockTagRepo{} // Default FindByID returns a tag.
 	svc := newTestService(repo)
 
-	_, err := svc.Update(context.Background(), 1, "", "", false)
+	_, err := svc.Update(context.Background(), 1, UpdateTagInput{Name: ""})
 	assertAppError(t, err, 400)
 }
 
@@ -330,7 +331,8 @@ func TestUpdate_InvalidColor(t *testing.T) {
 	repo := &mockTagRepo{} // Default FindByID returns a tag.
 	svc := newTestService(repo)
 
-	_, err := svc.Update(context.Background(), 1, "Name", "invalid", false)
+	invalid := "invalid"
+	_, err := svc.Update(context.Background(), 1, UpdateTagInput{Name: "Name", Color: &invalid})
 	assertAppError(t, err, 400)
 }
 
@@ -338,7 +340,8 @@ func TestUpdate_DefaultColor(t *testing.T) {
 	repo := &mockTagRepo{}
 	svc := newTestService(repo)
 
-	result, err := svc.Update(context.Background(), 1, "Name", "", false)
+	empty := ""
+	result, err := svc.Update(context.Background(), 1, UpdateTagInput{Name: "Name", Color: &empty})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

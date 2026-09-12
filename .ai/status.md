@@ -20,6 +20,54 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### ADR-054 task #6 — the six loaded-but-uncocked partial-update guns, fixed (2026-09-12)
+
+Follow-up to the sweep below, same day, same branch. The four "Loaded, no
+caller yet" findings plus two siblings the sweep found by shape
+(`maps.UpdateDrawingInput`, `maps.UpdateLayerInput` — no shipped caller
+either, fixed anyway since they share `UpdateTokenInput`'s structure and are
+reachable via syncapi) are now presence-aware and load-merge-write, matching
+`entities.UpdateEntityInput`'s reference shape:
+
+- **`maps.UpdateTokenInput`** — every field but `Name`/`ExpectedUpdatedAt`
+  converted to `patch.Field[T]`, including fields that were ALREADY a Go
+  pointer (`Bar1Value`, `AuraRadius`, …) — a plain `*T` bound from JSON can't
+  tell absent from explicit-null either, so the pointer type alone protected
+  nothing. Both the web handler and the syncapi twin fixed.
+- **`maps.UpdateDrawingInput`** / **`maps.UpdateLayerInput`** — same
+  treatment, both callers.
+- **`maps.UpdateMapInput`** — `ImageID`/`ImageWidth`/`ImageHeight`/
+  `Description` now nil-preserve; `BackgroundColor`'s pre-existing
+  pointer-sentinel tri-state is untouched.
+- **`timeline.UpdateTimelineInput`** — `VisibilityRules`/`DescriptionHTML`
+  now presence-aware. `UpdateTimelineVisibilityAPI`'s existing
+  re-read-then-echo pattern still works (converted to `patch.Of`/
+  `patch.FromPtr`) — it is safe specifically because it reads and rewrites
+  within the same request, not a stale snapshot.
+- **`tags.UpdateTagRequest`** + the service (`tagService.Update` now takes
+  `UpdateTagInput{Name string; Color, DmOnly *bool}`) + the syncapi twin —
+  ADR-056 named this the worst finding of the toggle-truth sweep.
+
+**The scanner widened** (`partial_update_contract_test.go` now matches
+`Update*Request` too, not only `Update*Input`). It immediately surfaced ten
+MORE unaudited `*Request` structs on day one (`campaigns.*`×3,
+`entities.UpdateEntityRequest`, `entities.UpdateEntityTypeRequest`,
+`entity_notes.UpdateNoteRequest`, `notes.UpdateNoteRequest`,
+`posts.UpdatePostRequest`, `relations.UpdateRelationMetadataRequest`,
+`smtp.UpdateSMTPRequest`) — none audited by this task, all added to
+`notYetSwept` with that stated honestly. `entities.UpdateEntityRequest` and
+`entities.UpdateEntityTypeRequest` in particular look like the exact shape
+this ratchet exists to catch and are good next candidates. Every fix has a
+red-then-green regression test (`*_partial_update_test.go` next to each
+package) that was run against the unfixed code first.
+
+**Not done here:** the ~15 remaining pre-existing `notYetSwept` entries
+(`packages.*`, `entities.UpdateEntityTypeInput`, `campaigns.UpdateCampaignInput`,
+the three CALV5-salvage calendar inputs, etc.) — out of this task's named
+scope. `internal/plugins/sessions/`, `internal/widgets/entity_notes/` and
+`internal/plugins/campaigns/` were not touched (another agent's worktree).
+`make verify` green.
+
 ### Three sweeps, three ADRs, and the "twenty unaudited structs" booking discharged (2026-09-12)
 
 Three read-only sweeps on 2026-09-12, every finding hand-verified before it was

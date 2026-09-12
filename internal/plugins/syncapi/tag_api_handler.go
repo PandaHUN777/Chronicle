@@ -101,10 +101,14 @@ func (h *TagAPIHandler) CreateTag(c echo.Context) error {
 }
 
 // apiUpdateTagRequest is the JSON body for updating a tag via the API.
+// PARTIAL update: absent preserves, a present value replaces (sweep R4 /
+// ADR-056) — see tags.UpdateTagInput. Before this, Color/DmOnly were plain
+// value types, so a Foundry-side {name} rename push turned every DM-only
+// tag public.
 type apiUpdateTagRequest struct {
-	Name   string `json:"name"`
-	Color  string `json:"color"`
-	DmOnly bool   `json:"dm_only"`
+	Name   string  `json:"name"`
+	Color  *string `json:"color"`
+	DmOnly *bool   `json:"dm_only"`
 }
 
 // UpdateTag updates an existing tag.
@@ -130,7 +134,11 @@ func (h *TagAPIHandler) UpdateTag(c echo.Context) error {
 		return apperror.NewBadRequest("invalid request body")
 	}
 
-	tag, err := h.tagSvc.Update(c.Request().Context(), tagID, req.Name, req.Color, req.DmOnly)
+	tag, err := h.tagSvc.Update(c.Request().Context(), tagID, tags.UpdateTagInput{
+		Name:   req.Name,
+		Color:  req.Color,
+		DmOnly: req.DmOnly,
+	})
 	if err != nil {
 		return err
 	}

@@ -197,12 +197,15 @@ func (h *Handler) UpdateMapAPI(c echo.Context) error {
 		return err
 	}
 
+	// PARTIAL update: absent preserves, explicit null clears, a present
+	// value replaces (sweep R4 / ADR-054 #4). Before this, a rename-only
+	// PUT unlinked the map's image and wiped its description.
 	var req struct {
-		Name            string  `json:"name"`
-		Description     *string `json:"description"`
-		ImageID         *string `json:"image_id"`
-		ImageWidth      int     `json:"image_width"`
-		ImageHeight     int     `json:"image_height"`
+		Name        string              `json:"name"`
+		Description patch.Field[string] `json:"description"`
+		ImageID     patch.Field[string] `json:"image_id"`
+		ImageWidth  patch.Field[int]    `json:"image_width"`
+		ImageHeight patch.Field[int]    `json:"image_height"`
 		// background_color is tri-state: omitted (nil) leaves the
 		// stored value unchanged; "" clears the override (revert to
 		// theme); any CSS color sets the override.

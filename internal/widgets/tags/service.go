@@ -32,8 +32,10 @@ type TagService interface {
 	// false, dm_only tags are excluded (player view).
 	ListByCampaign(ctx context.Context, campaignID string, includeDmOnly bool) ([]Tag, error)
 
-	// Update validates input and updates an existing tag.
-	Update(ctx context.Context, id int, name, color string, dmOnly bool) (*Tag, error)
+	// Update validates input and updates an existing tag. PARTIAL update:
+	// Color/DmOnly nil preserves the stored value, non-nil replaces it —
+	// see UpdateTagInput's doc comment.
+	Update(ctx context.Context, id int, input UpdateTagInput) (*Tag, error)
 
 	// Delete removes a tag and all its entity associations.
 	Delete(ctx context.Context, id int) error
@@ -104,26 +106,39 @@ func (s *tagService) ListByCampaign(ctx context.Context, campaignID string, incl
 	return s.repo.ListByCampaign(ctx, campaignID, includeDmOnly)
 }
 
-// Update validates the new name and color, regenerates the slug, and persists
-// the changes to the tag.
-func (s *tagService) Update(ctx context.Context, id int, name, color string, dmOnly bool) (*Tag, error) {
+// Update validates the new name, regenerates the slug, and persists the
+// changes to the tag. Color and DmOnly are PARTIAL: a nil pointer means the
+// caller did not send that key, so the stored value is left alone. See
+// UpdateTagInput's doc comment for the incident this replaced.
+func (s *tagService) Update(ctx context.Context, id int, input UpdateTagInput) (*Tag, error) {
 	// Verify the tag exists before updating.
 	tag, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 
-	name = strings.TrimSpace(name)
+	name := strings.TrimSpace(input.Name)
 	if name == "" {
 		return nil, apperror.NewBadRequest("tag name is required")
 	}
 
-	color = strings.TrimSpace(color)
-	if color == "" {
-		color = "#6b7280"
+	// Load-merge-write (sweep R4 / ADR-056). `tag` is the row as stored, so
+	// Color/DmOnly default to the stored value: only a key the caller
+	// actually sent can change it.
+	color := tag.Color
+	if input.Color != nil {
+		color = strings.TrimSpace(*input.Color)
+		if color == "" {
+			color = "#6b7280"
+		}
+		if !hexColorPattern.MatchString(color) {
+			return nil, apperror.NewBadRequest("color must be a valid hex color (e.g. #ff5733)")
+		}
 	}
-	if !hexColorPattern.MatchString(color) {
-		return nil, apperror.NewBadRequest("color must be a valid hex color (e.g. #ff5733)")
+
+	dmOnly := tag.DmOnly
+	if input.DmOnly != nil {
+		dmOnly = *input.DmOnly
 	}
 
 	tag.Name = name

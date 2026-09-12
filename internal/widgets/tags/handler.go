@@ -154,18 +154,28 @@ func (h *Handler) UpdateTag(c echo.Context) error {
 		return apperror.NewNotFound("tag not found")
 	}
 
+	// PARTIAL update: absent preserves, a present value replaces (sweep R4 /
+	// ADR-056). A rename that omits color/dmOnly must not clobber them.
 	var req UpdateTagRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return apperror.NewBadRequest("invalid JSON body")
 	}
 
-	// Only Owners and site admins can set the dm_only flag on tags.
+	// Only Owners and site admins can set the dm_only flag on tags. The
+	// downgrade applies only to an EXPLICIT attempt to turn it on — an
+	// absent dmOnly key is not an attempt to change it, so it stays nil
+	// and preserves whatever is already stored.
 	dmOnly := req.DmOnly
-	if dmOnly && cc.MemberRole < campaigns.RoleOwner && !cc.IsSiteAdmin {
-		dmOnly = false
+	if dmOnly != nil && *dmOnly && cc.MemberRole < campaigns.RoleOwner && !cc.IsSiteAdmin {
+		f := false
+		dmOnly = &f
 	}
 
-	tag, err := h.service.Update(c.Request().Context(), tagID, req.Name, req.Color, dmOnly)
+	tag, err := h.service.Update(c.Request().Context(), tagID, UpdateTagInput{
+		Name:   req.Name,
+		Color:  req.Color,
+		DmOnly: dmOnly,
+	})
 	if err != nil {
 		return err
 	}

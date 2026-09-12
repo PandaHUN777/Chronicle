@@ -31,13 +31,13 @@ func ParseVisibilityRules(raw *string) *VisibilityRules {
 
 // Map is an interactive map with a background image and positioned markers.
 type Map struct {
-	ID          string    `json:"id"`
-	CampaignID  string    `json:"campaign_id"`
-	Name        string    `json:"name"`
-	Description *string   `json:"description,omitempty"`
-	ImageID     *string   `json:"image_id,omitempty"`
-	ImageWidth  int       `json:"image_width"`
-	ImageHeight int       `json:"image_height"`
+	ID          string  `json:"id"`
+	CampaignID  string  `json:"campaign_id"`
+	Name        string  `json:"name"`
+	Description *string `json:"description,omitempty"`
+	ImageID     *string `json:"image_id,omitempty"`
+	ImageWidth  int     `json:"image_width"`
+	ImageHeight int     `json:"image_height"`
 	// BackgroundColor optionally overrides the default theme-following
 	// canvas color (bg-surface-alt, which adapts to dark/light via CSS
 	// vars) with a fixed CSS color (e.g. "#000000"). Nil means "follow
@@ -97,29 +97,50 @@ func (m *Marker) IsDMOnly() bool {
 
 // CreateMapInput is the validated input for creating a map.
 type CreateMapInput struct {
-	CampaignID string
-	Name       string
+	CampaignID  string
+	Name        string
 	Description *string
-	ImageID    *string
+	ImageID     *string
 	ImageWidth  int
 	ImageHeight int
 }
 
 // UpdateMapInput is the validated input for updating a map.
-// BackgroundColor is a tri-state: nil pointer = leave unchanged;
+//
+// PARTIAL update: absent preserves, explicit null clears, present replaces
+// (contract ruled 2026-08-07, sweep R4; ADR-054 #4). Before this,
+// ImageID/ImageWidth/ImageHeight/Description were assigned unguarded —
+// including ImageID and Description, which were ALREADY a Go pointer: a
+// plain *string bound from JSON cannot tell "the caller omitted this key"
+// from "the caller sent null", so the pointer type alone never protected
+// anything. A rename-only PUT unlinked the map's image and wiped its
+// description. The one shipped caller (maps.templ) re-derives these
+// fields from hidden inputs so it is not tripped today, but nothing at
+// the service layer stopped a narrower caller from doing so.
+//
+// BackgroundColor is the one field that was ALREADY genuinely tri-state
+// and is unchanged by this fix: nil pointer = leave unchanged;
 // pointer-to-empty-string = clear the override (revert to theme); any
-// other CSS color string = set as the override.
+// other CSS color string = set as the override. It stays a plain *string
+// (not patch.Field) because that sentinel — not an explicit JSON null —
+// is what the existing caller and service already speak.
+//
+// Name is deliberately left a plain string: UpdateMap validates the
+// MERGED name is non-empty and rejects the whole call with 400 when it is
+// blank, so an absent name fails loudly instead of silently overwriting —
+// it was never part of the blind-overwrite class this struct is fixed for.
 //
 // ExpectedUpdatedAt is the optional optimistic-concurrency token: when
 // non-nil, the service rejects with 409 Conflict if the row's UpdatedAt
 // has advanced past it. Omitting the field falls back to last-writer-wins
-// for backwards compatibility — see internal/concurrency.Check.
+// for backwards compatibility — see internal/concurrency.Check. It is NOT
+// a data field, so it stays a plain pointer.
 type UpdateMapInput struct {
 	Name              string
-	Description       *string
-	ImageID           *string
-	ImageWidth        int
-	ImageHeight       int
+	Description       patch.Field[string]
+	ImageID           patch.Field[string]
+	ImageWidth        patch.Field[int]
+	ImageHeight       patch.Field[int]
 	BackgroundColor   *string
 	ExpectedUpdatedAt *time.Time
 }

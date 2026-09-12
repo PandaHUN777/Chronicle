@@ -88,12 +88,12 @@ type MapEventPublisher interface {
 // NoopMapEventPublisher is a no-op implementation for tests.
 type NoopMapEventPublisher struct{}
 
-func (NoopMapEventPublisher) PublishDrawingEvent(string, string, *Drawing)              {}
-func (NoopMapEventPublisher) PublishTokenEvent(string, string, *Token)                  {}
+func (NoopMapEventPublisher) PublishDrawingEvent(string, string, *Drawing)               {}
+func (NoopMapEventPublisher) PublishTokenEvent(string, string, *Token)                   {}
 func (NoopMapEventPublisher) PublishTokenPositionEvent(string, string, float64, float64) {}
-func (NoopMapEventPublisher) PublishLayerEvent(string, string, *Layer)                  {}
-func (NoopMapEventPublisher) PublishFogEvent(string, string, string, *FogRegion)        {}
-func (NoopMapEventPublisher) PublishMarkerEvent(string, string, *Marker)                {}
+func (NoopMapEventPublisher) PublishLayerEvent(string, string, *Layer)                   {}
+func (NoopMapEventPublisher) PublishFogEvent(string, string, string, *FogRegion)         {}
+func (NoopMapEventPublisher) PublishMarkerEvent(string, string, *Marker)                 {}
 
 // drawingService implements DrawingService.
 type drawingService struct {
@@ -199,23 +199,18 @@ func (s *drawingService) UpdateDrawing(ctx context.Context, id, mapID string, in
 		return err
 	}
 
-	if len(input.Points) > 0 {
-		d.Points = input.Points
-	}
-	if input.StrokeColor != "" {
-		d.StrokeColor = input.StrokeColor
-	}
-	if input.StrokeWidth > 0 {
-		d.StrokeWidth = input.StrokeWidth
-	}
-	d.FillColor = input.FillColor
-	d.FillAlpha = input.FillAlpha
-	d.TextContent = input.TextContent
-	d.FontSize = input.FontSize
-	d.Rotation = input.Rotation
-	if input.Visibility != "" {
-		d.Visibility = input.Visibility
-	}
+	// Load-merge-write (sweep R4 / ADR-054 #6). `d` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything.
+	d.Points = input.Points.Val(d.Points)
+	d.StrokeColor = input.StrokeColor.Val(d.StrokeColor)
+	d.StrokeWidth = input.StrokeWidth.Val(d.StrokeWidth)
+	d.FillColor = input.FillColor.Ptr(d.FillColor)
+	d.FillAlpha = input.FillAlpha.Val(d.FillAlpha)
+	d.TextContent = input.TextContent.Ptr(d.TextContent)
+	d.FontSize = input.FontSize.Ptr(d.FontSize)
+	d.Rotation = input.Rotation.Val(d.Rotation)
+	d.Visibility = input.Visibility.Val(d.Visibility)
 
 	if err := s.repo.UpdateDrawing(ctx, d); err != nil {
 		return err
@@ -330,32 +325,37 @@ func (s *drawingService) UpdateToken(ctx context.Context, id, mapID string, inpu
 		return err
 	}
 
+	// Load-merge-write (sweep R4 / ADR-054 #6). `t` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything. Before this, a drag PUT carrying
+	// only {x, y} zeroed IsHidden, IsLocked, both HP bars and every aura/
+	// light/vision field — see the input's doc comment for the incident.
 	if input.Name != "" {
 		t.Name = input.Name
 	}
-	t.ImagePath = input.ImagePath
-	t.X = input.X
-	t.Y = input.Y
-	t.Width = input.Width
-	t.Height = input.Height
-	t.Rotation = input.Rotation
-	t.Scale = input.Scale
-	t.IsHidden = input.IsHidden
-	t.IsLocked = input.IsLocked
-	t.Bar1Value = input.Bar1Value
-	t.Bar1Max = input.Bar1Max
-	t.Bar2Value = input.Bar2Value
-	t.Bar2Max = input.Bar2Max
-	t.AuraRadius = input.AuraRadius
-	t.AuraColor = input.AuraColor
-	t.LightRadius = input.LightRadius
-	t.LightDimRadius = input.LightDimRadius
-	t.LightColor = input.LightColor
-	t.VisionEnabled = input.VisionEnabled
-	t.VisionRange = input.VisionRange
-	t.Elevation = input.Elevation
-	t.StatusEffects = input.StatusEffects
-	t.Flags = input.Flags
+	t.ImagePath = input.ImagePath.Ptr(t.ImagePath)
+	t.X = input.X.Val(t.X)
+	t.Y = input.Y.Val(t.Y)
+	t.Width = input.Width.Val(t.Width)
+	t.Height = input.Height.Val(t.Height)
+	t.Rotation = input.Rotation.Val(t.Rotation)
+	t.Scale = input.Scale.Val(t.Scale)
+	t.IsHidden = input.IsHidden.Val(t.IsHidden)
+	t.IsLocked = input.IsLocked.Val(t.IsLocked)
+	t.Bar1Value = input.Bar1Value.Ptr(t.Bar1Value)
+	t.Bar1Max = input.Bar1Max.Ptr(t.Bar1Max)
+	t.Bar2Value = input.Bar2Value.Ptr(t.Bar2Value)
+	t.Bar2Max = input.Bar2Max.Ptr(t.Bar2Max)
+	t.AuraRadius = input.AuraRadius.Ptr(t.AuraRadius)
+	t.AuraColor = input.AuraColor.Ptr(t.AuraColor)
+	t.LightRadius = input.LightRadius.Ptr(t.LightRadius)
+	t.LightDimRadius = input.LightDimRadius.Ptr(t.LightDimRadius)
+	t.LightColor = input.LightColor.Ptr(t.LightColor)
+	t.VisionEnabled = input.VisionEnabled.Val(t.VisionEnabled)
+	t.VisionRange = input.VisionRange.Ptr(t.VisionRange)
+	t.Elevation = input.Elevation.Val(t.Elevation)
+	t.StatusEffects = input.StatusEffects.Val(t.StatusEffects)
+	t.Flags = input.Flags.Val(t.Flags)
 
 	if err := s.repo.UpdateToken(ctx, t); err != nil {
 		return err
@@ -476,13 +476,17 @@ func (s *drawingService) UpdateLayer(ctx context.Context, id, mapID string, inpu
 		return err
 	}
 
+	// Load-merge-write (sweep R4 / ADR-054 #6). `l` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything. Before this, reordering the layer
+	// stack (a SortOrder-only PUT) silently turned visibility and lock off.
 	if input.Name != "" {
 		l.Name = input.Name
 	}
-	l.SortOrder = input.SortOrder
-	l.IsVisible = input.IsVisible
-	l.Opacity = input.Opacity
-	l.IsLocked = input.IsLocked
+	l.SortOrder = input.SortOrder.Val(l.SortOrder)
+	l.IsVisible = input.IsVisible.Val(l.IsVisible)
+	l.Opacity = input.Opacity.Val(l.Opacity)
+	l.IsLocked = input.IsLocked.Val(l.IsLocked)
 
 	if err := s.repo.UpdateLayer(ctx, l); err != nil {
 		return err

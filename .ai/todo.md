@@ -2282,9 +2282,33 @@ a different bug:**
   call. It is carried as a NAMED exception in
   `internal/patch/partial_update_contract_test.go` so it cannot be forgotten
   and a new value-typed field cannot land quietly beside it.
-- [ ] **Twenty other `Update*Input` structs are frozen but unaudited.** The
-  ratchet's `notYetSwept` list is a statement about what was LOOKED AT, not a
-  safety claim. A future sweep that wants the class fully closed starts there.
+- [x] **Six of the twenty audited and fixed (2026-09-12, ADR-054 task #6):**
+  `maps.UpdateTokenInput`, `maps.UpdateDrawingInput`, `maps.UpdateLayerInput`,
+  `maps.UpdateMapInput`, `timeline.UpdateTimelineInput`, and
+  `tags.UpdateTagRequest` (+ its service, `tagService.Update`, and its
+  syncapi twin) are now presence-aware and load-merge-write. Each has a
+  red-then-green regression test. See `.ai/status.md`'s "ADR-054 task #6"
+  entry for detail.
+- [ ] **The scanner widened to `Update*Request` and found TEN more unaudited
+  structs on day one** (2026-09-12): `campaigns.UpdateCampaignRequest`,
+  `campaigns.UpdateRoleRequest`, `campaigns.UpdateSidebarConfigRequest`,
+  `entities.UpdateEntityRequest`, `entities.UpdateEntityTypeRequest`,
+  `entity_notes.UpdateNoteRequest`, `notes.UpdateNoteRequest`,
+  `posts.UpdatePostRequest`, `relations.UpdateRelationMetadataRequest`,
+  `smtp.UpdateSMTPRequest`. None audited yet; all sit in `notYetSwept` with
+  that stated honestly, not as a safety claim. `entities.UpdateEntityRequest`
+  and `entities.UpdateEntityTypeRequest` look like the exact shape this
+  ratchet exists to catch and are good next candidates.
+- [ ] **The remaining ~15 originally-unaudited `Update*Input` entries** —
+  `packages.UpdatePolicyInput`, `packages.UpdateRepoURLInput`,
+  `bestiary.UpdatePublicationInput`, `timeline.UpdateEntityGroupInput`,
+  `timeline.UpdateEventVisibilityInput`, `addons.UpdateAddonInput`,
+  `entities.UpdateLayoutPresetInput`, `entities.UpdateContentTemplateInput`,
+  `entities.UpdateEntityTypeInput`, `entities.UpdatePromptInput`,
+  `maps.UpdateTokenPositionInput`, `campaigns.UpdateCampaignInput`, and the
+  three CALV5-salvage calendar inputs — are still frozen, unaudited, and
+  named in `notYetSwept`. A future sweep that wants the class fully closed
+  starts with these plus the ten `*Request` structs above.
 
 #### B. `C-AUTHZ-EMPTY-USERID` — anonymous visitors match the "system context" sentinel — **CLOSED, sweep R4 stage 9** · was **high**
 

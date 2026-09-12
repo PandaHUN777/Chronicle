@@ -67,12 +67,39 @@ var contractGoverned = map[string]string{
 	// from its first commit, and this line must come back with it — the module
 	// still sends narrow bodies (its own contract pins them), so the defect is
 	// waiting for any successor that forgets.
+
+	// ADR-054 #1-#6 (2026-09-12 partial-update sweep, task #6). All six
+	// reproduced against the shipped code with a temporary red test before
+	// the fix; see the *_partial_update_test.go files next to each.
+	"maps.UpdateTokenInput":        "PUT .../tokens/:tid (web + syncapi) — a drag PUT carrying only {x, y} zeroed IsHidden, IsLocked, both HP bars and every aura/light/vision field; a hidden ambush monster went visible on the next nudge",
+	"maps.UpdateDrawingInput":      "PUT .../drawings/:did (web + syncapi) — shares UpdateTokenInput's shape; a reshape-only push wiped fill, text content, font size and rotation. No shipped caller trips it today, fixed anyway per ADR-054 #6",
+	"maps.UpdateLayerInput":        "PUT .../layers/:lid (web + syncapi) — a SortOrder-only reorder push turned visibility and lock off for every layer. No shipped caller trips it today, fixed anyway per ADR-054 #6",
+	"maps.UpdateMapInput":          "PUT /campaigns/:id/maps/:mid — a rename-only push unlinked the map's image and wiped its description; ImageID/Description were already *string and STILL blindly overwritten, because a plain pointer bound from JSON can't tell absent from null either",
+	"timeline.UpdateTimelineInput": "PUT /campaigns/:id/timelines/:tid — fired on EVERY settings save, not just a narrow push: the request struct has no visibility_rules/description_html member at all, so both were unconditionally blanked and canUserView() treats an absent VisibilityRules as visible to everyone",
+	"tags.UpdateTagInput":          "tagService.Update — the worst finding of the 2026-09-12 toggle-truth sweep (ADR-056): Color/DmOnly were plain value types, so ANY rename necessarily also sent DmOnly's zero value and turned a DM-only tag public",
+	"tags.UpdateTagRequest":        "PUT /campaigns/:id/tags/:tagId — the wire-bound twin of UpdateTagInput above; same incident, same fix",
 }
 
 // governedFieldExceptions are value-typed fields deliberately left on a
 // governed struct. Each needs a reason, and the reason has to be a fact.
 var governedFieldExceptions = map[string]string{
 	"entities.UpdateEntityInput.ImagePath": "INERT — entityService.Update never reads it. That is its own defect (campaign import believes it is applying image paths through this input and is not); booked in .ai/todo.md rather than fixed under a ruling that was about a different bug. It cannot clobber anything precisely because nothing reads it.",
+
+	// ADR-054 #6: on each of these, Update only ever ASSIGNS Name when the
+	// caller sends a non-empty value ("if input.Name != \"\" { … }"), so an
+	// absent/blank name was already preserved before this sweep — Name was
+	// never part of the blind-overwrite class these structs are fixed for.
+	"maps.UpdateTokenInput.Name": "value-typed by choice: UpdateToken only assigns Name when it is non-empty, so an absent/blank name already preserved the stored one before this fix.",
+	"maps.UpdateLayerInput.Name": "value-typed by choice: UpdateLayer only assigns Name when it is non-empty, so an absent/blank name already preserved the stored one before this fix.",
+	// ADR-054 #4/#2/tags: on these three, Name is REQUIRED — Update validates
+	// the merged name is non-empty and rejects the whole call with 400 when
+	// it is blank, so an absent name fails LOUDLY instead of silently
+	// overwriting. That is a different (and already-safe) failure mode from
+	// the silent-clobber class the rest of each struct was fixed for.
+	"maps.UpdateMapInput.Name":          "value-typed by choice: UpdateMap validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
+	"timeline.UpdateTimelineInput.Name": "value-typed by choice: UpdateTimeline validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
+	"tags.UpdateTagInput.Name":          "value-typed by choice: tagService.Update validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
+	"tags.UpdateTagRequest.Name":        "value-typed by choice: the same required-name validation applies via UpdateTagInput.Name above — this is the wire-bound twin.",
 }
 
 // notYetSwept freezes the rest of the inventory. Nothing here was audited by
@@ -81,23 +108,18 @@ var governedFieldExceptions = map[string]string{
 // struct became contract-governed; adding one means a new update input
 // shipped and its author decided it is not a partial update.
 var notYetSwept = map[string]bool{
-	"packages.UpdatePolicyInput":             true,
-	"packages.UpdateRepoURLInput":            true,
-	"bestiary.UpdatePublicationInput":        true,
-	"timeline.UpdateTimelineInput":           true,
-	"timeline.UpdateEntityGroupInput":        true,
-	"timeline.UpdateEventVisibilityInput":    true,
-	"addons.UpdateAddonInput":                true,
-	"entities.UpdateLayoutPresetInput":       true,
-	"entities.UpdateContentTemplateInput":    true,
-	"entities.UpdateEntityTypeInput":         true,
-	"entities.UpdatePromptInput":             true,
-	"maps.UpdateDrawingInput":                true,
-	"maps.UpdateTokenInput":                  true,
-	"maps.UpdateTokenPositionInput":          true,
-	"maps.UpdateLayerInput":                  true,
-	"maps.UpdateMapInput":                    true,
-	"campaigns.UpdateCampaignInput":          true,
+	"packages.UpdatePolicyInput":          true,
+	"packages.UpdateRepoURLInput":         true,
+	"bestiary.UpdatePublicationInput":     true,
+	"timeline.UpdateEntityGroupInput":     true,
+	"timeline.UpdateEventVisibilityInput": true,
+	"addons.UpdateAddonInput":             true,
+	"entities.UpdateLayoutPresetInput":    true,
+	"entities.UpdateContentTemplateInput": true,
+	"entities.UpdateEntityTypeInput":      true,
+	"entities.UpdatePromptInput":          true,
+	"maps.UpdateTokenPositionInput":       true,
+	"campaigns.UpdateCampaignInput":       true,
 	// CALV5 SALVAGE: these three came back with the recovered domain layer and
 	// are listed again because they were never swept — pretending otherwise
 	// would make this test lie. They are the ORIGINAL types recovered verbatim,
@@ -111,6 +133,31 @@ var notYetSwept = map[string]bool{
 	"calendar.UpdateEventVisibilityInput":    true,
 	"calendar.UpdateCalendarVisibilityInput": true,
 	"calendar.UpdateCalendarInput":           true,
+
+	// The scanner widened from Update*Input to Update*Request on 2026-09-12
+	// (ADR-056: "a guard that can see half the surface is a guard that
+	// certifies the other half by silence" — the tags finding below is why).
+	// These ten are what the wider scanner found on day one; NONE were
+	// looked at by this sweep (task #6 fixed exactly the six named in
+	// contractGoverned's ADR-054 block plus tags, and no others). Being on
+	// this list is a statement about what was SEEN, not a claim of safety —
+	// several of these (UpdateEntityRequest, UpdateEntityTypeRequest,
+	// UpdateSMTPRequest) look exactly like the shape this ratchet exists to
+	// catch and are good candidates for the next sweep.
+	//
+	// campaigns.* and entities.* entries here are additionally out of THIS
+	// session's reach: campaigns/ is another agent's worktree right now, and
+	// widening scope to entities/ mid-task was not what was asked.
+	"campaigns.UpdateCampaignRequest":         true,
+	"campaigns.UpdateRoleRequest":             true,
+	"campaigns.UpdateSidebarConfigRequest":    true,
+	"entities.UpdateEntityRequest":            true,
+	"entities.UpdateEntityTypeRequest":        true,
+	"entity_notes.UpdateNoteRequest":          true,
+	"notes.UpdateNoteRequest":                 true,
+	"posts.UpdatePostRequest":                 true,
+	"relations.UpdateRelationMetadataRequest": true,
+	"smtp.UpdateSMTPRequest":                  true,
 }
 
 type inputStruct struct {
@@ -236,7 +283,8 @@ func scanUpdateInputs(t *testing.T) map[string]inputStruct {
 		rel, _ := filepath.Rel(root, path)
 		ast.Inspect(file, func(n ast.Node) bool {
 			ts, ok := n.(*ast.TypeSpec)
-			if !ok || !strings.HasPrefix(ts.Name.Name, "Update") || !strings.HasSuffix(ts.Name.Name, "Input") {
+			if !ok || !strings.HasPrefix(ts.Name.Name, "Update") ||
+				(!strings.HasSuffix(ts.Name.Name, "Input") && !strings.HasSuffix(ts.Name.Name, "Request")) {
 				return true
 			}
 			st, ok := ts.Type.(*ast.StructType)

@@ -8,6 +8,7 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
+	"github.com/keyxmakerx/chronicle/internal/patch"
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
@@ -146,17 +147,19 @@ func (h *DrawingHandler) UpdateDrawing(c echo.Context) error {
 		return err
 	}
 
+	// PARTIAL update: absent preserves, explicit null clears, a present
+	// value replaces (sweep R4 / ADR-054 #6).
 	var req struct {
-		Points            json.RawMessage `json:"points"`
-		StrokeColor       string          `json:"stroke_color"`
-		StrokeWidth       float64         `json:"stroke_width"`
-		FillColor         *string         `json:"fill_color"`
-		FillAlpha         float64         `json:"fill_alpha"`
-		TextContent       *string         `json:"text_content"`
-		FontSize          *int            `json:"font_size"`
-		Rotation          float64         `json:"rotation"`
-		Visibility        string          `json:"visibility"`
-		ExpectedUpdatedAt *time.Time      `json:"expected_updated_at"`
+		Points            patch.Field[json.RawMessage] `json:"points"`
+		StrokeColor       patch.Field[string]          `json:"stroke_color"`
+		StrokeWidth       patch.Field[float64]         `json:"stroke_width"`
+		FillColor         patch.Field[string]          `json:"fill_color"`
+		FillAlpha         patch.Field[float64]         `json:"fill_alpha"`
+		TextContent       patch.Field[string]          `json:"text_content"`
+		FontSize          patch.Field[int]             `json:"font_size"`
+		Rotation          patch.Field[float64]         `json:"rotation"`
+		Visibility        patch.Field[string]          `json:"visibility"`
+		ExpectedUpdatedAt *time.Time                   `json:"expected_updated_at"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request body")
@@ -325,32 +328,36 @@ func (h *DrawingHandler) UpdateToken(c echo.Context) error {
 		return err
 	}
 
+	// PARTIAL update: absent preserves, explicit null clears, a present
+	// value replaces (sweep R4 / ADR-054 #6). Before this, a drag PUT
+	// carrying only {x, y} zeroed IsHidden, IsLocked, both HP bars and
+	// every aura/light/vision field — see UpdateTokenInput's doc comment.
 	var req struct {
-		Name              string          `json:"name"`
-		ImagePath         *string         `json:"image_path"`
-		X                 float64         `json:"x"`
-		Y                 float64         `json:"y"`
-		Width             float64         `json:"width"`
-		Height            float64         `json:"height"`
-		Rotation          float64         `json:"rotation"`
-		Scale             float64         `json:"scale"`
-		IsHidden          bool            `json:"is_hidden"`
-		IsLocked          bool            `json:"is_locked"`
-		Bar1Value         *int            `json:"bar1_value"`
-		Bar1Max           *int            `json:"bar1_max"`
-		Bar2Value         *int            `json:"bar2_value"`
-		Bar2Max           *int            `json:"bar2_max"`
-		AuraRadius        *float64        `json:"aura_radius"`
-		AuraColor         *string         `json:"aura_color"`
-		LightRadius       *float64        `json:"light_radius"`
-		LightDimRadius    *float64        `json:"light_dim_radius"`
-		LightColor        *string         `json:"light_color"`
-		VisionEnabled     bool            `json:"vision_enabled"`
-		VisionRange       *float64        `json:"vision_range"`
-		Elevation         int             `json:"elevation"`
-		StatusEffects     json.RawMessage `json:"status_effects"`
-		Flags             json.RawMessage `json:"flags"`
-		ExpectedUpdatedAt *time.Time      `json:"expected_updated_at"`
+		Name              string                       `json:"name"`
+		ImagePath         patch.Field[string]          `json:"image_path"`
+		X                 patch.Field[float64]         `json:"x"`
+		Y                 patch.Field[float64]         `json:"y"`
+		Width             patch.Field[float64]         `json:"width"`
+		Height            patch.Field[float64]         `json:"height"`
+		Rotation          patch.Field[float64]         `json:"rotation"`
+		Scale             patch.Field[float64]         `json:"scale"`
+		IsHidden          patch.Field[bool]            `json:"is_hidden"`
+		IsLocked          patch.Field[bool]            `json:"is_locked"`
+		Bar1Value         patch.Field[int]             `json:"bar1_value"`
+		Bar1Max           patch.Field[int]             `json:"bar1_max"`
+		Bar2Value         patch.Field[int]             `json:"bar2_value"`
+		Bar2Max           patch.Field[int]             `json:"bar2_max"`
+		AuraRadius        patch.Field[float64]         `json:"aura_radius"`
+		AuraColor         patch.Field[string]          `json:"aura_color"`
+		LightRadius       patch.Field[float64]         `json:"light_radius"`
+		LightDimRadius    patch.Field[float64]         `json:"light_dim_radius"`
+		LightColor        patch.Field[string]          `json:"light_color"`
+		VisionEnabled     patch.Field[bool]            `json:"vision_enabled"`
+		VisionRange       patch.Field[float64]         `json:"vision_range"`
+		Elevation         patch.Field[int]             `json:"elevation"`
+		StatusEffects     patch.Field[json.RawMessage] `json:"status_effects"`
+		Flags             patch.Field[json.RawMessage] `json:"flags"`
+		ExpectedUpdatedAt *time.Time                   `json:"expected_updated_at"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request body")
@@ -519,13 +526,16 @@ func (h *DrawingHandler) UpdateLayer(c echo.Context) error {
 		return err
 	}
 
+	// PARTIAL update: absent preserves, explicit null clears, a present
+	// value replaces (sweep R4 / ADR-054 #6). Before this, reordering the
+	// layer stack (a SortOrder-only PUT) silently turned visibility/lock off.
 	var req struct {
-		Name              string     `json:"name"`
-		SortOrder         int        `json:"sort_order"`
-		IsVisible         bool       `json:"is_visible"`
-		Opacity           float64    `json:"opacity"`
-		IsLocked          bool       `json:"is_locked"`
-		ExpectedUpdatedAt *time.Time `json:"expected_updated_at"`
+		Name              string               `json:"name"`
+		SortOrder         patch.Field[int]     `json:"sort_order"`
+		IsVisible         patch.Field[bool]    `json:"is_visible"`
+		Opacity           patch.Field[float64] `json:"opacity"`
+		IsLocked          patch.Field[bool]    `json:"is_locked"`
+		ExpectedUpdatedAt *time.Time           `json:"expected_updated_at"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request body")
