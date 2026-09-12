@@ -2,6 +2,36 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **OPERATOR RULING NEEDED — does the co-DM promotion cross plugin lines?**
+  ADR-057 slice 1 promotes a DM-granted member to Owner *for visibility* on
+  entity paths. An adversarial review of the shipped fix (2026-09-12) showed
+  the same raw-role pattern in plugins whose content is NOT entities. The
+  entity paths are being finished now; these three are deliberately left
+  alone because changing them changes those features' own semantics:
+  - **Armory** (`armory/handler.go:75,112` ListItems/CountItems): should a
+    co-DM see DM-only armory items? Its `Purchase` path and
+    `armoryBuyerAccessAdapter.CanUserActAsBuyer` stay on the raw role
+    regardless — they read `CanEdit`, and VisibilityRole is a visibility
+    promotion, never an edit one.
+  - **NPCs** (`npcs/handler.go:63,124`): the comment at `:60` says the role
+    deliberately matches the gallery's "so reveal/hide visibility is
+    unchanged". NPCs have their own reveal mechanic; promoting here changes
+    what a co-DM sees of unrevealed NPCs.
+  - **Timeline** (`timeline/handler.go:82` `effectiveRole`): unlike entities,
+    timeline already honours view-as-player. A promotion has to compose with
+    that, not ignore it.
+  Default if the operator does not rule: leave all three as they are. A co-DM
+  seeing more is not obviously right in any of the three.
+
+- **Process note from the same review.** ADR-057 said "every
+  `CheckEntityAccess` caller" and enumerated nine. The tree has twelve, and
+  the entity page also reaches the same rule through `GetChildren`,
+  `filterByTargetVisibility`, `GetFilteredGraphData` and
+  `ListRecentForDashboard`, none of which are syntactic `CheckEntityAccess`
+  callers. An enumeration written from a grep of one function name is not a
+  census of a RULE. Future slices that claim "every caller" must grep for the
+  behaviour, not the symbol, and say which spelling they searched.
+
 - **Calendar V5 timing (operator, 2026-09-12): not now.** The operator is at
   half the weekly usage across projects and is wary of the calendar's size.
   Sequence when it starts: (1) a Sonnet research pass on the open-source
