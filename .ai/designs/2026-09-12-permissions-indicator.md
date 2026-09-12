@@ -1,7 +1,8 @@
 # Permissions glance — build plan (ADR-057)
 
-**Status:** ready for execution in slice order. Slices 1–2 need no design and
-can start now. Slices 3–4 wait on a render the operator has signed.
+**Status:** ready for execution in slice order. **Render SIGNED by the operator
+2026-09-12** — https://claude.ai/code/artifact/c84d0fb4-f4c5-4410-9657-ddd77bb20a20
+— so every slice can start. Slices 1–2 never needed it.
 **Executor model:** Sonnet (`go-dev`), with a `reviewer` pass before push.
 **Owner-facing summary:** one icon beside the entity name tells the DM team
 who can see it; hover shows the list; editing moves to edit mode; the odd icon
