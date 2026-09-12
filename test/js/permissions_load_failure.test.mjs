@@ -213,6 +213,82 @@ test('draft mode is NOT treated as a failed load and keeps showing its mode', as
   assert.equal(findByClass(body, 'perm-error'), null, 'draft mode has no endpoint — that is not a failure');
 });
 
+// --- Adversarial-review follow-up (three defects found in the loadFailed
+// guard above). Each test below is written to FAIL against the code as it
+// stood after c59cf778, before the corresponding fix — see
+// /tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/p1fix-js-red.txt
+// for the red run.
+
+test('DEFECT 1: a fetch that has not resolved yet shows no mode word (renderTrigger must guard on state.loading too)', () => {
+  const { sandbox } = boot();
+  const impl = sandbox.Chronicle._impls.permissions;
+  const el = makeNode('div');
+  impl.init(el, { editable: true, endpoint: '/campaigns/c1/entities/e1/permissions' });
+  // Deliberately no `await` at all: Chronicle.apiFetch's promise has not
+  // resolved yet at this point (its .then callback is a microtask that has
+  // not run), so this is exactly the in-flight window init() -> renderTrigger()
+  // -> load() leaves open before the request settles. The old code only
+  // guarded on state.loadFailed (set inside load()'s .catch), never on
+  // state.loading (true from init until the request settles either way) —
+  // so it fell through to getMode() against the untouched init defaults
+  // (visibility: 'default', isPrivate: false) and painted "Everyone" for
+  // the whole duration of the request.
+  const trigger = findByClass(el, 'perm-trigger');
+  assert.ok(trigger, 'trigger renders synchronously');
+  const text = gatherText(trigger);
+  assert.ok(!/Everyone/.test(text), 'no mode word while the load is still in flight: got ' + JSON.stringify(text));
+  assert.ok(!/DM Only/.test(text), 'no mode word while the load is still in flight: got ' + JSON.stringify(text));
+  assert.ok(!/Custom/.test(text), 'no mode word while the load is still in flight: got ' + JSON.stringify(text));
+  const modeBadge = findByClass(trigger, 'perm-trigger-mode');
+  assert.equal(modeBadge, null, 'no perm-trigger-mode badge while the load is still in flight');
+});
+
+test('DEFECT 1 (draft-mode guard rail): draft mode must keep showing its mode immediately, synchronously, with no endpoint ever called', () => {
+  // Draft mode has no endpoint, never "loads" in the network sense, and owns
+  // its mode locally from init -- a naive `if (state.loading)` guard in
+  // renderTrigger() would blank it too, since state.loading defaults to true
+  // for every mode including draft. This must keep passing after the fix.
+  const { sandbox, apiCalls } = boot();
+  const impl = sandbox.Chronicle._impls.permissions;
+  const el = makeNode('div');
+  impl.init(el, { mode: 'draft', draftTarget: '#is_private', editable: true });
+  assert.equal(apiCalls.length, 0, 'draft mode never calls the network');
+  const trigger = findByClass(el, 'perm-trigger');
+  assert.ok(/Everyone/.test(gatherText(trigger)), 'draft mode must show its mode immediately: got ' + JSON.stringify(gatherText(trigger)));
+});
+
+test('DEFECT 2: a failed load does not offer a dismiss that empties the panel', async () => {
+  const { sandbox, body } = boot();
+  const impl = sandbox.Chronicle._impls.permissions;
+  const el = makeNode('div');
+  impl.init(el, { editable: true, endpoint: '/campaigns/c1/entities/e1/permissions' });
+  await flush();
+
+  const err = findByClass(body, 'perm-error');
+  assert.ok(err, 'the failure is reported');
+
+  // Chosen fix: a failed-load error offers no dismiss button at all, because
+  // there is no loaded content behind it to reveal -- dismissing it used to
+  // null state.error, re-render, and fall straight into renderBody()'s
+  // `if (state.loadFailed) return;`, leaving the panel completely empty with
+  // no way back inside the widget.
+  const dismiss = findByClass(err, 'perm-error-dismiss');
+  assert.equal(dismiss, null, 'a failed-load error must not be dismissible into an empty panel');
+});
+
+test('DEFECT 3: the inline expand chevron still renders when the load has failed', async () => {
+  const { sandbox } = boot();
+  const impl = sandbox.Chronicle._impls.permissions;
+  const el = makeNode('div');
+  impl.init(el, { editable: true, endpoint: '/campaigns/c1/entities/e1/permissions', layout: 'inline' });
+  await flush();
+
+  const trigger = findByClass(el, 'perm-trigger');
+  assert.ok(trigger, 'inline trigger renders');
+  const chevron = findByClass(trigger, 'perm-trigger-chevron');
+  assert.ok(chevron, 'the expand chevron must still render on a failed load -- the panel still expands on click');
+});
+
 test('a successful load still shows the real mode (regression guard)', async () => {
   const { sandbox, body } = boot({
     ok: true,
