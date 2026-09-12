@@ -14,7 +14,26 @@ what a Player sees (no icon). Working files were in this session's scratchpad
 (`glance/*.dc.html`, `canvas.json`) — ephemeral; re-extract from the artifact
 if they are gone. **Unblocks ADR-057 slices 3–4.** Slices 1–2 never needed it.
 
-## Requested next (operator, 2026-09-12, in their words)
+**Editors and chrome — DRAWN 2026-09-12, awaiting the operator's look.**
+Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
+Two pages. *Permissions:* Owner editing (three modes, role / member / group
+rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank
+on a failed load). *Chrome:* sidebar as built beside its edit mode (drag,
+eye, pen/trash on custom items; the inline edit card is the one polish
+proposed over three `prompt()` boxes) · top-left brand as built, in place per
+D13/D16 with the switcher folded in, and the Appearance field it is edited on
+today · top bar as built (links, then a quote on the gradient style) and
+Chrome V2 re-baselined (brand card left, centre open, readout rail right;
+sky deferred, calendar/weather slots declared and empty) · editing the top
+bar: today's two Appearance cards, then the V2 Top Bar tab (five background
+modes, live preview, ordered widget rows with settings and visibility, six
+slots, one staged save). Working files: this session's scratchpad
+`chrome-editors/` (`gen.mjs` + `perm.mjs` + `chrome.mjs` emit the six
+`.dc.html`; `canvas.json`) — ephemeral; re-extract from the artifact if gone.
+Decision-free on purpose: nothing new was ruled, every board draws a plan
+that already exists (ADR-057, header-and-nav N0/H1–H3, Chrome V2 D13–D19).
+
+## Requested next (operator, 2026-09-12, in their words) — drawn above
 
 > "renders of what it looks like for someone to be able to change those
 > settings, and another render for the Nav Bar, the top-left icon, and the top
