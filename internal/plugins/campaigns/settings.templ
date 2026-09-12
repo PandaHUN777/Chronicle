@@ -267,7 +267,7 @@ templ settingsGeneralTab(cc *CampaignContext, csrfToken, systemOptionsJSON strin
 					</div>
 				</label>
 				<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-alt cursor-pointer transition-colors">
-					<input type="radio" name="default_vis" value="dm_only" :checked="visibility === 'dm_only'" @change="save('dm_only')" class="accent-accent"/>
+					<input type="radio" name="default_vis" value="dm_only" :checked="visibility === 'dm_only' || visibility === 'private'" @change="save('dm_only')" class="accent-accent"/>
 					<div>
 						<span class="text-sm font-medium text-fg">DM Only</span>
 						<p class="text-xs text-fg-secondary">New entities are hidden from players until explicitly revealed.</p>

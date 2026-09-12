@@ -99,7 +99,7 @@ func (h *Handler) ShowSession(c echo.Context) error {
 	// importing the entities plugin's repository — rule 8), so this is the
 	// gate.
 	ctx := c.Request().Context()
-	visibleEntities, err := h.svc.FilterEntitiesForViewer(ctx, cc.Campaign.ID, session.Entities, int(cc.MemberRole), userID)
+	visibleEntities, err := h.svc.FilterEntitiesForViewer(ctx, cc.Campaign.ID, session.Entities, int(cc.VisibilityRole()), userID)
 	if err != nil {
 		return err
 	}
