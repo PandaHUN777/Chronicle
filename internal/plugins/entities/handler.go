@@ -596,7 +596,12 @@ func (h *Handler) Show(c echo.Context) error {
 
 	// Visibility check: verify the user can view this entity.
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -1711,7 +1716,12 @@ func (h *Handler) GetEntry(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -1797,7 +1807,12 @@ func (h *Handler) GetPlayerNotes(c echo.Context) error {
 	// visibility, not just legacy is_private — matches GetEntry/GetFieldsAPI so a
 	// player excluded from this entity can't read its player_notes (SEC-IDOR-5).
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -1863,7 +1878,12 @@ func (h *Handler) GetFieldsAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -2093,7 +2113,12 @@ func (h *Handler) PreviewAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3168,7 +3193,12 @@ func (h *Handler) GetAliasesAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3243,7 +3273,14 @@ func (h *Handler) BacklinksFragment(c echo.Context) error {
 
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches PreviewAPI / GetAliasesAPI.
-	access, err := h.service.CheckEntityAccess(ctx, entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): reuse `role` (cc.VisibilityRole(),
+	// already computed above for the backlinks list query itself) instead of
+	// re-deriving int(cc.MemberRole) here. Before this fix the two halves of
+	// this function disagreed: the list was already built with the Co-DM's
+	// promoted Owner-for-visibility role, but this second, independent
+	// derivation used their raw MemberRole — so a Co-DM saw evidence a
+	// dm_only entity has backlinks and then got 404'd loading them.
+	access, err := h.service.CheckEntityAccess(ctx, entity.ID, role, userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3480,10 +3517,14 @@ func (h *Handler) ClaimEntity(c echo.Context) error {
 	// The claim button only renders on entities the player can view, but a
 	// hand-rolled POST with a known UUID would otherwise let a player claim
 	// (and, via the non-visibility-filtered "My Characters" list, learn the
-	// name of) a hidden character. Use the real member role, not the
-	// view-as-player override. Mirrors the IsPrivate gate the Show handler
-	// applies before rendering.
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entityID, int(cc.MemberRole), userID)
+	// name of) a hidden character. Use the real member role (cc.MemberRole /
+	// cc.VisibilityRole()), not the view-as-player override (an
+	// Owner-previewing-as-Player templ-context value that never touches cc
+	// at all — see routes.go's effectiveRole). ADR-057 slice 1: promote via
+	// VisibilityRole() the same way Show does, which this comment already
+	// says to mirror — a Co-DM must be able to claim a dm_only character
+	// exactly as they can open its Show page.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entityID, int(cc.VisibilityRole()), userID)
 	if err != nil {
 		return err
 	}

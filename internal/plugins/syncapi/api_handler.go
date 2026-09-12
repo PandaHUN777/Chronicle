@@ -191,6 +191,28 @@ func (h *APIHandler) resolveUserID(c echo.Context) string {
 	return key.UserID
 }
 
+// visibilityRoleFor is the API-key path's equivalent of
+// campaigns.CampaignContext.VisibilityRole(): it promotes role to RoleOwner
+// when the caller has been DM-granted dm_only visibility in this campaign,
+// so a Co-DM's CheckEntityAccess call resolves the same way the web Show
+// handler's now does (ADR-057 slice 1, C-CODM-VIS-PARITY). Callers that are
+// already Owner (every stored Bearer key, per resolveRole) skip the extra
+// lookup. Only feed the RESULT into CheckEntityAccess — leave the caller's
+// own `role` variable alone for anything else in that handler (GM-field and
+// secret-stripping decisions stay on the real member role, mirroring the
+// entities-plugin GetEntry path's asymmetry: promoted for visibility, not
+// for what a Player-tier viewer's response gets redacted).
+func (h *APIHandler) visibilityRoleFor(ctx context.Context, campaignID, userID string, role int) int {
+	if role >= int(campaigns.RoleOwner) {
+		return role
+	}
+	granted, err := h.campaignSvc.IsUserDmGranted(ctx, campaignID, userID)
+	if err != nil || !granted {
+		return role
+	}
+	return int(campaigns.RoleOwner)
+}
+
 // --- Campaign Info ---
 
 // apiCampaignResponse is the API-safe representation of a campaign.
@@ -370,8 +392,18 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 	}
 
 	// Enforce visibility: check both legacy is_private and custom permissions.
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): CheckEntityAccess gets a promoted
+	// role when the caller is DM-granted, mirroring what
+	// campaigns.CampaignContext.VisibilityRole() does on the web path — a
+	// Co-DM must be able to read a dm_only entity through the sync API the
+	// same as they can open it on the web. There is no CampaignContext here
+	// (this handler is API-key authenticated, not session-cc-based), so the
+	// promotion is resolved directly via campaignSvc.IsUserDmGranted rather
+	// than reusing VisibilityRole() itself. `role` is deliberately left
+	// unpromoted for everything below this call (GM-field / secret
+	// stripping) — same asymmetry as the entities-plugin GetEntry path.
 	userID := h.resolveUserID(c)
-	access, accessErr := h.entitySvc.CheckEntityAccess(ctx, entity.ID, role, userID)
+	access, accessErr := h.entitySvc.CheckEntityAccess(ctx, entity.ID, h.visibilityRoleFor(ctx, entity.CampaignID, userID, role), userID)
 	if accessErr != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
