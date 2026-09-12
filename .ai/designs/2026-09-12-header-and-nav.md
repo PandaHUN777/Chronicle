@@ -183,3 +183,46 @@ In the row. Colour follows the Chrome accent. Reduced-motion members always
 get Still; a per-user "turn nav motion off" lives in the account menu.
 Extend `CampaignSettings` (`campaigns/model.go`), never a parallel model.
 **D + C is the pick in all but name; awaiting the operator's word.**
+
+## Addendum — round 6 (2026-09-12): styles, not knobs; the Customize page
+
+- **Switcher:** filters fold by default (one "Filters ▾" row with the live
+  summary chips); the filter set is role, Active/Archived, and **Public**
+  (`Campaign.IsPublic`, already a model field).
+- **D corrected again:** rest shows NO page name (you are not in that app).
+  Hover = today's glow shape rendered as two traces touching end to end
+  (top-right corner → right edge → two thirds of the bottom), tugging at each
+  other, never parting. Click = they part and circle the full border at a
+  middle speed with drifting length and pace; the page name appears in the
+  row.
+- **The setting is a choice of STYLE, not knobs on D** (the lead misread it
+  in round 5). Owner picks one on the Customize page → Navigation: moving
+  styles D living ring (operator's), G comet, H breathing, I tide; still
+  styles J rail and tint, K folder tab, L edge-lit, M solid icon; plus
+  Strength (Calm/Lively) for the moving ones and Page name (Hidden/In the
+  row). Every moving style names its still fallback for reduced motion.
+  Canvas page "Customize" holds the drawings, all live.
+- **The Customize page today, measured:** seven cards on the Appearance tab
+  (`branding.templ` 520-800: Backdrop Image, Brand Name, Site accent, Surface
+  Accents, Top Bar Style, Topbar Content, Font) and one preview
+  (`#appearance-preview-root`, `branding.templ:388-470`). The preview IS
+  wired — `static/js/widgets/appearance_editor.js` (1006 lines) mounts on
+  `data-widget="appearance-editor"` (`branding.templ:376`) and updates
+  accent, brand, top bar style, font and backdrop — but each in one small
+  spot, and nothing else on the demo site reacts (May audit §8.4:
+  accent-weighted ~90%). That is why the operator calls it broken; a
+  runtime break on top of that is NOT verified from here — first executor
+  task: open it in a live session and record what actually moves.
+- **"More colour options" = `C-THEME-V2` (`Cordinator/plans/BACKLOG.md:
+  930-973`), scoped in May, never started.** Cleanup A (bugs), Cleanup B
+  (one save model, no JS-injected UI — a CI guard), Cleanup C (the
+  expansion: elevation presets, motion presets, heading font, and colours
+  beyond the accents — drawn as tones: Sidebar Charcoal/Ink/Tinted, Page
+  Cool/Warm/Paper, Text contrast Standard/High, plus more accent presets
+  and custom hex on every slot), Preview rebuild (the demo site fed by the
+  draft at three zoom levels: the faux site, a hover-me sample card for
+  elevation + motion, swatches). **Proposed shape:** one Customize page,
+  sections down the left (Brand · Header · Navigation · Colours · Type ·
+  Motion and depth), the demo site always in view, one staged save.
+  Header (H3) and Navigation (N1 + the highlight style) are sections of
+  it, not separate tabs.

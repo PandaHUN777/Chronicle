@@ -27,7 +27,12 @@ open. Round 4: the switcher redrawn as a flyout from the nav's own edge (ruled,
 header-and-nav addendum item 5, corrected); D drawn MOVING in three
 strengths with the page name kept in the row. Round 5: D corrected to the full
 glow border with rest / hover / active live and an Owner settings card
-(Motion, Traces, Length, On hover, Page name). D + C awaiting the word.
+(Motion, Traces, Length, On hover, Page name). Round 6: D corrected (rest bare, hover = joined traces
+as today's glow, active = circling); the setting is a choice of STYLE —
+four moving (D, G comet, H breathing, I tide) and four still (J rail, K
+folder tab, L edge-lit, M solid icon) drawn live on a third canvas page
+"Customize", with the Customize page today and rebuilt (C-THEME-V2 + the
+demo site). Switcher filters fold; Public filter added. Awaiting picks.
 Canvas: https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 Two pages. *Permissions:* Owner editing (three modes, role / member / group
 rows, owner row, read-only tag line) · Scribe (mode badge only; honest blank
