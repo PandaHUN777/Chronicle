@@ -382,6 +382,42 @@ func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool
 			// No valid signature. Fall back: allow if user is authenticated
 			// and is a member of the file's campaign (graceful migration).
 			if !h.allowUnsignedAccess(c, file) {
+				// Existence-oracle fix (reachability confirmed 2026-09-13,
+				// existence_oracle_reachability_test.go): with a signer
+				// configured -- ALWAYS true in production, since
+				// app/routes.go wires one whenever signingSecret != "" and
+				// the secret is auto-generated when unset -- this branch,
+				// not the defense-in-depth switch ~17 lines below, is the
+				// one an anonymous caller on a private campaign actually
+				// hits. Returning Forbidden here unconditionally made a
+				// real private file 403 and an unknown id 404 (repository
+				// GetByID fails first): two distinguishable answers to the
+				// identical anonymous, unsigned request, i.e. an id-existence
+				// oracle. An anonymous caller on a private campaign gets the
+				// SAME NotFound the unreached switch branch below already
+				// intended, closing the oracle at this earlier return.
+				//
+				// An authenticated-but-non-member caller (userID != "")
+				// still gets Forbidden: that caller already proved an
+				// identity, so "you don't have access" is a different and
+				// far lower-severity signal than "does this exist" -- and
+				// collapsing it to NotFound would only degrade a legitimate
+				// error message for signed-in users without closing any
+				// anonymous probing surface.
+				//
+				// Residual, NOT closed by this fix: a TIMING oracle. By the
+				// time we reach here, Serve's h.service.GetByID(fileID) has
+				// already succeeded for a real file -- a DB lookup that
+				// found a row and populated CampaignIsPublic -- whereas an
+				// unknown id fails GetByID and never reaches checkMediaAccess
+				// at all. That earlier, unavoidable asymmetry in DB work is
+				// untouched by this change: this fix only makes the two
+				// cases answer with the same STATUS, BODY and HEADERS: a
+				// timing-based distinguisher (response latency) remains
+				// open and is explicitly not claimed to be fixed here.
+				if file.CampaignIsPublic != nil && !*file.CampaignIsPublic && auth.GetUserID(c) == "" {
+					return apperror.NewNotFound("media file not found")
+				}
 				return apperror.NewForbidden("signed URL required")
 			}
 		}
