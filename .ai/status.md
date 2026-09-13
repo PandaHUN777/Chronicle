@@ -32,7 +32,7 @@ lessons this branch paid for.
 deploys the calendar demolition (PR #595, already on main) and confirms its
 five verification steps.
 
-### CORRECTION (2026-09-13): this branch has no PR, and this file said it did
+### CORRECTION (2026-09-13): this file claimed a PR that did not exist — now #607
 
 Two entries below used to read "see the branch's own PR for review status".
 `claude/determined-davinci-5ut5f5` **has no pull request** — checked against
@@ -42,10 +42,15 @@ contribution) and four dependabot bumps.
 
 `.ai/designs/2026-09-12-build-order.md` set the rule "**one PR per slice**,
 nothing merges until the demolition deploy is confirmed". The second half was
-honoured and the first half was not: forty-eight commits across P-1, the
-WebSocket fix, the audit fixes and all of ADR-058 are pushed to the branch and
-have never been proposed for review anywhere. The operator caught this, not
-the process.
+honoured and the first half was not: 49 commits across P-1, the WebSocket fix,
+the audit fixes and all of ADR-058 sat pushed and unproposed. The operator
+caught this, not the process.
+
+**Resolved:** the operator chose one PR for the whole branch over a retro-split,
+so review starts now rather than after rework. It is
+[#607](https://github.com/keyxmakerx/Chronicle/pull/607), body grouped by arc.
+The merge hold is unchanged and is a separate thing — #607 exists to be
+reviewed, not merged.
 
 
 ### ADR-058 decisions 1-3 — a media file inherits page visibility (2026-09-12)

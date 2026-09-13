@@ -12,17 +12,22 @@
 Branch: **`claude/determined-davinci-5ut5f5`**, 48 commits ahead of
 `origin/main`, pushed, working tree clean.
 
-**THERE IS NO PULL REQUEST FOR THIS BRANCH.** Checked against the GitHub API
-(head `keyxmakerx:claude/determined-davinci-5ut5f5`, state `all`): zero
-results. Every commit listed in §1 is pushed and **has never been proposed for
-review anywhere**. `.ai/designs/2026-09-12-build-order.md` set the rule "one PR
-per slice, nothing merges until the demolition deploy is confirmed" — the
-second half was honoured and the first half was silently dropped. The operator
-caught it; no check did. If you are a cold session, **the PR question is open
-and is the operator's call** (§3, "Still outstanding").
+**PR: [#607](https://github.com/keyxmakerx/Chronicle/pull/607)** — "Permissions,
+media and the audit backlog". Opened 2026-09-13, one PR for the whole branch
+with the work grouped by arc in the body.
 
-The merge hold below is a separate thing from the PR question: a PR can exist,
-be reviewed, and sit unmerged. The hold was never a reason not to open one.
+It should have been several. `.ai/designs/2026-09-12-build-order.md` set the
+rule "one PR per slice, nothing merges until the demolition deploy is
+confirmed"; the second half was honoured and the first half was silently
+dropped, so 49 commits accumulated with no PR at all — and `.ai/status.md`
+twice said "see the branch's own PR for review status", pointing at nothing.
+The operator caught it; no guard and no review did. The operator then chose one
+PR now over a retro-split, so that the security work gets CI and review
+coverage immediately rather than after rework.
+
+The merge hold below is a **separate thing** from the PR question: a PR can
+exist, be reviewed, and sit unmerged. The hold was never a reason not to open
+one, and treating them as one rule is exactly how the omission hid.
 
 **STANDING HOLD — nothing on this branch merges to `main` yet.** The operator
 must first deploy the calendar demolition and walk its verification steps.
@@ -256,13 +261,10 @@ This arc is complete. Its pieces:
   fallback). Building against the default is fine; say that you did.
 - Whether armory's `Purchase` / `CanUserActAsBuyer` should also promote.
 - Whether media access should be re-architected further than ADR-058 goes.
-- **Whether to open a PR for this branch, and in what shape.** The build order
-  said one PR per slice; nothing was opened at all. The realistic options now
-  are one PR for the whole branch (48 commits, easy to open, hard to review),
-  or splitting it back into the slice-sized PRs the build order asked for
-  (P-1 / WebSocket S1 / audit fixes / ADR-058), which costs rework but matches
-  the plan and is far more reviewable. Opening a PR does not weaken the merge
-  hold.
+- **RULED 2026-09-13: one PR for the whole branch, arcs in the body** — now
+  [#607](https://github.com/keyxmakerx/Chronicle/pull/607). Splitting an arc
+  back out later is still on the table if review finds one thread too coarse;
+  the PR body says so explicitly.
 
 ---
 
