@@ -7,6 +7,41 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **RULED 2026-09-13 by the operator: YES, a co-DM may BUY, not just see.**
+  Asked directly ("should a co-DM also be able to make purchases on a player's
+  behalf?"), answered yes. This is a deliberate widening and it crosses a line
+  the code currently draws on purpose, so it must not be implemented by
+  quietly reusing the visibility helper.
+
+  **What the code does today.** `armory/handler.go:79-81` carries an explicit
+  comment: "This is a SEEING change only: Purchase and CanUserActAsBuyer stay
+  on the raw MemberRole because those gate an economic/edit action."
+  `armoryBuyerAccessAdapter.CanUserActAsBuyer` (`internal/app/routes.go:1467`)
+  resolves `CheckEntityAccess(entityID, role, userID)` and returns
+  `perm.CanEdit`, with the RAW role.
+
+  **Why this cannot just call `VisibilityRole()`.** That helper is documented,
+  and relied on, as promoting a DM-granted member to Owner **for visibility
+  only, never for editing or ownership**. Passing it into an economic action
+  would make its own documentation false at the first call site that breaks
+  it, and the next reader would have no way to tell which callers meant
+  "seeing" and which meant "acting". That is how `VisibilityRole()` stops
+  being trustworthy anywhere.
+
+  **Shape to build instead:** a SECOND, separately-named accessor on
+  `campaigns.CampaignContext` — e.g. `DmTeamRole()` — that promotes an
+  `IsDmGranted` member for DM-TEAM ACTIONS, with its own doc comment saying
+  exactly which actions may use it and that it still never confers ownership.
+  Armory's Purchase path uses that one. `VisibilityRole()` keeps its current
+  meaning and its current callers untouched. Update the armory handler
+  comment, which will otherwise be describing behaviour the code no longer
+  has — the exact defect shape as audit finding 8.
+
+  **Also needs:** an ADR-057 amendment recording the widening and its reason
+  (the co-DM title is system-assigned, so Chronicle grants it deliberately and
+  should honour it), and a test proving a co-DM CAN complete a purchase while
+  a plain Player still cannot.
+
 - **ADR-058 residual: a timing side-channel on the refused merge.** The
   refused-merge response is byte-identical to an ordinary upload's (pinned by
   a test comparing status and JSON key sets), but a refusal does two extra
