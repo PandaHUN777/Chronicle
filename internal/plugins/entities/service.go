@@ -37,7 +37,7 @@ type EntityService interface {
 
 	// Hierarchy
 	GetChildren(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
-	GetAncestors(ctx context.Context, entityID string) ([]Entity, error)
+	GetAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
 	ReorderEntity(ctx context.Context, campaignID, entityID string, parentID *string, parentNodeID *string, sortOrder int) error
 	// ReorderEntityType densely re-sequences a sub-category type's position
 	// among its parent's children. sortOrder is a desired 0-based index.
@@ -579,7 +579,16 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 			}
 			// Check for circular reference: the proposed parent must not be
 			// a descendant of this entity.
-			ancestors, err := s.entities.FindAncestors(ctx, pid)
+			//
+			// This call DELIBERATELY BYPASSES the visibility filter by asking
+			// as an Owner. It is a data-integrity check, not a read: the caller
+			// is never shown these rows, only the yes/no answer. Filtering here
+			// would let a user whose view of the tree is partial create a cycle
+			// THROUGH a page they cannot see -- the ancestor that would have
+			// caught it is invisible, so the check passes and the hierarchy
+			// corrupts. Every other FindAncestors caller filters; this one must
+			// not.
+			ancestors, err := s.entities.FindAncestors(ctx, pid, permissions.RoleOwner, "")
 			if err != nil {
 				return nil, apperror.NewInternal(fmt.Errorf("checking ancestors: %w", err))
 			}
@@ -647,9 +656,14 @@ func (s *entityService) GetChildren(ctx context.Context, entityID string, role i
 	return children, nil
 }
 
-// GetAncestors returns the ancestor chain from immediate parent to root.
-func (s *entityService) GetAncestors(ctx context.Context, entityID string) ([]Entity, error) {
-	ancestors, err := s.entities.FindAncestors(ctx, entityID)
+// GetAncestors returns the ancestor chain from immediate parent to root,
+// narrowed to what this viewer may see. A hidden ancestor is OMITTED from the
+// chain rather than stubbed or counted -- ADR-055 rule 3, "hidden content is
+// absent, not greyed, not counted, not named". Its visible parent still
+// appears, because the filter runs on the finished chain and not inside the
+// recursion.
+func (s *entityService) GetAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
+	ancestors, err := s.entities.FindAncestors(ctx, entityID, role, userID)
 	if err != nil {
 		return nil, apperror.NewInternal(fmt.Errorf("finding ancestors: %w", err))
 	}

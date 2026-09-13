@@ -5,8 +5,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/keyxmakerx/chronicle/internal/patch"
 	"github.com/keyxmakerx/chronicle/internal/apperror"
+	"github.com/keyxmakerx/chronicle/internal/patch"
+	"github.com/keyxmakerx/chronicle/internal/permissions"
 )
 
 // --- Mock Repositories ---
@@ -171,7 +172,7 @@ type mockEntityRepo struct {
 	countByTypeFn    func(ctx context.Context, campaignID string, role int, userID string) (map[int]int, error)
 	listRecentFn     func(ctx context.Context, campaignID string, role int, userID string, limit int) ([]Entity, error)
 	findChildrenFn   func(ctx context.Context, parentID string, role int, userID string) ([]Entity, error)
-	findAncestorsFn  func(ctx context.Context, entityID string) ([]Entity, error)
+	findAncestorsFn  func(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
 	updateParentFn   func(ctx context.Context, entityID string, parentID *string) error
 	findBacklinksFn  func(ctx context.Context, campaignID, entityID string, role int, userID string) ([]Entity, error)
 	setAliasesFn     func(ctx context.Context, entityID string, aliases []string) error
@@ -300,9 +301,9 @@ func (m *mockEntityRepo) FindChildren(ctx context.Context, parentID string, role
 	return nil, nil
 }
 
-func (m *mockEntityRepo) FindAncestors(ctx context.Context, entityID string) ([]Entity, error) {
+func (m *mockEntityRepo) FindAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
 	if m.findAncestorsFn != nil {
-		return m.findAncestorsFn(ctx, entityID)
+		return m.findAncestorsFn(ctx, entityID, role, userID)
 	}
 	return nil, nil
 }
@@ -1256,7 +1257,7 @@ func TestUpdate_CircularParent(t *testing.T) {
 				return nil, apperror.NewNotFound("not found")
 			}
 		},
-		findAncestorsFn: func(ctx context.Context, entityID string) ([]Entity, error) {
+		findAncestorsFn: func(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
 			// B's ancestor chain: [A] (B -> A).
 			if entityID == "ent-B" {
 				return []Entity{{ID: "ent-A", Name: "A"}}, nil
@@ -1294,8 +1295,19 @@ func TestGetChildren_DelegatesToRepo(t *testing.T) {
 }
 
 func TestGetAncestors_DelegatesToRepo(t *testing.T) {
+	// This mock test proves DELEGATION and ARGUMENT PASS-THROUGH only. It
+	// cannot prove the leak is closed -- the filtering happens in SQL, and a
+	// mock that returns whatever it likes would assert nothing about it. The
+	// security proof is ancestor_visibility_reachability_test.go, which runs
+	// the real recursive CTE against a real database. What this DOES pin is
+	// that the viewer's role and id actually reach the repository rather than
+	// being dropped on the floor by the service, which is the mistake that
+	// would silently restore the leak.
+	var gotRole int
+	var gotUserID string
 	entityRepo := &mockEntityRepo{
-		findAncestorsFn: func(ctx context.Context, entityID string) ([]Entity, error) {
+		findAncestorsFn: func(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
+			gotRole, gotUserID = role, userID
 			return []Entity{
 				{ID: "parent", Name: "Parent"},
 				{ID: "grandparent", Name: "Grandparent"},
@@ -1304,12 +1316,16 @@ func TestGetAncestors_DelegatesToRepo(t *testing.T) {
 	}
 
 	svc := newTestService(entityRepo, &mockEntityTypeRepo{})
-	ancestors, err := svc.GetAncestors(context.Background(), "child-1")
+	ancestors, err := svc.GetAncestors(context.Background(), "child-1", permissions.RolePlayer, "user-7")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(ancestors) != 2 {
 		t.Errorf("expected 2 ancestors, got %d", len(ancestors))
+	}
+	if gotRole != permissions.RolePlayer || gotUserID != "user-7" {
+		t.Errorf("viewer identity must reach the repository: got role=%d user=%q, want role=%d user=%q",
+			gotRole, gotUserID, permissions.RolePlayer, "user-7")
 	}
 }
 

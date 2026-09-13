@@ -55,7 +55,7 @@ func (s *dmGrantEntitySvc) GetEntityTypeByID(_ context.Context, _ int) (*EntityT
 	return &et, nil
 }
 
-func (s *dmGrantEntitySvc) GetAncestors(_ context.Context, _ string) ([]Entity, error) {
+func (s *dmGrantEntitySvc) GetAncestors(_ context.Context, _ string, _ int, _ string) ([]Entity, error) {
 	return nil, nil
 }
 
