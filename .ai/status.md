@@ -32,11 +32,26 @@ lessons this branch paid for.
 deploys the calendar demolition (PR #595, already on main) and confirms its
 five verification steps.
 
+### CORRECTION (2026-09-13): this branch has no PR, and this file said it did
+
+Two entries below used to read "see the branch's own PR for review status".
+`claude/determined-davinci-5ut5f5` **has no pull request** — checked against
+the GitHub API, head `keyxmakerx:claude/determined-davinci-5ut5f5`, state
+`all`, zero results. The only open PRs on the repo are #606 (a fork
+contribution) and four dependabot bumps.
+
+`.ai/designs/2026-09-12-build-order.md` set the rule "**one PR per slice**,
+nothing merges until the demolition deploy is confirmed". The second half was
+honoured and the first half was not: forty-eight commits across P-1, the
+WebSocket fix, the audit fixes and all of ADR-058 are pushed to the branch and
+have never been proposed for review anywhere. The operator caught this, not
+the process.
+
 
 ### ADR-058 decisions 1-3 — a media file inherits page visibility (2026-09-12)
 
-Working-tree change (no commit/PR from this pass — see the branch's own PR
-for review status). Implements ADR-058 decisions 1-3 and Consequences 1-2
+Committed to `claude/determined-davinci-5ut5f5`. **There is no PR** — see
+the correction note at the top of this file. Implements ADR-058 decisions 1-3 and Consequences 1-2
 only; decisions 4-7 (the "where is this used" UI, merge refusal, signed-URL
 identity binding, public-campaign narrowing) are a separate slice and were
 NOT touched here.
@@ -296,8 +311,8 @@ PR per slice, nothing merges until the demolition deploy is confirmed.
 
 ### ADR-057 slice 3 — one visibilityGlance component, seven copies replaced (2026-09-12)
 
-Working-tree change (no commit/PR from this pass — see the branch's own PR
-for review status). Replaced all seven hand-rolled globe/lock/shield copies
+Committed to `claude/determined-davinci-5ut5f5`. **There is no PR** — see
+the correction note at the top of this file. Replaced all seven hand-rolled globe/lock/shield copies
 the census in `.ai/designs/2026-09-12-permissions-indicator.md` found with
 one `visibilityGlance` templ component (`entities/visibility_glance.templ`):
 `visibility_badge.templ` (header) and `entity_card.templ` (card) are now thin
