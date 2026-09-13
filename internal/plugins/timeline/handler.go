@@ -127,7 +127,13 @@ func (h *Handler) Show(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// GetTimelineForViewer, not requireTimelineInCampaign: this is a public
+	// route (RequireViewAccess, reachable by an anonymous viewer on a public
+	// campaign), so the timeline's own visibility must be checked here too —
+	// requireTimelineInCampaign alone only confirms campaign scope
+	// (2026-09-12 audit finding 4). A viewer who may not see it gets the
+	// same NotFound as one that doesn't exist.
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
 	}
@@ -538,7 +544,10 @@ func (h *Handler) TimelineDataAPI(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// Same fix as Show, for the same reason: this is the public JSON data
+	// endpoint the D3 visualization polls, reachable without an account on a
+	// public campaign (2026-09-12 audit finding 4).
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
 	}
@@ -994,7 +1003,13 @@ func (h *Handler) EmbedTimeline(c echo.Context) error {
 		timelineID = timelines[0].ID
 	}
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// Same fix as Show/TimelineDataAPI: an explicit ?timeline_id= is
+	// attacker-controlled and this route is public, so requireTimelineInCampaign
+	// alone (campaign scope only) let a dm_only timeline embed in full for a
+	// viewer with no account (2026-09-12 audit finding 4). Falling through to
+	// the existing empty-state render on error already matches this route's
+	// established "never error, always render something" contract.
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return middleware.Render(c, http.StatusOK, TimelineEmbedEmpty(cc))
 	}

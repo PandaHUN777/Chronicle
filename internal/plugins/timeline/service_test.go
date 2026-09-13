@@ -1014,7 +1014,7 @@ func TestSearchTimelines_Success(t *testing.T) {
 	}
 	svc := newTestTimelineService(repo)
 
-	results, err := svc.SearchTimelines(context.Background(), "camp-1", "heroes", 3)
+	results, err := svc.SearchTimelines(context.Background(), "camp-1", "heroes", 3, "owner-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func TestSearchTimelines_Empty(t *testing.T) {
 	}
 	svc := newTestTimelineService(repo)
 
-	results, err := svc.SearchTimelines(context.Background(), "camp-1", "nonexistent", 3)
+	results, err := svc.SearchTimelines(context.Background(), "camp-1", "nonexistent", 3, "owner-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -49,8 +49,14 @@ type AddonChecker interface {
 
 // TimelineSearcher provides timeline search results for the @mention popup.
 // Implemented by the timeline plugin and injected via SetTimelineSearcher.
+// Takes userID alongside role — matching this handler's own
+// Search(ctx, campaignID, query, typeID, role, userID, opts) convention
+// above — so the timeline plugin can apply its per-user visibility_rules
+// filter to search results, not just the role-based dm_only narrowing
+// (2026-09-12 audit finding 4 follow-up: a restricted timeline's NAME used
+// to reach any viewer who could pass the role check, allow-list or not).
 type TimelineSearcher interface {
-	SearchTimelines(ctx context.Context, campaignID, query string, role int) ([]map[string]string, error)
+	SearchTimelines(ctx context.Context, campaignID, query string, role int, userID string) ([]map[string]string, error)
 }
 
 // MapSearcher provides map search results for the quick search popup.
@@ -936,7 +942,7 @@ func (h *Handler) SearchAPI(c echo.Context) error {
 		ctx := c.Request().Context()
 		if h.timelineSearcher != nil && query != "" && h.isAddonEnabled(ctx, cc.Campaign.ID, "timeline") {
 			if tlResults, err := h.timelineSearcher.SearchTimelines(
-				ctx, cc.Campaign.ID, query, role,
+				ctx, cc.Campaign.ID, query, role, userID,
 			); err == nil {
 				items = append(items, toAnyMaps(tlResults)...)
 				total += len(tlResults)
