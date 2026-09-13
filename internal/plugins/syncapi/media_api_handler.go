@@ -92,7 +92,16 @@ type apiMediaFileResponse struct {
 	CreatedAt    time.Time         `json:"created_at"`
 }
 
-// toAPIResponse converts a MediaFile to an API-safe response with signed URLs.
+// toAPIResponse converts a MediaFile to an API-safe response with signed
+// URLs. Every URL is minted for media.ViewerAPIKey (ADR-058 decision 6):
+// this handler serves ONLY Bearer-token-authenticated syncapi callers
+// (Foundry VTT, and any other REST integration), never a browser session,
+// and those callers fetch the URLs they receive here as cross-origin
+// <img> requests that cannot carry a Chronicle session cookie. ViewerAPIKey
+// is the fixed sentinel media.URLSigner.Verify's anonymous-request carve-out
+// exists for — see that doc comment for exactly why a single sentinel
+// (rather than one value per API key) is both sufficient and all a
+// cookieless request could ever prove anyway.
 func (h *MediaAPIHandler) toAPIResponse(file *media.MediaFile) apiMediaFileResponse {
 	resp := apiMediaFileResponse{
 		ID:           file.ID,
@@ -107,10 +116,10 @@ func (h *MediaAPIHandler) toAPIResponse(file *media.MediaFile) apiMediaFileRespo
 
 	// Generate signed URLs if signer is available.
 	if h.signer != nil {
-		resp.URL = h.signer.Sign(file.ID, 1*time.Hour)
+		resp.URL = h.signer.Sign(file.ID, media.ViewerAPIKey, media.SignedURLTTL)
 		resp.Thumbnails = make(map[string]string)
 		for size := range file.ThumbnailPaths {
-			resp.Thumbnails[size] = h.signer.SignThumb(file.ID, size, 1*time.Hour)
+			resp.Thumbnails[size] = h.signer.SignThumb(file.ID, size, media.ViewerAPIKey, media.SignedURLTTL)
 		}
 		if thumbURL, ok := resp.Thumbnails["300"]; ok {
 			resp.ThumbnailURL = thumbURL

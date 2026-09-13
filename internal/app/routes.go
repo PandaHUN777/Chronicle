@@ -3713,13 +3713,28 @@ func (a *App) RegisterRoutes() {
 			ctx = layouts.SetActivePath(ctx, c.Request().URL.Path)
 		}
 
-		// Signed media URL generators for templates.
+		// Signed media URL generators for templates. Bound to whoever is
+		// RENDERING this response (ADR-058 decision 6) — resolved from the
+		// same session lookup every other per-request layout value above
+		// already uses, ONCE per render, and closed over by both funcs so
+		// a single response's <img> tags and thumbnails all embed the same
+		// viewer regardless of how many fileIDs the templates hand in. A
+		// session cookie present means the viewer is that user; none means
+		// the viewer is anonymous (a public-campaign page viewed logged
+		// out) — LayoutInjector has no way to learn anything more specific
+		// than that, and doesn't need to: media.URLSigner.Verify derives
+		// the exact same PRESENTED identity from the exact same session
+		// lookup when these links are later fetched.
 		if urlSigner != nil {
+			viewer := media.ViewerAnonymous
+			if userID := auth.GetUserID(c); userID != "" {
+				viewer = media.ViewerSession(userID)
+			}
 			ctx = layouts.SetMediaURLFunc(ctx, func(fileID string) string {
-				return urlSigner.Sign(fileID, 1*time.Hour)
+				return urlSigner.Sign(fileID, viewer, media.SignedURLTTL)
 			})
 			ctx = layouts.SetMediaThumbFunc(ctx, func(fileID, size string) string {
-				return urlSigner.SignThumb(fileID, size, 1*time.Hour)
+				return urlSigner.SignThumb(fileID, size, viewer, media.SignedURLTTL)
 			})
 		}
 

@@ -82,11 +82,12 @@ func (s *stubMemberChecker) MemberRole(campaignID, userID string) int {
 func boolPtr(b bool) *bool { return &b }
 
 // signMediaURL returns the (expires, sig) tuple for a fresh media
-// signed URL. Wraps URLSigner.Sign and parses the query string back
-// so tests don't have to thread the URL format manually.
-func signMediaURL(t *testing.T, signer *URLSigner, fileID string, ttl time.Duration) (string, string) {
+// signed URL minted for viewer (ADR-058 decision 6). Wraps URLSigner.Sign
+// and parses the query string back so tests don't have to thread the URL
+// format manually.
+func signMediaURL(t *testing.T, signer *URLSigner, fileID, viewer string, ttl time.Duration) (string, string) {
 	t.Helper()
-	full := signer.Sign(fileID, ttl)
+	full := signer.Sign(fileID, viewer, ttl)
 	req, err := http.NewRequest(http.MethodGet, full, nil)
 	if err != nil {
 		t.Fatalf("parse signed URL: %v", err)
@@ -96,9 +97,9 @@ func signMediaURL(t *testing.T, signer *URLSigner, fileID string, ttl time.Durat
 }
 
 // signThumbURL is the thumb-path companion to signMediaURL.
-func signThumbURL(t *testing.T, signer *URLSigner, fileID, size string, ttl time.Duration) (string, string) {
+func signThumbURL(t *testing.T, signer *URLSigner, fileID, size, viewer string, ttl time.Duration) (string, string) {
 	t.Helper()
-	full := signer.SignThumb(fileID, size, ttl)
+	full := signer.SignThumb(fileID, size, viewer, ttl)
 	req, err := http.NewRequest(http.MethodGet, full, nil)
 	if err != nil {
 		t.Fatalf("parse thumb signed URL: %v", err)
@@ -171,9 +172,17 @@ func newTestHandler(secret string, members map[string]map[string]bool) *Handler 
 // <img> flow. Valid signed URL, no session cookie, private campaign
 // → access granted. Pre-fix this returned 404 and Echo redirected to
 // /login, producing ERR_TOO_MANY_REDIRECTS in Foundry.
+//
+// Post-ADR-058-decision-6, EVERY signed URL is bound to a viewer, and a
+// cookieless request presents as ViewerAnonymous — so the only way this
+// case still passes is Verify's ViewerAPIKey carve-out, and the link must
+// be minted the way syncapi.MediaAPIHandler.toAPIResponse actually mints
+// it (media.ViewerAPIKey), matching production. This is deliberate, not
+// an artifact of the test: it is the one case decision 6 is required not
+// to break.
 func TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
-	expires, sig := signMediaURL(t, h.signer, "file-1", time.Hour)
+	expires, sig := signMediaURL(t, h.signer, "file-1", ViewerAPIKey, time.Hour)
 	c := newAccessTestContext(map[string]string{"expires": expires, "sig": sig}, nil)
 
 	if err := h.checkMediaAccess(c, privateMediaFile(), false, ""); err != nil {
@@ -187,7 +196,7 @@ func TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign(t *testing.T) 
 func TestCheckMediaAccess_ExpiredSignature_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
 	// Sign with a -1h TTL → expired before the verifier sees it.
-	expires, sig := signMediaURL(t, h.signer, "file-1", -1*time.Hour)
+	expires, sig := signMediaURL(t, h.signer, "file-1", ViewerAPIKey, -1*time.Hour)
 	c := newAccessTestContext(map[string]string{"expires": expires, "sig": sig}, nil)
 
 	err := h.checkMediaAccess(c, privateMediaFile(), false, "")
@@ -200,7 +209,7 @@ func TestCheckMediaAccess_ExpiredSignature_NoCookie_PrivateCampaign(t *testing.T
 // that signature forgery still rejects. Flips one byte of the sig.
 func TestCheckMediaAccess_TamperedSignature_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
-	expires, sig := signMediaURL(t, h.signer, "file-1", time.Hour)
+	expires, sig := signMediaURL(t, h.signer, "file-1", ViewerAPIKey, time.Hour)
 	// Replace the last char with one guaranteed to differ — the previous
 	// "flip the first char to '0' instead" fallback was itself a no-op
 	// whenever the first AND last chars were both '0' (~1/256 runs, since
@@ -263,7 +272,7 @@ func TestCheckMediaAccess_NoSignature_Cookie_NonMember_PrivateCampaign(t *testin
 // size in the signature; the verifier checks the same way.
 func TestCheckMediaAccess_ValidThumbSignedURL_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
-	expires, sig := signThumbURL(t, h.signer, "file-1", "300", time.Hour)
+	expires, sig := signThumbURL(t, h.signer, "file-1", "300", ViewerAPIKey, time.Hour)
 	c := newAccessTestContext(map[string]string{"expires": expires, "sig": sig}, nil)
 
 	if err := h.checkMediaAccess(c, privateMediaFile(), true, "300"); err != nil {
@@ -271,16 +280,35 @@ func TestCheckMediaAccess_ValidThumbSignedURL_NoCookie_PrivateCampaign(t *testin
 	}
 }
 
-// TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie pins the
-// pre-existing public-campaign behavior. The defense-in-depth block
-// was already gated on private-only; the fix shouldn't have changed
-// this path. Belt-and-braces regression test.
+// TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie USED to pin "any
+// file in a public campaign is unsigned-readable, no exceptions" — the
+// audit finding ADR-058 decision 7 exists to fix
+// (.ai/designs/2026-09-12-security-audit-findings.md: "on a public campaign
+// `allowUnsignedAccess` returns true for every file... Any media id in a
+// public campaign is readable by the internet"). That is deliberately no
+// longer true: this exact scenario — no signature, no cookie, public
+// campaign — now goes through the SAME entity-scoped visibility check a
+// private campaign's authenticated viewer gets (decision 1, applied with
+// RoleNone), and `publicMediaFile()` here has no referencing entity at all
+// (fakeAccessMediaService's default FindReferences), so decision 3's
+// membership question applies — which an anonymous caller always fails.
+//
+// This is NOT a regression to fix; it is decision 7 working. A real
+// anonymous visitor loading an actual Chronicle page still sees this file
+// fine, through a freshly-minted, viewer-bound SIGNED url (decision 6 mints
+// one on every render, cookie or not) — this test exercises only the
+// legacy bare-URL fallback with no query params at all. See
+// TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied and
+// TestCheckMediaAccess_AnonymousPublicCampaign_VisiblePage_Allowed
+// (viewer_binding_test.go) for decision 7's has-references cases.
 func TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
 	c := newAccessTestContext(nil, nil)
 
-	if err := h.checkMediaAccess(c, publicMediaFile(), false, ""); err != nil {
-		t.Errorf("public-campaign unsigned access must work without auth; got %v", err)
+	err := h.checkMediaAccess(c, publicMediaFile(), false, "")
+	if err == nil {
+		t.Error("ADR-058 decision 7: an anonymous, unsigned request for an unreferenced public-campaign " +
+			"file with no membership must now be denied, not granted unconditionally")
 	}
 }
 
