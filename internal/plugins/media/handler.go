@@ -264,6 +264,14 @@ func (h *Handler) Upload(c echo.Context) error {
 		ThumbnailURL: thumbURL,
 		MimeType:     mediaFile.MimeType,
 		FileSize:     mediaFile.FileSize,
+		// ADR-058 decision 5: populated ONLY when the service safely
+		// merged this upload into an existing file (mediaFile.MatchedExisting).
+		// A refused merge leaves mediaFile.UsedBy nil and MatchedExisting
+		// false, so these two lines add nothing to an ordinary upload's
+		// response — see UploadResponse's own comment for why that must
+		// hold.
+		Deduplicated: mediaFile.MatchedExisting,
+		UsedBy:       mediaFile.UsedBy,
 	})
 }
 
@@ -636,19 +644,35 @@ func (h *Handler) checkEntityScopedAccess(ctx context.Context, file *MediaFile, 
 // see what the DM sees here too, exactly as it does for sessions,
 // relations, armory and npcs (operator ruling, `4df13033`).
 //
-// A nil memberChecker (or any error surfaced as a plain false from
-// IsUserDmGranted) resolves to the raw, un-promoted role — never a
-// guessed promotion. That is the safe direction: it can only make a
-// dm_only/custom-restricted entity LESS visible to this viewer, never
-// more, which is exactly this ADR's fail-closed posture.
+// Delegates to the package-level promotedVisibilityRole so
+// mediaService.canMergeWithExisting (ADR-058 decision 5) asks the exact
+// same promotion formula rather than growing a second copy of it.
+// CampaignMediaRefs (decision 4) doesn't need this helper at all — it
+// already has a real *campaigns.CampaignContext and calls
+// cc.VisibilityRole() directly.
 func (h *Handler) viewerVisibilityRole(campaignID, userID string) int {
-	if h.memberChecker == nil {
+	return promotedVisibilityRole(h.memberChecker, campaignID, userID)
+}
+
+// promotedVisibilityRole is the shared ADR-058 promotion formula: DM-granted
+// → RoleOwner, else the raw member role. A nil checker (or any error
+// surfaced as a plain false from IsUserDmGranted) resolves to the raw,
+// un-promoted role — never a guessed promotion. That is the safe direction:
+// it can only make a dm_only/custom-restricted entity LESS visible to this
+// viewer, never more, which is exactly this ADR's fail-closed posture.
+//
+// Package-level, not a Handler method, because mediaService.
+// canMergeWithExisting (decision 5's merge-eligibility check) needs the
+// identical formula and lives on a different receiver type entirely — this
+// is the one place the formula is written down.
+func promotedVisibilityRole(checker MemberChecker, campaignID, userID string) int {
+	if checker == nil {
 		return int(campaigns.RoleNone)
 	}
-	if h.memberChecker.IsUserDmGranted(campaignID, userID) {
+	if checker.IsUserDmGranted(campaignID, userID) {
 		return int(campaigns.RoleOwner)
 	}
-	return h.memberChecker.MemberRole(campaignID, userID)
+	return checker.MemberRole(campaignID, userID)
 }
 
 // allowUnsignedAccess is the COARSE fallback gate when no valid signed URL
@@ -982,17 +1006,87 @@ func (h *Handler) CampaignDeleteMedia(c echo.Context) error {
 
 // CampaignMediaRefs returns an HTMX fragment showing which entities reference
 // a media file (GET /campaigns/:id/media/:mid/refs).
+//
+// ADR-058 decision 4: this used to be reachable only through the Owner-only
+// campaign media browser route. The list NAMES PAGES — exactly what ADR-055
+// rule 3 says a Player must never receive — so the gate lives HERE, inside
+// the handler, keyed on the same promoted role the entities plugin's
+// visibility glance uses (VisibilityRole() >= RoleScribe): a route-level
+// RequireRole(RoleScribe) checks the raw MemberRole and would miss a co-DM
+// (Player role + a DM grant), who must see what the DM sees here too, same
+// as everywhere else this ADR touches. routes.go registers this route with
+// no role middleware at all for exactly that reason.
+//
+// The list itself is then filtered to entities THIS viewer may see (reusing
+// the exact FilterViewableEntityIDs seam decision 1 wired into
+// checkMediaAccess — never a second copy of the predicate): a Scribe is not
+// automatically the DM, and an Owner-only fragment merely turning into a
+// Scribe-only one would just be the same leak from a new angle — a
+// custom-restricted page can still name specific users and exclude a Scribe
+// who isn't one of them.
 func (h *Handler) CampaignMediaRefs(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
 		return apperror.NewNotFound("campaign not found")
 	}
 
+	if cc.VisibilityRole() < int(campaigns.RoleScribe) {
+		return apperror.NewForbidden("insufficient permissions")
+	}
+
+	ctx := c.Request().Context()
 	mediaID := c.Param("mid")
-	refs, err := h.service.FindReferences(c.Request().Context(), cc.Campaign.ID, mediaID)
+	refs, err := h.service.FindReferences(ctx, cc.Campaign.ID, mediaID)
 	if err != nil {
 		return err
 	}
 
+	refs = h.filterViewableRefs(ctx, cc, auth.GetUserID(c), refs)
+
 	return middleware.Render(c, http.StatusOK, MediaRefsFragment(cc, mediaID, refs))
+}
+
+// filterViewableRefs narrows refs down to the entities userID may actually
+// see, using cc's promoted VisibilityRole() — the same promotion formula
+// checkEntityScopedAccess applies for decision 1, so a co-DM sees what the
+// DM sees here too. FAILS CLOSED: a nil filter, or a filter error, empties
+// the list and logs loudly rather than risking a page name the viewer
+// cannot open. This is a display feature layered on top of the real access
+// gate above, so failing closed here means "show nothing", not "500" — an
+// empty "Not referenced by any pages" is always a true statement about what
+// THIS viewer can be shown, even when the tool couldn't verify more.
+func (h *Handler) filterViewableRefs(ctx context.Context, cc *campaigns.CampaignContext, userID string, refs []MediaRef) []MediaRef {
+	if len(refs) == 0 {
+		return refs
+	}
+	if h.entityVisibility == nil {
+		slog.Error("media: entity visibility filter not configured; hiding all media references",
+			slog.String("campaign_id", cc.Campaign.ID))
+		return nil
+	}
+
+	entityIDs := make([]string, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref.EntityID] {
+			continue
+		}
+		seen[ref.EntityID] = true
+		entityIDs = append(entityIDs, ref.EntityID)
+	}
+
+	viewable, err := h.entityVisibility.FilterViewableEntityIDs(ctx, cc.Campaign.ID, entityIDs, cc.VisibilityRole(), userID)
+	if err != nil {
+		slog.Error("media: filtering viewable entities for media refs failed; hiding all references",
+			slog.String("campaign_id", cc.Campaign.ID), slog.Any("error", err))
+		return nil
+	}
+
+	filtered := make([]MediaRef, 0, len(refs))
+	for _, ref := range refs {
+		if viewable[ref.EntityID] {
+			filtered = append(filtered, ref)
+		}
+	}
+	return filtered
 }

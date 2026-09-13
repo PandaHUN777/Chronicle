@@ -180,6 +180,96 @@ slice, untouched here; upload/dedup paths untouched.
   `maps.image_id` / `map_tokens.image_path` remain outside every decision
   in this ADR (unaffected either way, as noted 2026-09-12).
 
+### ADR-058 decisions 4-5 — the last slice: "where is this used" joins the permissions story, and the merge is refused (2026-09-13)
+
+Working-tree change, built on decisions 1-3's `checkEntityScopedAccess` /
+`FindReferences` / `EntityVisibilityFilter` seam and decisions 6-7's viewer
+binding. All seven ADR-058 decisions are now built.
+
+- **Decision 4 (where is this used).** `Handler.CampaignMediaRefs`
+  (`internal/plugins/media/handler.go`) is no longer Owner-only at the route
+  level — `internal/plugins/media/routes.go` registers it with NO role
+  middleware at all. The gate moved INSIDE the handler:
+  `cc.VisibilityRole() < int(campaigns.RoleScribe)` → `Forbidden`, the exact
+  threshold and promotion formula (DM-granted → Owner) the entities plugin's
+  visibility glance uses (`entities/visibility_glance.templ`), so a co-DM
+  (Player role + a DM grant) sees the list too — a route-level
+  `RequireRole(RoleScribe)` reads the RAW `MemberRole` and would have missed
+  that promotion. The returned list is then filtered through the new
+  `Handler.filterViewableRefs`, reusing the SAME `EntityVisibilityFilter`
+  seam decision 1 wired — never a second copy of the predicate — because a
+  Scribe is not automatically the DM and a custom-restricted page can name
+  specific users and exclude one. `CampaignMedia` (the browse page) and
+  `CampaignDeleteMedia` are UNCHANGED (still Owner-only route gates) — this
+  slice only widens the usage-list endpoint itself; today's browser-page UI
+  still only surfaces the "Show references" button to Owners, so a Scribe
+  who cannot open that page cannot yet trigger this from the existing UI.
+  The endpoint is now correctly gated and filtered for the DM team generally
+  (any future or existing Scribe-reachable surface — e.g. the media picker —
+  can call it safely); wiring a NEW picker-side entry point was out of scope
+  (that UI lives in the entities-plugin-adjacent editor surfaces this pass
+  did not touch).
+- **Decision 5 (the merge).** `mediaService.Upload`'s per-campaign
+  content-hash dedup (`FindByContentHash` short-circuit) used to merge ANY
+  byte-identical upload unconditionally. `canMergeWithExisting`
+  (`internal/plugins/media/service.go`) now asks: does the UPLOADER (not the
+  as-yet-nonexistent destination page) see every entity `FindReferences`
+  reports for the MATCHED file? Reuses `FindReferences` +
+  `FilterViewableEntityIDs` — the identical seam, not a second predicate —
+  aggregated with ALL rather than decision 1's ANY (the mirror question: "is
+  there anything a merge would newly reveal to this uploader"). A file
+  nothing yet references is vacuously mergeable (decision 3 parity). Any
+  error resolving the question refuses the merge, same as an explicit "no".
+  `MemberChecker`/`EntityVisibilityFilter` are now ALSO wired onto the
+  service (`mediaService.SetMemberChecker`/`SetEntityVisibilityFilter`,
+  called in `internal/app/routes.go` with the SAME adapter instances the
+  handler already uses) because the merge decision is made deep inside
+  `Upload`, before any HTTP-layer check runs, and applies to every caller of
+  `Upload` — notes attachments, campaign backdrops, the Foundry sync API —
+  not only `/media/upload`. `promotedVisibilityRole` (`handler.go`) is now a
+  package-level function so `Handler.viewerVisibilityRole` and
+  `canMergeWithExisting` share one copy of the DM-grant promotion formula.
+  **The trap, resolved:** a REFUSED merge must not itself leak that a hidden
+  match exists — confirming that would let an uploader fingerprint a hidden
+  page's artwork with candidate images, ADR-055 rule 3 reintroduced at the
+  moment this rule tries to help. A refused merge is therefore SILENT: it
+  falls through to storing a genuinely separate row and returns a response
+  indistinguishable from an ordinary upload — `MediaFile.MatchedExisting`/
+  `UsedBy` (new, transient, `json:"-"`, decision 4's data doing double duty)
+  are only ever set on the SAFE-merge path, where the uploader already
+  proved they can see every one of those pages, so there is nothing left to
+  filter before handing it back. `UploadResponse` carries the same two
+  fields (`deduplicated`/`used_by`, both `omitempty`) for exactly the same
+  reason. A safe merge is also told to the uploader server-side via
+  `slog.Info`; a refused one likewise logs server-side only (never
+  client-visible) so an operator can still see the near-miss.
+- **Fails closed throughout**, same posture as decisions 1-3/6-7: any error
+  resolving mergeability or filtering the usage list denies/hides rather
+  than defaulting to "yes"/"show it".
+- **Red-first evidence** (temporarily reinstating the exact pre-fix
+  `CampaignMediaRefs` body and the exact pre-decision-5 unconditional-merge
+  block, re-running the new tests, then restoring byte-for-byte) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-merge-red.txt`
+  (session-local scratchpad, not part of the repo). Two of the eight new
+  tests pass even against the reverted code and are NOT red-first evidence
+  for what they sound like they cover — see the PR/report for which two and
+  why (one proves a response-shape property that only exists once the new
+  fields exist at all; the other is a co-DM regression guard against a
+  *different*, more-naive fix, not against the ADR's original bug, which had
+  no gate whatsoever).
+- **Test honesty:** `internal/app/error_handler_api_type_test.go`'s four
+  tests exercise `(&App{}).errorHandler` directly against hand-built
+  `apperror.AppError`/`echo.NewHTTPError` values and never touch media —
+  reverting this change's `internal/app/routes.go` edit (the only file this
+  slice touched in that package) and re-running them was verified to
+  produce byte-identical PASS results. They cannot discriminate this
+  change; not claimed as coverage for it.
+- **Not built this pass:** wiring decision 4's usage list into a
+  Scribe-reachable UI (e.g. the media-picker widget) — the endpoint is safe
+  and available for it, but no new UI surface was added. `maps.image_id` /
+  `map_tokens.image_path` remain outside every decision in this ADR
+  (unaffected either way, as noted 2026-09-12).
+
 ### Chrome, permissions and Customize designs — APPROVED (2026-09-12)
 
 Six render rounds on one canvas

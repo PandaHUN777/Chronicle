@@ -48,6 +48,8 @@ func (f *fakeUploadService) ThumbnailPath(file *MediaFile, size string) string {
 	return ""
 }
 func (f *fakeUploadService) SetStorageLimiter(limiter StorageLimiter) {}
+func (f *fakeUploadService) SetMemberChecker(checker MemberChecker)   {}
+func (f *fakeUploadService) SetEntityVisibilityFilter(v EntityVisibilityFilter) {}
 func (f *fakeUploadService) ListCampaignMedia(ctx context.Context, campaignID string, page, perPage int) ([]MediaFile, int, error) {
 	return nil, 0, nil
 }

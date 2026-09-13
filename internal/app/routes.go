@@ -1889,6 +1889,16 @@ func (a *App) RegisterRoutes() {
 	// pointer at the one canonical seam.
 	mediaHandler.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
 
+	// ADR-058 decision 5: the SAME two seams, wired onto the SERVICE too
+	// (not just the handler) so mediaService.Upload can decide whether a
+	// content-hash dedup match is safe to merge. That decision is made deep
+	// inside Upload, before any HTTP-layer check runs, and applies to every
+	// caller of Upload (notes attachments, campaign backdrops, the Foundry
+	// sync API) — not just the /media/upload route. Same adapter instances
+	// as above; never a second copy of either predicate.
+	mediaService.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
+	mediaService.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
+
 	// ADR-058 Consequences: caches the entity-scoped access decision per
 	// (file, viewer) so a lookup isn't repeated on every image request.
 	// Same *redis.Client every other Redis-backed cache in this codebase

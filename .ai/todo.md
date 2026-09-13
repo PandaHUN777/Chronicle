@@ -2,6 +2,25 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **ADR-058 residual: a timing side-channel on the refused merge.** The
+  refused-merge response is byte-identical to an ordinary upload's (pinned by
+  a test comparing status and JSON key sets), but a refusal does two extra
+  database round trips before falling into the same write path, so latency
+  could in principle distinguish "matched an existing file I may not see" from
+  "matched nothing". Closing it means running a dummy visibility check on every
+  true no-match too. The executor judged that not worth the complexity and
+  flagged it rather than claiming the channel closed; recorded here so the
+  claim in the commit message stays honest. Low priority: it requires repeated
+  sampling and yields one bit about a file the attacker already holds.
+
+- **ADR-058 decision 4 is endpoint-correct but has no new UI door.** The
+  "where is this used" endpoint is now reachable by the DM team (promoted role
+  >= Scribe) and filters the list to pages the viewer may see. The media
+  browser page and its delete action remain Owner-only route gates, so in
+  practice only an Owner still sees the button that calls it. A Scribe-reachable
+  entry point (the media picker is the obvious place) is a frontend addition
+  nobody has designed; booked rather than improvised.
+
 - **Add a workflow-shape guard (`tools/check-workflow-steps.sh`).** On
   2026-09-12 the golangci-lint step lost its `uses:` and `with:` lines during
   the Go 1.27 pin bump, leaving a step whose only key was `version:`. GitHub
@@ -79,21 +98,15 @@
 - [ ] **API keys: a Co-DM may refresh (rotate) the key as a troubleshooting
   step; every key action by Owner or Co-DM is logged.** Operator, 2026-09-12 —
   "I'd write that down in the to do vs things we are doing now." Not now.
-- [ ] **ADR-058 decisions 4-5 — the remaining slices.** Decisions 1-3 (a
-  media file inherits the visibility of the entity pages that reference it)
-  and decisions 6-7 (signed-URL viewer binding; public-campaign unsigned
-  narrowing) are done — see `.ai/status.md`'s 2026-09-12 and 2026-09-13
-  entries. Still open, each its own slice per the ADR: **4** surface
-  `FindReferences`/"where is this used" as part of the permissions story
-  (an owner must see it before publishing, not only in the Owner-only
-  media-browser fragment); **5** refuse a content-hash merge across
-  differing permission levels and tell the uploader why. Also flagged, not
-  fixed (out of scope for every decision built so far, may matter to a
-  future slice): `maps.image_id` / `map_tokens.image_path` are media
-  references outside the `entities` table that neither the old nor the new
-  rule covers — a map background/token image still relies on plain
-  campaign membership regardless of any per-marker/per-layer visibility on
-  the map itself.
+- [x] **ADR-058 decisions 4-5 — the last slice — done 2026-09-13.** All
+  seven decisions are now built — see `.ai/status.md`'s 2026-09-12,
+  2026-09-13 (decisions 6-7), and 2026-09-13 (decisions 4-5) entries. Also
+  flagged, still not fixed (out of scope for every decision built so far,
+  may matter to a future slice): `maps.image_id` / `map_tokens.image_path`
+  are media references outside the `entities` table that neither the old
+  nor the new rule covers — a map background/token image still relies on
+  plain campaign membership regardless of any per-marker/per-layer
+  visibility on the map itself.
 - [ ] **Plugin-isolation guard: allow `internal/plugins/addons/service.go`.**
   `builtinAddons` is the table that names every plugin slug by design; the
   guard reads any edited line there as a new cross-plugin reference, so every

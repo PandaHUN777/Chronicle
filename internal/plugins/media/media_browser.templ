@@ -270,7 +270,11 @@ templ mediaCard(cc *campaigns.CampaignContext, f MediaFile, csrfToken string) {
 	</div>
 }
 
-// MediaRefsFragment renders entity references for a media file (HTMX fragment).
+// MediaRefsFragment renders entity references for a media file (HTMX
+// fragment). refs is expected to already be permission-filtered by the
+// caller (Handler.CampaignMediaRefs, ADR-058 decision 4) — this component
+// just renders whatever list it's handed and has no visibility logic of its
+// own.
 templ MediaRefsFragment(cc *campaigns.CampaignContext, mediaID string, refs []MediaRef) {
 	if len(refs) == 0 {
 		<span class="text-fg-muted">Not referenced by any pages.</span>
@@ -389,6 +393,20 @@ templ mediaUploaderScript() {
 								item.progress = 100;
 								item.status = 'done';
 								item.statusText = 'Done';
+								// ADR-058 decision 5: the server only ever sets
+								// `deduplicated` when the merge was SAFE (the
+								// uploader could already see every page using
+								// the matched file) -- a refused merge looks
+								// exactly like an ordinary upload, on purpose,
+								// so there is nothing to detect or report here
+								// for that case.
+								try {
+									var resp = JSON.parse(xhr.responseText);
+									if (resp && resp.deduplicated) {
+										var pages = (resp.used_by || []).map(function(r) { return r.entity_name; }).join(', ');
+										item.statusText = pages ? ('Matched existing file (used on: ' + pages + ')') : 'Matched existing file';
+									}
+								} catch (_) { /* non-JSON or unexpected shape -- keep 'Done' */ }
 							} else {
 								item.status = 'error';
 								try {
