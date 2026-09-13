@@ -85,6 +85,101 @@ NOT touched here.
   levels), 6 (signed-URL identity binding), 7 (public-campaign unsigned
   narrowing) — each is its own slice per the ADR.
 
+### ADR-058 decisions 6-7 — signed media URLs are bound to the viewer (2026-09-13)
+
+Working-tree change, built directly on decisions 1-3 above (same handler,
+same `checkEntityScopedAccess` seam). Decisions 4-5 (the "where is this
+used" surface, and refusing silent merges) are still NOT built — a later
+slice, untouched here; upload/dedup paths untouched.
+
+- **Decision 6 (viewer binding).** `media.URLSigner.Sign/SignThumb` now take
+  a `viewer` string folded into the HMAC payload (`fileID:viewer:expires`,
+  `fileID:size:viewer:expires`); `Verify/VerifyThumb` take the PRESENTED
+  viewer and compare. Three viewer shapes: `ViewerSession(userID)` (a
+  Chronicle browser session), `ViewerAnonymous` (no session — a cookieless
+  request, or an anonymous public-campaign page view), and the fixed
+  sentinel `ViewerAPIKey` (any Bearer-token syncapi caller, Foundry
+  included). Every mint site now binds: `Handler.Upload` and
+  `Handler.CampaignMediaList` (`internal/plugins/media/handler.go`) bind to
+  the caller's own session; `syncapi.MediaAPIHandler.toAPIResponse` binds
+  every URL to `ViewerAPIKey`; `layouts.SetMediaURLFunc`/`SetMediaThumbFunc`
+  (wired in `internal/app/routes.go`'s `LayoutInjector`) resolve the viewer
+  ONCE per render from the same session lookup every other per-request
+  layout value uses, so a page's `<img>` tags and thumbnails all embed the
+  viewer of whoever is actually rendering that response.
+  **The Foundry cross-origin `<img>` flow keeps working** via a narrow,
+  deliberate carve-out in `Verify`/`VerifyThumb`: a cookieless request
+  PRESENTS as `ViewerAnonymous` (it has nothing else to present), and such a
+  request may ALSO satisfy a signature minted for the fixed `ViewerAPIKey`
+  sentinel — but a link minted for a specific `ViewerSession(userID)` is
+  NEVER satisfied by an anonymous presentation, which is exactly what makes
+  the binding real. Pinned by the load-bearing test
+  `TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign`
+  (`signed_url_trust_test.go`, updated to mint with `ViewerAPIKey` to match
+  production) and the new `viewer_binding_test.go`.
+  **Old (pre-decision-6) links are invalidated immediately, not honored
+  until they expire** — the new HMAC payload has no compatible encoding for
+  the old one, so `Verify` simply never finds a match for an old-format
+  signature. Chosen over honoring old links for their remaining TTL because
+  the old TTL (1h) was long enough that "wait it out" would have kept the
+  exact bearer-token behavior alive for up to an hour after every deploy;
+  the cost is a handful of already-open tabs/in-flight requests getting a
+  broken image right at deploy, fixed by a reload. Pinned by
+  `TestSignedURL_OldFormat_InvalidatedImmediately`.
+- **Decision 7 (public campaign narrowing).** `allowUnsignedAccess`'s public-
+  campaign branch no longer has the final word — `checkMediaAccess`'s
+  defense-in-depth switch now runs a second case for public campaigns,
+  reusing `checkEntityScopedAccess` VERBATIM (not a second predicate) with
+  `userID` possibly `""` for a true anonymous caller. `viewerVisibilityRole`
+  resolves an empty/unmatched user to `RoleNone`, i.e. "decision 1 with
+  `RoleNone`" per the ADR's own words. An authenticated member instead gets
+  their real promoted role, so a logged-in Player of a public campaign
+  isn't artificially capped at anonymous. **Consequence, not a bug:** the
+  no-references (decision 3) branch asks the same membership question it
+  always has, which an anonymous caller always fails — so a BARE, unsigned
+  `/media/:id` hit for an unreferenced public-campaign file (avatar,
+  backdrop) is now denied to a true anonymous caller too. Real page loads
+  are unaffected: every render mints a freshly viewer-bound SIGNED url
+  (decision 6, `ViewerAnonymous` for a logged-out visitor), which is
+  checked by signature validity alone and never reaches this fallback. Only
+  a truly bare URL (no query params at all — an old bookmark, a scraper,
+  hand-typed) hits the narrowed path.
+  `TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie`
+  (`signed_url_trust_test.go`) is the test the ADR named as pinning today's
+  (now former) behavior deliberately — its assertion flipped to DENY and its
+  comment says why, rather than being deleted. New tests
+  `TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied` /
+  `_VisiblePage_Allowed` (`viewer_binding_test.go`) cover the has-references
+  half directly (dm_only-only → denied, visible-page → allowed).
+- **TTL shortened 1h → 15m** (`media.SignedURLTTL`, `internal/plugins/
+  media/signed_url.go`). Chosen because viewer binding already closes the
+  cross-viewer sharing risk a shorter TTL alone can't; 15 minutes still
+  comfortably covers a page's image/thumbnail load time (including a slow
+  connection or a larger gallery) while cutting the residual same-viewer
+  replay window by 4x. Every `Sign`/`SignThumb` call site now uses the
+  constant instead of a hardcoded `1*time.Hour` literal.
+- **Log redaction:** `internal/middleware/logging.go`'s `sensitiveParams`
+  now includes `sig` and `expires` — before this, the request logger wrote
+  a live, directly-usable signed-URL credential into the log in plaintext
+  on every media request.
+- **Fails closed throughout**, same posture as decisions 1-3: any error
+  deciding access denies.
+- **Red-first evidence** (reverting each fix file to its exact pre-fix
+  content, running the new/updated tests, restoring byte-for-byte —
+  verified with `diff`) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-links-red.txt`
+  (session-local scratchpad, not part of the repo).
+- **Test honesty:** `internal/app/error_handler_api_type_test.go`'s four
+  tests exercise `(&App{}).errorHandler` directly against hand-built
+  `apperror.AppError`/`echo.NewHTTPError` values and never touch media,
+  logging, or routing — reverting this entire change set (all 5 edited
+  files) and re-running them was verified to produce byte-identical PASS
+  results. They cannot discriminate this change; not claimed as coverage
+  for it.
+- **Not built this pass:** decisions 4-5, unchanged from the note above.
+  `maps.image_id` / `map_tokens.image_path` remain outside every decision
+  in this ADR (unaffected either way, as noted 2026-09-12).
+
 ### Chrome, permissions and Customize designs — APPROVED (2026-09-12)
 
 Six render rounds on one canvas
