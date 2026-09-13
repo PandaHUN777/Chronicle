@@ -20,6 +20,19 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### START HERE if you are a cold session on `claude/determined-davinci-5ut5f5` (2026-09-13)
+
+**`.ai/designs/2026-09-13-session-handoff.md`** is the single document to read
+before doing anything on this branch. It carries: what all 47 commits shipped,
+every operator ruling (and which decisions are still theirs to make), the open
+work in priority order, the environment gotchas that cost real time, and the
+lessons this branch paid for.
+
+**Standing hold: nothing on this branch merges to `main`** until the operator
+deploys the calendar demolition (PR #595, already on main) and confirms its
+five verification steps.
+
+
 ### ADR-058 decisions 1-3 — a media file inherits page visibility (2026-09-12)
 
 Working-tree change (no commit/PR from this pass — see the branch's own PR

@@ -1,5 +1,10 @@
 # Chronicle Backlog
 
+> **2026-09-13 — branch `claude/determined-davinci-5ut5f5`.** The ordered
+> next-step list, with reasoning for the ordering, is in
+> `.ai/designs/2026-09-13-session-handoff.md` §4. This file remains the
+> authoritative backlog; the handoff says which of it to do first and why.
+
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
 - **ADR-058 residual: a timing side-channel on the refused merge.** The
