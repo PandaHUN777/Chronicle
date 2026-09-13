@@ -34,6 +34,16 @@ type AddonService interface {
 	EnableForCampaign(ctx context.Context, campaignID string, addonID int, userID string) error
 	DisableForCampaign(ctx context.Context, campaignID string, addonID int) error
 	IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	// EnableForCampaignBySlug is EnableForCampaign addressed by slug instead
+	// of by numeric addon ID. Other plugins know their own addon by slug and
+	// have no business looking up an ID in the addons table to call the
+	// ID-keyed method — that would be a repo reach-through in disguise.
+	EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error
+	// HasCampaignAddonRecord reports whether the campaign has a
+	// campaign_addons row for this addon at all, enabled or not. See the
+	// repository doc comment: it is the only way to distinguish "never
+	// configured" from "explicitly disabled".
+	HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error)
 	CountCampaignsUsingAddon(ctx context.Context, addonSlug string) (int, error)
 	// ListCampaignsUsingAddon returns the IDs of every campaign with the addon
 	// enabled — used by startup backfills that replay enable-effects.
@@ -220,9 +230,9 @@ var builtinAddons = []addonDef{
 	// Plugins (feature apps).
 	{Slug: "calendar", Name: "Calendar", Description: "Custom fantasy calendar with configurable months, weekdays, moons, seasons, and events. Link events to entities for timeline tracking.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-calendar-days", Author: "Chronicle"},
 	{Slug: "maps", Name: "Interactive Maps", Description: "Leaflet.js map viewer with entity pins and layer support", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-map", Author: "Chronicle"},
-	{Slug: "media-gallery", Name: "Media Gallery", Description: "Campaign media management — upload, browse, and organize images.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-images", Author: "Chronicle"},
+	{Slug: "media-gallery", Name: "Media Gallery", Description: "Campaign media management — browse and organize images.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-images", Author: "Chronicle"},
 	{Slug: "timeline", Name: "Timeline", Description: "Interactive visual timelines with zoom levels, entity grouping, and calendar integration.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-timeline", Author: "Chronicle"},
-	{Slug: "sessions", Name: "Sessions", Description: "Track game sessions with scheduling, linked entities, and RSVP.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-calendar-check", Author: "Chronicle"},
+	{Slug: "sessions", Name: "Sessions", Description: "Shows an upcoming-sessions dashboard widget with RSVP. Session scheduling and pages live under the Calendar addon.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-calendar-check", Author: "Chronicle"},
 	{Slug: "npcs", Name: "NPC Gallery", Description: "Browse and reveal character entities as NPCs for your players.", Version: "1.0.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-users", Author: "Chronicle"},
 	{Slug: "armory", Name: "Armory & Inventory", Description: "Item catalog, character inventories, and shop management. System-dependent item types with Foundry sync.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-shield-halved", Author: "Chronicle"},
 	{Slug: "player-character-claiming", Name: "Player Character Claiming", Description: "Let players claim ownership of their Player Character entities. Unlocks a claimable \"Player Characters\" sub-type and shows who has claimed which character.", Version: "0.1.0", Category: CategoryPlugin, Status: StatusActive, Icon: "fa-user-check", Author: "Chronicle"},
@@ -526,6 +536,27 @@ func (s *addonService) EnableForCampaign(ctx context.Context, campaignID string,
 		slog.String("user_id", userID),
 	)
 	return nil
+}
+
+// EnableForCampaignBySlug resolves the addon by slug and enables it for the
+// campaign. Thin wrapper over EnableForCampaign so every enable — whoever
+// initiates it — goes through the same status / installed-code / mutual-
+// exclusivity checks and the same enable-effects.
+func (s *addonService) EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error {
+	addon, err := s.repo.FindBySlug(ctx, addonSlug)
+	if err != nil {
+		return err
+	}
+	if addon == nil {
+		return apperror.NewNotFound("addon not found: " + addonSlug)
+	}
+	return s.EnableForCampaign(ctx, campaignID, addon.ID, userID)
+}
+
+// HasCampaignAddonRecord reports whether the campaign has any campaign_addons
+// row for this addon, enabled or not.
+func (s *addonService) HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error) {
+	return s.repo.HasCampaignAddonRecord(ctx, campaignID, addonSlug)
 }
 
 // DisableForCampaign disables an addon for a campaign.

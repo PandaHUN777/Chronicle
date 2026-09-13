@@ -43,6 +43,19 @@ type MediaService interface {
 	FilePath(file *MediaFile) string
 	ThumbnailPath(file *MediaFile, size string) string
 	SetStorageLimiter(limiter StorageLimiter)
+
+	// SetMemberChecker and SetEntityVisibilityFilter wire the ADR-058
+	// decision 5 merge-eligibility machinery (see canMergeWithExisting) —
+	// the SAME MemberChecker/EntityVisibilityFilter seams Handler wires for
+	// the decision 1 read-path check, wired onto the service too because
+	// the merge decision has to be made deep inside Upload, before any
+	// HTTP-layer check runs, and for every caller of Upload (notes
+	// attachments, campaign backdrops, the Foundry sync API) — not just the
+	// /media/upload route. Optional: nil fails the merge closed rather than
+	// defaulting to "merge" (see canMergeWithExisting).
+	SetMemberChecker(checker MemberChecker)
+	SetEntityVisibilityFilter(f EntityVisibilityFilter)
+
 	// ListCampaignMedia returns paginated media files for a campaign.
 	ListCampaignMedia(ctx context.Context, campaignID string, page, perPage int) ([]MediaFile, int, error)
 
@@ -121,6 +134,16 @@ type mediaService struct {
 	maxSize   int64          // Maximum file size in bytes (static fallback).
 	limiter StorageLimiter // Dynamic storage limits from settings plugin. May be nil.
 	sem     *uploadSemaphore
+
+	// memberChecker and entityVisibility back the ADR-058 decision 5 merge
+	// rule (canMergeWithExisting) — the SAME seams Handler holds for the
+	// decision 1 read-path check, wired here too because the merge decision
+	// is made deep inside Upload. Both are optional: nil (before routes.go
+	// finishes wiring, and in every test that doesn't exercise dedup across
+	// a permission boundary) makes canMergeWithExisting fail closed rather
+	// than assume "merge".
+	memberChecker    MemberChecker
+	entityVisibility EntityVisibilityFilter
 }
 
 // NewMediaService creates a new media service.
@@ -137,6 +160,19 @@ func NewMediaService(repo MediaRepository, mediaPath string, maxSize int64) Medi
 // Called after all plugins are wired to avoid initialization order issues.
 func (s *mediaService) SetStorageLimiter(limiter StorageLimiter) {
 	s.limiter = limiter
+}
+
+// SetMemberChecker and SetEntityVisibilityFilter wire the ADR-058 decision 5
+// merge-eligibility machinery. Called during wiring in app/routes.go with
+// the SAME adapter instances passed to Handler's identically named setters
+// — the service asks the exact seam the handler's read-path access check
+// already uses, never a second copy of either predicate.
+func (s *mediaService) SetMemberChecker(checker MemberChecker) {
+	s.memberChecker = checker
+}
+
+func (s *mediaService) SetEntityVisibilityFilter(f EntityVisibilityFilter) {
+	s.entityVisibility = f
 }
 
 // ValidateMediaPath ensures the media storage directory exists and is writable.
@@ -194,12 +230,64 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 					slog.Any("error", err),
 				)
 			} else if existing != nil {
-				slog.Info("media dedup: returning existing file for duplicate upload",
-					slog.String("campaign_id", input.CampaignID),
-					slog.String("existing_id", existing.ID),
-					slog.String("hash", contentHash),
-				)
-				return existing, nil
+				// ADR-058 decision 5: a content-hash match is not
+				// automatically safe to merge. The NEW upload has no
+				// destination page yet, so "the destination's permission
+				// level" doesn't exist to compare against — what CAN be
+				// asked is who is uploading and what pages already
+				// reference the MATCHED file. Merging is safe only if the
+				// uploader can already see every one of them; otherwise a
+				// secret map's artwork becomes reachable the moment they
+				// attach their "new" file to a visible page, with nobody
+				// having decided that (the trap this whole decision exists
+				// to close).
+				mergeable, refs, mergeErr := s.canMergeWithExisting(ctx, input.CampaignID, existing.ID, input.UploadedBy)
+				switch {
+				case mergeErr != nil:
+					// Fail closed: refuse the merge on an answer we
+					// couldn't compute — falls through to a fresh upload
+					// exactly like the genuine "no" below. These two cases
+					// must behave identically from the uploader's side;
+					// see the "not mergeable" comment for why.
+					slog.Warn("media dedup: merge-eligibility check failed, refusing merge",
+						slog.String("campaign_id", input.CampaignID),
+						slog.String("existing_id", existing.ID),
+						slog.Any("error", mergeErr),
+					)
+				case mergeable:
+					slog.Info("media dedup: returning existing file for duplicate upload",
+						slog.String("campaign_id", input.CampaignID),
+						slog.String("existing_id", existing.ID),
+						slog.String("hash", contentHash),
+					)
+					// Decision 4's "where is this used" data doing double
+					// duty (decision 5): safe to hand back in full,
+					// unfiltered, because `mergeable` above already proved
+					// the uploader can see every one of these pages — there
+					// is nothing left to filter.
+					existing.MatchedExisting = true
+					existing.UsedBy = refs
+					return existing, nil
+				default:
+					// NOT mergeable: the uploader cannot see at least one
+					// page already using this exact content. Do NOT merge —
+					// and say NOTHING here, or in the response Upload's
+					// caller builds, that distinguishes this from an
+					// ordinary upload. Confirming "this matched a file you
+					// can't see" would let the uploader fingerprint a
+					// hidden page's artwork with their own candidate
+					// images — the ADR-055 rule 3 leak this whole arc
+					// exists to close, reintroduced at the moment this rule
+					// tries to help. Falling through here stores a
+					// genuinely separate row and returns a completely
+					// ordinary, and completely true, success: the file
+					// really was stored.
+					slog.Info("media dedup: merge refused, uploader cannot see every referencing page; storing a separate file",
+						slog.String("campaign_id", input.CampaignID),
+						slog.String("existing_id", existing.ID),
+						slog.String("uploader_id", input.UploadedBy),
+					)
+				}
 			}
 		}
 	}
@@ -342,6 +430,66 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 		slog.Int64("size", input.FileSize),
 	)
 	return file, nil
+}
+
+// canMergeWithExisting answers ADR-058 decision 5's merge question: may
+// uploaderID's upload be merged into existingFileID, the row a content-hash
+// match just found in campaignID? Returns the (deduplicated) reference list
+// alongside the verdict so a safe merge can hand it straight back to Upload's
+// caller as decision 4's "where is this used" data — no second query, and no
+// separate filtering pass, because a true verdict already proves the
+// uploader can see every one of these pages.
+//
+// A file no entity yet references (an avatar, backdrop, or an attachment
+// never linked to any page) has nothing to protect: vacuously mergeable,
+// matching decision 3's "files no page references keep today's behaviour."
+//
+// FAILS CLOSED: any error from FindReferences, or from the visibility
+// filter, is reported back as an error rather than resolved to true — Upload
+// refuses the merge on error exactly as it does on a genuine "no".
+func (s *mediaService) canMergeWithExisting(ctx context.Context, campaignID, existingFileID, uploaderID string) (bool, []MediaRef, error) {
+	refs, err := s.repo.FindReferences(ctx, campaignID, existingFileID)
+	if err != nil {
+		return false, nil, fmt.Errorf("finding references for merge check: %w", err)
+	}
+	if len(refs) == 0 {
+		return true, refs, nil
+	}
+	if s.entityVisibility == nil {
+		return false, nil, fmt.Errorf("media: entity visibility filter not configured for merge check")
+	}
+
+	// Dedup entity IDs the same way checkEntityScopedAccess does — a file
+	// referenced twice by the same entity (e.g. as both image_path and
+	// cover_image_path) must not be asked about twice.
+	entityIDs := make([]string, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref.EntityID] {
+			continue
+		}
+		seen[ref.EntityID] = true
+		entityIDs = append(entityIDs, ref.EntityID)
+	}
+
+	role := promotedVisibilityRole(s.memberChecker, campaignID, uploaderID)
+	viewable, err := s.entityVisibility.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, uploaderID)
+	if err != nil {
+		return false, nil, fmt.Errorf("filtering viewable entities for merge check: %w", err)
+	}
+
+	// ALL, not "at least one" — decision 5 is the mirror of decision 1.
+	// Decision 1 lets a viewer read a file if any one referencing page is
+	// visible to them (a file already on screen can't be un-shown).
+	// Decision 5 asks a different question: would merging teach the
+	// uploader about a page they can't already see? That is only false when
+	// EVERY referencing page is already visible to them.
+	for _, id := range entityIDs {
+		if !viewable[id] {
+			return false, nil, nil
+		}
+	}
+	return true, refs, nil
 }
 
 // checkQuotas enforces dynamic storage limits from the settings plugin.

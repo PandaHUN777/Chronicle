@@ -49,8 +49,14 @@ type AddonChecker interface {
 
 // TimelineSearcher provides timeline search results for the @mention popup.
 // Implemented by the timeline plugin and injected via SetTimelineSearcher.
+// Takes userID alongside role — matching this handler's own
+// Search(ctx, campaignID, query, typeID, role, userID, opts) convention
+// above — so the timeline plugin can apply its per-user visibility_rules
+// filter to search results, not just the role-based dm_only narrowing
+// (2026-09-12 audit finding 4 follow-up: a restricted timeline's NAME used
+// to reach any viewer who could pass the role check, allow-list or not).
 type TimelineSearcher interface {
-	SearchTimelines(ctx context.Context, campaignID, query string, role int) ([]map[string]string, error)
+	SearchTimelines(ctx context.Context, campaignID, query string, role int, userID string) ([]map[string]string, error)
 }
 
 // MapSearcher provides map search results for the quick search popup.
@@ -516,14 +522,20 @@ func (h *Handler) Create(c echo.Context) error {
 
 	userID := auth.GetUserID(c)
 
-	// Apply campaign default visibility if the user didn't explicitly set private.
-	isPrivate := req.IsPrivate
-	if !isPrivate {
-		defaultVis := cc.Campaign.ParseSettings().DefaultVisibility
-		if defaultVis == "dm_only" || defaultVis == "private" {
-			isPrivate = true
-		}
+	// Resolve visibility against the campaign's DefaultVisibility setting.
+	//
+	// An unchecked HTML checkbox submits NOTHING, so a false here IS the
+	// absent case — this form has no way to say "explicitly public" and
+	// never had one. Everything else about the merge lives in
+	// CampaignSettings.ResolveNewEntityPrivacy, which is the single
+	// implementation the other creation paths share; this block used to be
+	// an inline copy and was the ONLY place in the repo that read the
+	// setting at all.
+	requestedPrivacy := patch.Absent[bool]()
+	if req.IsPrivate {
+		requestedPrivacy = patch.Of(true)
 	}
+	isPrivate := cc.Campaign.ParseSettings().ResolveNewEntityPrivacy(requestedPrivacy)
 
 	input := CreateEntityInput{
 		Name:         req.Name,
@@ -590,7 +602,12 @@ func (h *Handler) Show(c echo.Context) error {
 
 	// Visibility check: verify the user can view this entity.
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -602,8 +619,12 @@ func (h *Handler) Show(c echo.Context) error {
 
 	// Fetch ancestor chain for breadcrumbs and children for sub-page listing.
 	// Backlinks load asynchronously via HTMX to keep page load fast.
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole() here too, matching the
+	// CheckEntityAccess call just above. Before this fix a Co-DM allowed onto
+	// a dm_only parent page (promoted) then had that page's own dm_only
+	// children silently dropped (raw MemberRole) from the Sub-pages list.
 	ancestors, _ := h.service.GetAncestors(c.Request().Context(), entity.ID)
-	children, _ := h.service.GetChildren(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	children, _ := h.service.GetChildren(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 
 	// Check if the "attributes" addon is enabled for this campaign.
 	// Defaults to true (show attributes) if addon checker is not wired or
@@ -921,7 +942,7 @@ func (h *Handler) SearchAPI(c echo.Context) error {
 		ctx := c.Request().Context()
 		if h.timelineSearcher != nil && query != "" && h.isAddonEnabled(ctx, cc.Campaign.ID, "timeline") {
 			if tlResults, err := h.timelineSearcher.SearchTimelines(
-				ctx, cc.Campaign.ID, query, role,
+				ctx, cc.Campaign.ID, query, role, userID,
 			); err == nil {
 				items = append(items, toAnyMaps(tlResults)...)
 				total += len(tlResults)
@@ -1045,6 +1066,13 @@ func (h *Handler) QuickCreateAPI(c echo.Context) error {
 	var req struct {
 		Name         string `json:"name"`
 		EntityTypeID int    `json:"entity_type_id"`
+		// IsPrivate is three-state: ABSENT lets the campaign's
+		// DefaultVisibility decide, an explicit value overrides it. The
+		// shop widget omits the key entirely, which is exactly why it has
+		// to stay distinguishable from an explicit false — bound as a
+		// plain bool it decoded to "public", so every item created in a
+		// DM-only campaign was visible to the whole table on arrival.
+		IsPrivate patch.Field[bool] `json:"is_private"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request")
@@ -1069,6 +1097,7 @@ func (h *Handler) QuickCreateAPI(c echo.Context) error {
 	input := CreateEntityInput{
 		Name:         req.Name,
 		EntityTypeID: req.EntityTypeID,
+		IsPrivate:    cc.Campaign.ParseSettings().ResolveNewEntityPrivacy(req.IsPrivate),
 	}
 
 	entity, err := h.service.Create(c.Request().Context(), cc.Campaign.ID, userID, input)
@@ -1697,7 +1726,12 @@ func (h *Handler) GetEntry(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -1783,7 +1817,12 @@ func (h *Handler) GetPlayerNotes(c echo.Context) error {
 	// visibility, not just legacy is_private — matches GetEntry/GetFieldsAPI so a
 	// player excluded from this entity can't read its player_notes (SEC-IDOR-5).
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -1849,7 +1888,12 @@ func (h *Handler) GetFieldsAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -2079,7 +2123,12 @@ func (h *Handler) PreviewAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3154,7 +3203,12 @@ func (h *Handler) GetAliasesAPI(c echo.Context) error {
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches Show. (C-ENTITY-VIS-PARITY)
 	userID := auth.GetUserID(c)
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): use VisibilityRole(), not the raw
+	// MemberRole. VisibilityRole() promotes a DM-granted member to Owner for
+	// visibility purposes (campaigns/model.go) so a Co-DM can open a dm_only
+	// entity; MemberRole alone 404'd them even though they're meant to see it.
+	// This is a read (CanView) gate only — CanEdit off this call is unused here.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3229,7 +3283,14 @@ func (h *Handler) BacklinksFragment(c echo.Context) error {
 
 	// Visibility gate: canonical CheckEntityAccess honors custom (grant-based)
 	// visibility, not just legacy is_private — matches PreviewAPI / GetAliasesAPI.
-	access, err := h.service.CheckEntityAccess(ctx, entity.ID, int(cc.MemberRole), userID)
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): reuse `role` (cc.VisibilityRole(),
+	// already computed above for the backlinks list query itself) instead of
+	// re-deriving int(cc.MemberRole) here. Before this fix the two halves of
+	// this function disagreed: the list was already built with the Co-DM's
+	// promoted Owner-for-visibility role, but this second, independent
+	// derivation used their raw MemberRole — so a Co-DM saw evidence a
+	// dm_only entity has backlinks and then got 404'd loading them.
+	access, err := h.service.CheckEntityAccess(ctx, entity.ID, role, userID)
 	if err != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -3466,10 +3527,14 @@ func (h *Handler) ClaimEntity(c echo.Context) error {
 	// The claim button only renders on entities the player can view, but a
 	// hand-rolled POST with a known UUID would otherwise let a player claim
 	// (and, via the non-visibility-filtered "My Characters" list, learn the
-	// name of) a hidden character. Use the real member role, not the
-	// view-as-player override. Mirrors the IsPrivate gate the Show handler
-	// applies before rendering.
-	access, err := h.service.CheckEntityAccess(c.Request().Context(), entityID, int(cc.MemberRole), userID)
+	// name of) a hidden character. Use the real member role (cc.MemberRole /
+	// cc.VisibilityRole()), not the view-as-player override (an
+	// Owner-previewing-as-Player templ-context value that never touches cc
+	// at all — see routes.go's effectiveRole). ADR-057 slice 1: promote via
+	// VisibilityRole() the same way Show does, which this comment already
+	// says to mirror — a Co-DM must be able to claim a dm_only character
+	// exactly as they can open its Show page.
+	access, err := h.service.CheckEntityAccess(c.Request().Context(), entityID, int(cc.VisibilityRole()), userID)
 	if err != nil {
 		return err
 	}

@@ -263,7 +263,7 @@ func TestPluginImportGuard(t *testing.T) {
 	}
 
 	var msg strings.Builder
-	msg.WriteString(fmt.Sprintf("plugin-import-guard: %d NEW cross-plugin import edge(s) detected outside grandfathered baseline:\n\n", len(newEdges)))
+	fmt.Fprintf(&msg, "plugin-import-guard: %d NEW cross-plugin import edge(s) detected outside grandfathered baseline:\n\n", len(newEdges))
 	for _, e := range newEdges {
 		msg.WriteString("  " + e.String() + "\n")
 	}

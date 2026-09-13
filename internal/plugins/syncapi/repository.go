@@ -19,6 +19,9 @@ type SyncAPIRepository interface {
 	FindKeyByPrefix(ctx context.Context, prefix string) (*APIKey, error)
 	ListKeysByUser(ctx context.Context, userID string) ([]APIKey, error)
 	ListKeysByCampaign(ctx context.Context, campaignID string) ([]APIKey, error)
+	// ListCampaignIDsWithKeys returns the distinct campaign IDs owning at
+	// least one api_keys row (any state). Backs ReconcileAddonEnablement.
+	ListCampaignIDsWithKeys(ctx context.Context) ([]string, error)
 	ListAllKeys(ctx context.Context, limit, offset int) ([]APIKey, int, error)
 	UpdateKeyActive(ctx context.Context, id int, active bool) error
 	UpdateKeyLastUsed(ctx context.Context, id int, ip string) error
@@ -131,6 +134,29 @@ func (r *syncAPIRepository) ListKeysByCampaign(ctx context.Context, campaignID s
 	}
 	defer rows.Close()
 	return r.scanKeys(rows)
+}
+
+// ListCampaignIDsWithKeys returns the distinct campaign IDs owning at least
+// one API key. Deliberately unfiltered by is_active / expires_at — a
+// deactivated or expired key can be reactivated or replaced, so the campaign
+// is still a Sync API user for enablement purposes.
+func (r *syncAPIRepository) ListCampaignIDsWithKeys(ctx context.Context) ([]string, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT DISTINCT campaign_id FROM api_keys WHERE campaign_id IS NOT NULL AND campaign_id != ''`)
+	if err != nil {
+		return nil, fmt.Errorf("listing campaign ids with api keys: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning campaign id with api keys: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 // ListAllKeys returns all API keys with pagination (admin).

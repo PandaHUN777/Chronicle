@@ -168,6 +168,23 @@ func (h *Hub) Run() {
 					continue
 				}
 
+				// Per-user visibility_rules gate (S1). RequiresDM above
+				// only covers the binary dm_only case; a "specific"
+				// visibility marker/drawing isn't dm_only at all, so it
+				// needs its own allowed_users/denied_users check or it
+				// reaches everyone. DM-equivalent clients bypass this
+				// too, matching the HTTP list path (maps' ListMarkers /
+				// ListDrawings): Owners see every marker and drawing
+				// regardless of visibility_rules. Everyone else must
+				// clear msg.AudienceAllows, which mirrors those same
+				// queries' SQL predicate — the two MUST stay in lockstep
+				// or a marker/drawing becomes more or less visible over
+				// the wire than the HTTP list shows, which is exactly
+				// the leak this gate exists to close.
+				if !permissions.CanSeeDmOnly(client.Role, client.IsDmGranted) && !msg.AudienceAllows(client.UserID) {
+					continue
+				}
+
 				select {
 				case client.send <- data:
 				default:
@@ -183,6 +200,42 @@ func (h *Hub) Run() {
 			h.mu.RUnlock()
 		}
 	}
+}
+
+// AudienceAllows reports whether userID is in m's audience per its
+// AllowedUsers/DeniedUsers lists (S1). Callers must apply this only to
+// non-DM-equivalent clients — Owners/DM-granted users bypass it entirely,
+// same as the HTTP list path.
+//
+// Mirrors maps.VisibilityRules' SQL predicate (repository.go's ListMarkers,
+// drawing_repository.go's ListDrawings): an explicit deny always excludes;
+// a non-empty AllowedUsers is a strict allowlist and only its members pass;
+// an empty (or absent, i.e. both lists nil) rule set means "everyone" —
+// deliberately duplicated here rather than imported from the maps package,
+// since this package is generic transport infrastructure with no business
+// importing a specific plugin's types.
+//
+// It is EXPORTED for one reason: so the duplication can be pinned. Neither
+// this package nor maps may import the other, so the parity test lives in
+// internal/app, which imports both, and runs one table of cases through
+// this and through maps.VisibilityRules.Allows asserting they agree
+// (map_audience_parity_test.go). A comment saying "these must stay in
+// lockstep" is not a guard; that test is.
+func (m *Message) AudienceAllows(userID string) bool {
+	for _, id := range m.DeniedUsers {
+		if id == userID {
+			return false
+		}
+	}
+	if len(m.AllowedUsers) == 0 {
+		return true
+	}
+	for _, id := range m.AllowedUsers {
+		if id == userID {
+			return true
+		}
+	}
+	return false
 }
 
 // Broadcast sends a message to all clients in the specified campaign.

@@ -57,7 +57,7 @@ func tokenHandler(t *testing.T, roster []string, applied *string) *Handler {
 	for _, id := range roster {
 		members = append(members, campaigns.CampaignMember{UserID: id})
 	}
-	h := &Handler{svc: NewSessionService(repo, nil)}
+	h := &Handler{svc: NewSessionService(repo, nil, nil)}
 	h.SetMemberLister(&stubMemberLister{members: members})
 	return h
 }
@@ -133,7 +133,7 @@ func TestRSVPToken_FailsClosedWithoutARoster(t *testing.T) {
 			return nil
 		},
 		markRSVPTokenUsedFn: func(_ context.Context, _ string) error { return nil },
-	}, nil)} // no memberLister wired at all
+	}, nil, nil)} // no memberLister wired at all
 	c, _ := rsvpTokenCtx(http.MethodPost)
 	if err := h.ApplyRSVPToken(c); err != nil {
 		t.Fatalf("handler: %v", err)
@@ -215,7 +215,7 @@ func TestDB_SessionRSVPTokenCannotBeSpentTwiceConcurrently(t *testing.T) {
 	db := newScratchDB(t)
 	campID, userID := seedCampaign(t, db)
 	repo := NewSessionRepository(db)
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	ctx := context.Background()
 
 	for attempt := 0; attempt < 40; attempt++ {
@@ -266,7 +266,7 @@ func TestDB_MarkRSVPTokenUsedReportsTheLoser(t *testing.T) {
 	db := newScratchDB(t)
 	campID, userID := seedCampaign(t, db)
 	repo := NewSessionRepository(db)
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	ctx := context.Background()
 
 	sessID := seedSession(t, db, campID, userID, "S")
@@ -313,7 +313,7 @@ func TestDB_SameStatusRSVPTwiceInOneSecondSucceeds(t *testing.T) {
 	db := newScratchDB(t)
 	campID, userID := seedCampaign(t, db)
 	repo := NewSessionRepository(db)
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	ctx := context.Background()
 
 	sessID := seedSession(t, db, campID, userID, "Session 41")
@@ -354,7 +354,7 @@ func TestDB_MemberWhoJoinedLaterCanRSVP(t *testing.T) {
 	db := newScratchDB(t)
 	campID, ownerID := seedCampaign(t, db)
 	repo := NewSessionRepository(db)
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	ctx := context.Background()
 
 	sessID := seedSession(t, db, campID, ownerID, "Session 41")

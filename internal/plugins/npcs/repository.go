@@ -1,6 +1,18 @@
 // repository.go provides data access for the NPC gallery. Queries the existing
 // entities + entity_types tables — no separate NPC table is needed because
 // NPCs are just character entities filtered by visibility.
+//
+// SECURITY (finding 2, .ai/designs/2026-09-12-security-audit-findings.md):
+// this repository applies NO visibility predicate of its own. It used to
+// hand-roll one as `role < 2 AND e.is_private = false`, which never consulted
+// entities.visibility or entity_permissions — so an entity switched to
+// visibility='custom' (which does not clear is_private) stayed listed to
+// Players and to anonymous visitors. The fix moves the visibility decision to
+// the service layer, which narrows the ID list returned here through the
+// entities plugin's own canonical FilterViewableEntityIDs (via
+// EntityVisibilityFilter in service.go) instead of a second copy of that
+// predicate — see service.go's visibleNPCIDs for the policy this repository
+// deliberately does not implement.
 package npcs
 
 import (
@@ -13,12 +25,19 @@ import (
 
 // NPCRepository defines the data access contract for NPC gallery queries.
 type NPCRepository interface {
-	// ListRevealed returns non-private character entities visible to the
-	// given role/user, with pagination and optional filters.
-	ListRevealed(ctx context.Context, campaignID string, characterTypeID int, role int, userID string, opts NPCListOptions) ([]NPCCard, int, error)
+	// ListRevealedIDs returns ALL character entity IDs matching the campaign +
+	// character type + optional search/tag filters (excluding templates), in
+	// the gallery's sort order, with NO visibility restriction and NO
+	// pagination applied. The service layer narrows this list to what the
+	// viewer may see (via the canonical entities visibility policy) BEFORE
+	// paginating, so the visible list and its count are always derived from
+	// the exact same filtered ID set and can never disagree.
+	ListRevealedIDs(ctx context.Context, campaignID string, characterTypeID int, opts NPCListOptions) ([]string, error)
 
-	// CountRevealed returns the number of visible NPCs for badge display.
-	CountRevealed(ctx context.Context, campaignID string, characterTypeID int, role int, userID string) (int, error)
+	// GetNPCCardsByIDs returns full NPC card data for exactly the given IDs
+	// (in that order), scoped to campaignID. Used to fetch one page's worth of
+	// cards after the service has already narrowed and paginated the ID list.
+	GetNPCCardsByIDs(ctx context.Context, campaignID string, ids []string) ([]NPCCard, error)
 }
 
 // npcRepository implements NPCRepository with MariaDB queries against the
@@ -37,16 +56,13 @@ const npcSelectColumns = `e.id, e.name, e.slug, e.image_path, e.type_label,
 	e.is_private, e.fields_data,
 	et.name, et.icon, et.color`
 
-// ListRevealed fetches revealed character entities for the NPC gallery.
-// Filters by character entity type and applies visibility rules based on role.
-func (r *npcRepository) ListRevealed(ctx context.Context, campaignID string, characterTypeID int, role int, userID string, opts NPCListOptions) ([]NPCCard, int, error) {
+// ListRevealedIDs fetches every character entity ID matching the campaign +
+// character type + search/tag filters, unfiltered by visibility and
+// unpaginated. See the NPCRepository doc comment for why visibility is
+// deliberately absent here.
+func (r *npcRepository) ListRevealedIDs(ctx context.Context, campaignID string, characterTypeID int, opts NPCListOptions) ([]string, error) {
 	where := "WHERE e.campaign_id = ? AND e.entity_type_id = ? AND e.is_template = false"
 	args := []any{campaignID, characterTypeID}
-
-	// For players, only show non-private NPCs. Scribes/Owners see all.
-	if role < 2 {
-		where += " AND e.is_private = false"
-	}
 
 	// Optional name search.
 	if opts.Search != "" {
@@ -62,27 +78,56 @@ func (r *npcRepository) ListRevealed(ctx context.Context, campaignID string, cha
 		args = append(args, opts.Tag)
 	}
 
-	// Count total for pagination.
-	countQuery := fmt.Sprintf("SELECT COUNT(DISTINCT e.id) FROM entities e%s %s", tagJoin, where)
-	var total int
-	if err := r.db.QueryRowContext(ctx, countQuery, args...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("counting NPCs: %w", err)
+	query := fmt.Sprintf(`SELECT e.id FROM entities e%s %s GROUP BY e.id %s`,
+		tagJoin, where, opts.OrderByClause())
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("listing NPC ids: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning NPC id: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// GetNPCCardsByIDs fetches full card data for exactly the given ids, scoped
+// to campaignID, preserving the caller's order (the service has already
+// applied visibility + pagination to the id list by this point).
+func (r *npcRepository) GetNPCCardsByIDs(ctx context.Context, campaignID string, ids []string) ([]NPCCard, error) {
+	if len(ids) == 0 {
+		return nil, nil
 	}
 
-	// Fetch page.
+	placeholders := make([]string, len(ids))
+	idArgs := make([]any, len(ids))
+	for i, id := range ids {
+		placeholders[i] = "?"
+		idArgs[i] = id
+	}
+	inClause := strings.Join(placeholders, ",")
+
+	args := make([]any, 0, 1+len(ids)*2)
+	args = append(args, campaignID)
+	args = append(args, idArgs...)
+	args = append(args, idArgs...)
+
 	query := fmt.Sprintf(`SELECT %s
 		FROM entities e
 		INNER JOIN entity_types et ON et.id = e.entity_type_id
-		%s
-		%s
-		GROUP BY e.id
-		%s
-		LIMIT ? OFFSET ?`, npcSelectColumns, tagJoin, where, opts.OrderByClause())
+		WHERE e.campaign_id = ? AND e.id IN (%s)
+		ORDER BY FIELD(e.id, %s)`, npcSelectColumns, inClause, inClause)
 
-	pageArgs := append(args, opts.PerPage, opts.Offset())
-	rows, err := r.db.QueryContext(ctx, query, pageArgs...)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("listing NPCs: %w", err)
+		return nil, fmt.Errorf("fetching NPC cards: %w", err)
 	}
 	defer rows.Close()
 
@@ -90,28 +135,11 @@ func (r *npcRepository) ListRevealed(ctx context.Context, campaignID string, cha
 	for rows.Next() {
 		card, err := scanNPCCard(rows)
 		if err != nil {
-			return nil, 0, err
+			return nil, err
 		}
 		cards = append(cards, *card)
 	}
-	return cards, total, rows.Err()
-}
-
-// CountRevealed returns the count of visible character entities for badge display.
-func (r *npcRepository) CountRevealed(ctx context.Context, campaignID string, characterTypeID int, role int, userID string) (int, error) {
-	where := "WHERE e.campaign_id = ? AND e.entity_type_id = ? AND e.is_template = false"
-	args := []any{campaignID, characterTypeID}
-
-	if role < 2 {
-		where += " AND e.is_private = false"
-	}
-
-	query := fmt.Sprintf("SELECT COUNT(*) FROM entities e %s", where)
-	var count int
-	if err := r.db.QueryRowContext(ctx, query, args...).Scan(&count); err != nil {
-		return 0, fmt.Errorf("counting revealed NPCs: %w", err)
-	}
-	return count, nil
+	return cards, rows.Err()
 }
 
 // scanNPCCard reads a single NPC card row from the result set.

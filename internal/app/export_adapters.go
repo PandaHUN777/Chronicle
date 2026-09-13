@@ -484,7 +484,7 @@ func (a *mapExportAdapter) ExportMaps(ctx context.Context, campaignID string, en
 			}
 
 			// Drawings (owner sees all).
-			drawings, err := a.drawingSvc.ListDrawings(ctx, m.ID, ownerRole)
+			drawings, err := a.drawingSvc.ListDrawings(ctx, m.ID, ownerRole, "")
 			if err == nil {
 				for _, d := range drawings {
 					var layerName *string

@@ -62,7 +62,7 @@ func RegisterCoreBlocks(r *BlockRegistry) {
 		Description: "Metadata and dates",
 		Contexts:    []string{"template"},
 	}, func(ctx BlockRenderContext) templ.Component {
-		return blockDetails(ctx.Entity)
+		return blockDetails(ctx.CC, ctx.Entity)
 	})
 
 	r.Register(BlockMeta{
@@ -131,19 +131,13 @@ func RegisterCoreBlocks(r *BlockRegistry) {
 		return blockShopInventory(ctx.CC, ctx.Entity, ctx.CSRFToken)
 	})
 
-	// Per-entity permissions widget. Mounts the same JS widget the
-	// entity edit form uses so operators can manage visibility and
-	// per-user/role grants without leaving the entity page. Auto-added
-	// to every entity-type layout via EnsurePermissionsBlockInDefaults
-	// — singleton because the widget binds fixed DOM IDs internally.
-	r.Register(BlockMeta{
-		Type: "permissions", Label: "Permissions", Icon: "fa-user-shield",
-		Description: "Visibility and per-user / per-role access grants",
-		Contexts:    []string{"template"},
-		Singleton:   true,
-	}, func(ctx BlockRenderContext) templ.Component {
-		return blockPermissions(ctx.CC, ctx.Entity, ctx.CSRFToken)
-	})
+	// The "permissions" block (and its auto-append heal,
+	// EnsurePermissionsBlockInDefaults) was removed by ADR-057 decision 5:
+	// editing now lives only in edit mode, via form.templ's inline widget
+	// mount. A stored layout may still carry a "row-perm" row referencing
+	// this now-unregistered type; RenderBlock already drops an unregistered
+	// block type silently (see its doc comment), so no migration is needed —
+	// pinned by TestStoredRowPermRendersWithoutPermissionsBlock.
 
 	r.Register(BlockMeta{
 		Type: "inventory", Label: "Inventory", Icon: "fa-shield-halved",

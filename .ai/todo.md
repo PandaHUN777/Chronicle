@@ -1,5 +1,144 @@
 # Chronicle Backlog
 
+> **2026-09-13 — branch `claude/determined-davinci-5ut5f5`.** The ordered
+> next-step list, with reasoning for the ordering, is in
+> `.ai/designs/2026-09-13-session-handoff.md` §4. This file remains the
+> authoritative backlog; the handoff says which of it to do first and why.
+
+## Booked 2026-09-12 from the operator's answers (read before the sections below)
+
+- **ADR-058 residual: a timing side-channel on the refused merge.** The
+  refused-merge response is byte-identical to an ordinary upload's (pinned by
+  a test comparing status and JSON key sets), but a refusal does two extra
+  database round trips before falling into the same write path, so latency
+  could in principle distinguish "matched an existing file I may not see" from
+  "matched nothing". Closing it means running a dummy visibility check on every
+  true no-match too. The executor judged that not worth the complexity and
+  flagged it rather than claiming the channel closed; recorded here so the
+  claim in the commit message stays honest. Low priority: it requires repeated
+  sampling and yields one bit about a file the attacker already holds.
+
+- **ADR-058 decision 4 is endpoint-correct but has no new UI door.** The
+  "where is this used" endpoint is now reachable by the DM team (promoted role
+  >= Scribe) and filters the list to pages the viewer may see. The media
+  browser page and its delete action remain Owner-only route gates, so in
+  practice only an Owner still sees the button that calls it. A Scribe-reachable
+  entry point (the media picker is the obvious place) is a frontend addition
+  nobody has designed; booked rather than improvised.
+
+- **Add a workflow-shape guard (`tools/check-workflow-steps.sh`).** On
+  2026-09-12 the golangci-lint step lost its `uses:` and `with:` lines during
+  the Go 1.27 pin bump, leaving a step whose only key was `version:`. GitHub
+  could not compile the workflow, so for ~19 hours and ~30 commits EVERY push
+  produced a zero-job run and no job ran at all — not build, not test, not the
+  guards, not the fresh-DB replay, not the probes, not the security scan, not
+  the Docker build. Nothing was red; CI was simply absent, which is worse
+  because absence is invisible. Repaired in `03ca8ead`.
+  The guard: parse `.github/workflows/*.yml` and fail if any step has neither
+  `uses:` nor `run:`. Ten lines of Python, and it catches the whole class.
+  Worth pairing with a check that the run's name is the workflow's `name:` —
+  a run labelled with the FILE PATH is the tell that it never compiled.
+
+- **RULED 2026-09-12 by the operator: YES, the co-DM promotion crosses plugin
+  lines.** In their words: "I'd think the codm would have essentially the same
+  access as the dm/owner (keep in mind that title is determined by the
+  system)." The co-DM flag is system-assigned, not a label a member types, so
+  it is an identity Chronicle grants deliberately and must honour everywhere.
+  Armory, NPCs and timeline therefore pass `cc.VisibilityRole()` like every
+  entity path already does. Timeline must keep its view-as-player branch:
+  previewing as a player still returns RolePlayer, and only the non-preview
+  branch promotes.
+  **"Essentially" is doing real work and is NOT read as full ownership.** The
+  operator has already drawn that line once, on the Foundry key: "the owner is
+  always the one that would/could create that. I could see the Co-DM being able
+  to refresh it as a troubleshooting step." So this ruling is SEEING, not
+  owning. Unchanged and still raw-role: armory's `Purchase` and
+  `CanUserActAsBuyer`, which read CanEdit and are economic actions rather than
+  visibility. If the operator wants those too, that is a second ruling.
+
+- **(superseded) The original question, kept for the reasoning:**
+  ADR-057 slice 1 promotes a DM-granted member to Owner *for visibility* on
+  entity paths. An adversarial review of the shipped fix (2026-09-12) showed
+  the same raw-role pattern in plugins whose content is NOT entities. The
+  entity paths are being finished now; these three are deliberately left
+  alone because changing them changes those features' own semantics:
+  - **Armory** (`armory/handler.go:75,112` ListItems/CountItems): should a
+    co-DM see DM-only armory items? Its `Purchase` path and
+    `armoryBuyerAccessAdapter.CanUserActAsBuyer` stay on the raw role
+    regardless — they read `CanEdit`, and VisibilityRole is a visibility
+    promotion, never an edit one.
+  - **NPCs** (`npcs/handler.go:63,124`): the comment at `:60` says the role
+    deliberately matches the gallery's "so reveal/hide visibility is
+    unchanged". NPCs have their own reveal mechanic; promoting here changes
+    what a co-DM sees of unrevealed NPCs.
+  - **Timeline** (`timeline/handler.go:82` `effectiveRole`): unlike entities,
+    timeline already honours view-as-player. A promotion has to compose with
+    that, not ignore it.
+  Default if the operator does not rule: leave all three as they are. A co-DM
+  seeing more is not obviously right in any of the three.
+
+- **Process note from the same review.** ADR-057 said "every
+  `CheckEntityAccess` caller" and enumerated nine. The tree has twelve, and
+  the entity page also reaches the same rule through `GetChildren`,
+  `filterByTargetVisibility`, `GetFilteredGraphData` and
+  `ListRecentForDashboard`, none of which are syntactic `CheckEntityAccess`
+  callers. An enumeration written from a grep of one function name is not a
+  census of a RULE. Future slices that claim "every caller" must grep for the
+  behaviour, not the symbol, and say which spelling they searched.
+
+- **Calendar V5 timing (operator, 2026-09-12): not now.** The operator is at
+  half the weekly usage across projects and is wary of the calendar's size.
+  Sequence when it starts: (1) a Sonnet research pass on the open-source
+  bases the operator asked to build on, read-only, one table; (2) a Fable
+  pass on decisions only, no renders unless asked; (3) Sonnet executors on
+  slices. HUB-1 (one dashboard over every calendar the viewer may see,
+  switching without a reload) stands as the vision. Nothing in chrome,
+  permissions or security waits on it.
+
+- [ ] **Fog / GM layers / map-write API parity (ADR-054 §4) — UNBLOCKED.** The
+  operator confirms the Foundry API key was created by the Owner account, so
+  role-from-creator is safe. Ship the three fixes as ONE PR with the ADR-054
+  contract test that pairs each `/api/v1` route with its web twin. Plan:
+  `.ai/designs/2026-09-12-security-plan.md` §S7.
+- [ ] **API keys: a Co-DM may refresh (rotate) the key as a troubleshooting
+  step; every key action by Owner or Co-DM is logged.** Operator, 2026-09-12 —
+  "I'd write that down in the to do vs things we are doing now." Not now.
+- [x] **ADR-058 decisions 4-5 — the last slice — done 2026-09-13.** All
+  seven decisions are now built — see `.ai/status.md`'s 2026-09-12,
+  2026-09-13 (decisions 6-7), and 2026-09-13 (decisions 4-5) entries. Also
+  flagged, still not fixed (out of scope for every decision built so far,
+  may matter to a future slice): `maps.image_id` / `map_tokens.image_path`
+  are media references outside the `entities` table that neither the old
+  nor the new rule covers — a map background/token image still relies on
+  plain campaign membership regardless of any per-marker/per-layer
+  visibility on the map itself.
+- [ ] **Plugin-isolation guard: allow `internal/plugins/addons/service.go`.**
+  `builtinAddons` is the table that names every plugin slug by design; the
+  guard reads any edited line there as a new cross-plugin reference, so every
+  future description edit will trip it. The remedy is a one-line allowlist
+  entry with a citing comment — a CI change, so a human applies it. Then
+  restore the Calendar card's rebuild disclosure (ADR-056), reverted in
+  `9a243138` to keep the branch pushable.
+- [ ] **Calendar — the operator's vision, restated 2026-09-12:** the calendar
+  is a widget; there is also a dashboard showing every calendar the viewer
+  has permission to see, switching between them in place without a page load,
+  everything permission-checked server-side. **This is [HUB-1], signed
+  2026-08-10** (`Cordinator/decisions/2026-08-10-operator-answers-hub-eip-realtime-sky.md`)
+  — no new decision; recorded so the rebuild plan cites it. Design on a canvas
+  when the calendar's turn comes, after the operator has played without one.
+- [ ] **Review follow-ups from 9a243138 (non-blocking):** (a) the partial-update
+  comments in `maps/drawing.go:152-159`, `syncapi/map_api_handler.go:~350` and
+  `timeline/model.go` narrate incidents that never fired — no caller hit those
+  paths; demote to the conditional as the drawing/layer comments already are.
+  (b) `sessions/service.go` `FilterEntitiesForViewer` fails closed on a nil
+  filter and nothing pins it — add the test before anyone "simplifies" it.
+  (c) `addons.RequireAddon` answers 303→HTML on the entity-notes JSON routes;
+  `entity_notes.js` would throw on the body. Same precedent as sessions; a
+  JSON-aware refusal is the right shape when someone is in there.
+- [ ] **ADR-055 §4 overstates:** the timeline `EventCount` rules-delta was not
+  built. Booked in the security plan §S6; amend the ADR when it is.
+
+
 <!-- ====================================================================== -->
 <!-- Category: DYNAMIC                                                        -->
 <!-- Purpose: Single source of truth for what needs to be done, priorities,    -->
@@ -8,6 +147,70 @@
 <!--         work (to mark progress), and at session end (to reflect).        -->
 <!-- Legend: [ ] Not started  [~] In progress  [x] Complete  [!] Blocked      -->
 <!-- ====================================================================== -->
+
+## 0-syncapi. The "Sync API" toggle is enforced (2026-09-11, ADR-053)
+
+- [x] **The gate, scoped to real Bearer keys.** `RequireSyncAPIAddon` on both
+  `/api/v1` groups; a synthetic session key (`ID == synthKeySessionID`) passes
+  through untouched so Chronicle's own widgets on the same dual-auth routes are
+  unaffected. Refusal is 403 `sync_api_disabled`, never 404.
+- [x] **The WebSocket.** Gated in `AuthenticateKeyForWS`, not inside
+  `AuthenticateKey` (whose every failure surfaces as 401 "invalid api key").
+- [x] **Boot reconciler.** `syncapi.ReconcileAddonEnablement`, wired in
+  `internal/app/routes.go` next to `backfillPlayerCharacterTypes`. Enables
+  `sync-api` only where a campaign owns API keys and has **no**
+  `campaign_addons` row; `enabled = 0` is an owner's decision and is left alone.
+- [x] **`CreateKey` enables the addon**, so a key minted after boot is not dead
+  until the next restart.
+
+- [ ] **RESIDUAL — an in-flight WebSocket is not dropped when the toggle flips
+  off.** Enforcement is at CONNECT. The hub has no disconnect-by-campaign
+  mechanism, and adding one would make this toggle stronger than API-key
+  revocation, which is also reconnect-scoped (as is `Client.IsDmGranted`:
+  "revoking a grant requires the user to reconnect"). Fixing it properly means
+  giving the hub ONE revocation path that all three use — not a special case
+  for this toggle. Until then the honest statement is: the socket closes on the
+  module's next reconnect, or on a world reload.
+- [ ] **Not audited: the other addon-gated groups.** `calGroup` and `mapGroup`
+  use `RequireAddonAPI`, which gates session callers too and answers 404. For
+  `calendar` / `maps` — feature addons — gating everyone is right, but the 404
+  shape has the same "too old a Chronicle" ambiguity for the Foundry module.
+  Re-measure against V5 before changing anything on the calendar side.
+
+## 0-vis. Campaign default visibility reaches every creation path (2026-09-11)
+
+- [x] **One shared resolution.**
+  `campaigns.CampaignSettings.ResolveNewEntityPrivacy(patch.Field[bool])` (+
+  `DefaultsToPrivate()`), next to the setting it interprets. The four-line
+  inline block in `entities/handler.go` — for months the ONLY reader of
+  `DefaultVisibility` anywhere in the repo — now calls it like everyone else.
+- [x] **Applied at the four paths that ignored the setting**: the shop
+  widget's `QuickCreateAPI`, syncapi `CreateEntity` (`is_private` `bool` →
+  `patch.Field[bool]`), the batch-sync `case "create"` (`.Val(false)` threw
+  away a distinction the field already carried), and
+  `bestiaryEntityCreatorAdapter.CreateFromStatblock`. Absent falls back to
+  the campaign default; an explicit `is_private: false` stays public.
+  Unreadable campaign settings fail CLOSED, loudly logged.
+- [x] Pinned by `internal/plugins/campaigns/default_visibility_test.go`,
+  `internal/plugins/entities/default_visibility_create_test.go`,
+  `internal/plugins/syncapi/create_default_visibility_test.go` and
+  `internal/app/bestiary_import_visibility_test.go` — three directions per
+  path (absent / explicit false / explicit true), each red before the fix.
+
+- [ ] **BOOKED, a copy/product decision — "DM Only" and "Private" are the
+  same behaviour.** `internal/plugins/campaigns/settings.templ:373-381`
+  offers them as two options and tells the DM that Private means "visible
+  only to the creator". Storage has exactly one flag (`entities.is_private`),
+  so both resolve to "hidden from players" and the creator-only behaviour is
+  not implemented anywhere. Either the copy is wrong or a feature is missing;
+  deciding which is not an implementation call. `DefaultVisibilityDMOnly` /
+  `DefaultVisibilityPrivate` in `campaigns/model.go` carry the same note.
+
+- [ ] **NOT AUDITED — visibility defaults on non-entity content.** This work
+  covered `CreateEntityInput` only. Whether maps, markers, notes, timeline
+  events and sessions honour a campaign default (or should) was never
+  looked at. Being unlisted here is a statement about what was examined,
+  not a claim that they are fine.
 
 ## 0-rsvp. The product asks instead of guessing (C-RSVP-P10, 2026-08-16)
 
@@ -2218,9 +2421,33 @@ a different bug:**
   call. It is carried as a NAMED exception in
   `internal/patch/partial_update_contract_test.go` so it cannot be forgotten
   and a new value-typed field cannot land quietly beside it.
-- [ ] **Twenty other `Update*Input` structs are frozen but unaudited.** The
-  ratchet's `notYetSwept` list is a statement about what was LOOKED AT, not a
-  safety claim. A future sweep that wants the class fully closed starts there.
+- [x] **Six of the twenty audited and fixed (2026-09-12, ADR-054 task #6):**
+  `maps.UpdateTokenInput`, `maps.UpdateDrawingInput`, `maps.UpdateLayerInput`,
+  `maps.UpdateMapInput`, `timeline.UpdateTimelineInput`, and
+  `tags.UpdateTagRequest` (+ its service, `tagService.Update`, and its
+  syncapi twin) are now presence-aware and load-merge-write. Each has a
+  red-then-green regression test. See `.ai/status.md`'s "ADR-054 task #6"
+  entry for detail.
+- [ ] **The scanner widened to `Update*Request` and found TEN more unaudited
+  structs on day one** (2026-09-12): `campaigns.UpdateCampaignRequest`,
+  `campaigns.UpdateRoleRequest`, `campaigns.UpdateSidebarConfigRequest`,
+  `entities.UpdateEntityRequest`, `entities.UpdateEntityTypeRequest`,
+  `entity_notes.UpdateNoteRequest`, `notes.UpdateNoteRequest`,
+  `posts.UpdatePostRequest`, `relations.UpdateRelationMetadataRequest`,
+  `smtp.UpdateSMTPRequest`. None audited yet; all sit in `notYetSwept` with
+  that stated honestly, not as a safety claim. `entities.UpdateEntityRequest`
+  and `entities.UpdateEntityTypeRequest` look like the exact shape this
+  ratchet exists to catch and are good next candidates.
+- [ ] **The remaining ~15 originally-unaudited `Update*Input` entries** —
+  `packages.UpdatePolicyInput`, `packages.UpdateRepoURLInput`,
+  `bestiary.UpdatePublicationInput`, `timeline.UpdateEntityGroupInput`,
+  `timeline.UpdateEventVisibilityInput`, `addons.UpdateAddonInput`,
+  `entities.UpdateLayoutPresetInput`, `entities.UpdateContentTemplateInput`,
+  `entities.UpdateEntityTypeInput`, `entities.UpdatePromptInput`,
+  `maps.UpdateTokenPositionInput`, `campaigns.UpdateCampaignInput`, and the
+  three CALV5-salvage calendar inputs — are still frozen, unaudited, and
+  named in `notYetSwept`. A future sweep that wants the class fully closed
+  starts with these plus the ten `*Request` structs above.
 
 #### B. `C-AUTHZ-EMPTY-USERID` — anonymous visitors match the "system context" sentinel — **CLOSED, sweep R4 stage 9** · was **high**
 

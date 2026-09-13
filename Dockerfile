@@ -22,12 +22,11 @@ WORKDIR /src
 RUN tailwindcss -i static/css/input.css -o static/css/app.css --minify
 
 # --- Stage 2: Go Build ---
-FROM golang:1.24-alpine AS builder
+FROM golang:1.27-alpine AS builder
 
 # Install templ CLI for generating Go code from .templ files. Pin to the
 # runtime version in go.mod — `@latest` drifts ahead and emits symbols
-# the pinned runtime doesn't have (and newer templ now requires Go 1.25,
-# which would force a base-image bump). Keep generator and runtime in
+# the pinned runtime doesn't have. Keep generator and runtime in
 # lockstep; bumping templ is a deliberate change in three places
 # (go.mod, ci.yml, Dockerfile).
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
@@ -39,8 +38,10 @@ RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
 # by itself, and internal/hostinfo reads them (GET /api/version and the
 # host.build admin diagnostic).
 #
-# WHY it was missing: golang:1.24-alpine's only `apk add` is ca-certificates —
-# no git — and when the VCS tool is absent Go SKIPS STAMPING SILENTLY. Measured:
+# WHY it was missing: the golang alpine builder (1.24-alpine when this was
+# diagnosed, 1.27-alpine now — the property holds across both) carries only
+# ca-certificates — no git — and when the VCS tool is absent Go SKIPS STAMPING
+# SILENTLY. Measured:
 # build exits 0, the binary carries zero vcs.* settings, and Main.Version is the
 # literal "(devel)". So every Chronicle image ever shipped contained a binary
 # with no idea what it was, which is why the 2026-08-11 incident had to reason

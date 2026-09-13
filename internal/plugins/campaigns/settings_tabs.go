@@ -82,12 +82,14 @@ func (h *Handler) RegisterSettingsTab(factory func(*CampaignContext) SettingsTab
 //
 // C-EXT-HUB Phase 1 (2026-05-29) removed the "features" tab (slot 20).
 // Per-campaign feature enable/disable lives on the new top-level
-// Extensions hub at `/campaigns/:id/extensions`. The addons store and
-// `settingsFeaturesTab` templ component are otherwise unchanged —
-// removing the tab here is the entire operator-visible delta for the
-// settings page. SortOrder 20 is intentionally left vacant for any
-// future plugin tab that wants to land between General (10) and
-// People (30).
+// Extensions hub at `/campaigns/:id/extensions`. The addons store was
+// otherwise unchanged — removing the tab here was the entire
+// operator-visible delta for the settings page. The now-orphaned
+// `settingsFeaturesTab` templ component (and the never-linked
+// `PluginHubPage` it sat beside) had zero callers left anywhere in the
+// tree and were deleted in the ADR-056 dead-code sweep (2026-09-12).
+// SortOrder 20 is intentionally left vacant for any future plugin tab
+// that wants to land between General (10) and People (30).
 func (h *Handler) builtInSettingsTabs(
 	cc *CampaignContext,
 	transfer *OwnershipTransfer,

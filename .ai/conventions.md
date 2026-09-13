@@ -242,6 +242,54 @@ single-field nil-guards; C-CAL-NULL-PRESERVE (`SetWeather` load-merge-write)
 for the multi-field merge; sweep R4 (`internal/patch`) for the three-state
 contract this section now prescribes.
 
+## Create Endpoints — visibility comes from the campaign, not from a zero value
+
+The partial-update contract above is about a STORED value an absent key must
+preserve. Create has no stored value, so it looks like the contract does not
+apply — and that reading is how four of the five entity-creation paths shipped
+a `CreateEntityInput` with `IsPrivate: false` baked in.
+
+There is still something an absent key must not overwrite: the campaign's
+`DefaultVisibility` setting. A DM who sets "DM Only" is saying *new content
+starts hidden*, and the only opening that instruction has is a client that did
+not state a preference of its own. A value-typed `bool` cannot tell "the client
+omitted is_private" from "the client sent is_private: false", so every path
+that bound one answered "public" to both.
+
+**Resolve it through `campaigns.CampaignSettings.ResolveNewEntityPrivacy`.**
+It is the single implementation; re-deriving the rule inline from
+`DefaultVisibility` is exactly how the paths drifted apart.
+
+```go
+// ❌ Wrong — a DM-only campaign still gets a public entity.
+input := entities.CreateEntityInput{Name: req.Name, IsPrivate: req.IsPrivate}
+
+// ✓ Right — absent defers to the campaign, explicit wins.
+//   req.IsPrivate is patch.Field[bool].
+input := entities.CreateEntityInput{
+    Name:      req.Name,
+    IsPrivate: settings.ResolveNewEntityPrivacy(req.IsPrivate),
+}
+```
+
+Two rules that come with it:
+
+- **Absent and explicit-false stay different.** The campaign default fills in
+  the first; it must never override the second. Collapsing them in either
+  direction is its own bug. A creation path with no client input at all (the
+  bestiary import, whose interface has no `is_private` parameter) is always
+  the absent case and can call `DefaultsToPrivate()` directly.
+- **An unreadable campaign fails CLOSED.** "We could not find out what the DM
+  asked for" resolves to private, with a loud log — never to public. Recovering
+  from an over-hidden entity is one toggle; recovering from a leak is not
+  possible. Read the setting lazily and at most once per request: a sync batch
+  may carry 2000 changes, and the default cannot change mid-request.
+
+Pinned by `default_visibility_test.go` (campaigns),
+`default_visibility_create_test.go` (entities),
+`create_default_visibility_test.go` (syncapi) and
+`bestiary_import_visibility_test.go` (app).
+
 ## Test Pattern (Table-Driven)
 
 ```go

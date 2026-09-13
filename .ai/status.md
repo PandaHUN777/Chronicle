@@ -20,6 +20,566 @@ If you're an AI session looking for "what shipped last week", read the Cordinato
 
 ## For AI sessions
 
+### START HERE if you are a cold session on `claude/determined-davinci-5ut5f5` (2026-09-13)
+
+**`.ai/designs/2026-09-13-session-handoff.md`** is the single document to read
+before doing anything on this branch. It carries: what all 47 commits shipped,
+every operator ruling (and which decisions are still theirs to make), the open
+work in priority order, the environment gotchas that cost real time, and the
+lessons this branch paid for.
+
+**Standing hold: nothing on this branch merges to `main`** until the operator
+deploys the calendar demolition (PR #595, already on main) and confirms its
+five verification steps.
+
+### CORRECTION (2026-09-13): this file claimed a PR that did not exist — now #607
+
+Two entries below used to read "see the branch's own PR for review status".
+`claude/determined-davinci-5ut5f5` **has no pull request** — checked against
+the GitHub API, head `keyxmakerx:claude/determined-davinci-5ut5f5`, state
+`all`, zero results. The only open PRs on the repo are #606 (a fork
+contribution) and four dependabot bumps.
+
+`.ai/designs/2026-09-12-build-order.md` set the rule "**one PR per slice**,
+nothing merges until the demolition deploy is confirmed". The second half was
+honoured and the first half was not: 49 commits across P-1, the WebSocket fix,
+the audit fixes and all of ADR-058 sat pushed and unproposed. The operator
+caught this, not the process.
+
+**Resolved:** the operator chose one PR for the whole branch over a retro-split,
+so review starts now rather than after rework. It is
+[#607](https://github.com/keyxmakerx/Chronicle/pull/607), body grouped by arc.
+The merge hold is unchanged and is a separate thing — #607 exists to be
+reviewed, not merged.
+
+
+### ADR-058 decisions 1-3 — a media file inherits page visibility (2026-09-12)
+
+Committed to `claude/determined-davinci-5ut5f5`. **There is no PR** — see
+the correction note at the top of this file. Implements ADR-058 decisions 1-3 and Consequences 1-2
+only; decisions 4-7 (the "where is this used" UI, merge refusal, signed-URL
+identity binding, public-campaign narrowing) are a separate slice and were
+NOT touched here.
+
+- **Step 1 (mandatory, done first): `media.FindReferences` now also matches
+  `cover_image_path`.** It previously unioned only `image_path` + an
+  `entry_html` scan — `db/migrations/000004_cover_image.up.sql`'s column was
+  never in it, so a cover-only image looked unreferenced and would have
+  leaked through decision 3's plain-membership fallback. A cover match is
+  reported as `ref_type: "image"` (same label as a profile-image match) so
+  the existing "where is this used" fragment (decision 4, untouched) isn't
+  given a value it doesn't render.
+- **Other reference columns found, NOT wired into this rule (reported per
+  the task, not fixed here):** `maps.image_id` (FK to `media_files`) and
+  `map_tokens.image_path` are real media references outside the `entities`
+  table entirely. They are OUT OF SCOPE for decisions 1-3 (which are
+  specifically about entity-page visibility) and are unaffected either way
+  — a map's background image was never covered by entity visibility before
+  this change and still isn't; it keeps the pre-existing plain-membership
+  behavior via decision 3's fallback. `users.avatar_path` /
+  `campaigns.backdrop_path` are the ADR's own named exceptions (no owning
+  entity by construction) and are correctly left alone.
+- **Step 2: `checkMediaAccess`** (`internal/plugins/media/handler.go`) now
+  calls `checkEntityScopedAccess`: if `FindReferences` returns nothing,
+  behavior is byte-for-byte unchanged (decision 3); if it returns entities,
+  the file is readable iff `entities.EntityService.FilterViewableEntityIDs`
+  (reached through a new `EntityVisibilityFilter` seam, reusing the SAME
+  `entityVisibilityFilterAdapter` sessions/npcs/armory already wire in
+  `routes.go` — no fourth copy of the predicate) says at least one
+  referencing entity is visible. The viewer's role is promoted exactly like
+  `campaigns.CampaignContext.VisibilityRole()` (co-DM → Owner) via a new
+  `MemberChecker.IsUserDmGranted` method, since the unscoped `/media/:id`
+  route has no `*CampaignContext` to call that method on directly.
+- **Step 3: caching.** The has-references decision is cached in Redis per
+  (file id, viewer id), key `media:access:<fileID>:<userID>`, 60s TTL —
+  short enough that a hidden-then-republished image loses stale readers
+  within about a minute (well under the up-to-1-hour window a signed URL
+  already tolerates today), long enough to absorb one page load's repeated
+  `<img>`/thumbnail requests. A cache miss/error/unavailability always
+  falls through to a fresh, real computation — never a laxer answer. The
+  no-references (decision 3) path is deliberately left UNCACHED (it was
+  already cheap, and caching it would add a membership-revocation staleness
+  window the ADR never asked for).
+- **Fails closed throughout**, pinned by tests: a `FindReferences` or
+  `FilterViewableEntityIDs` error denies, never falls back to "unreferenced"
+  or "visible". A misconfigured (nil) `EntityVisibilityFilter` also denies
+  rather than silently skipping decision 1.
+- **Tests:** `internal/plugins/media/entity_visibility_access_test.go`
+  (fakes; fast) + `entity_visibility_access_integration_test.go` (drives the
+  REAL `entities.EntityRepository.FilterViewableEntityIDs` and the REAL
+  fixed `FindReferences` SQL against a scratch-schema MariaDB, same pattern
+  as `sessions/dbtest_support_test.go`). Both files' headers say plainly
+  what they do and do not prove. Red-first evidence (reverting the fix and
+  re-running the same suite, all-new tests) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-inherit-red.txt`
+  (session-local scratchpad, not part of the repo).
+- **Not built this pass:** decisions 4 (surfacing "where is this used" as
+  part of the permissions story), 5 (merge refusal across permission
+  levels), 6 (signed-URL identity binding), 7 (public-campaign unsigned
+  narrowing) — each is its own slice per the ADR.
+
+### ADR-058 decisions 6-7 — signed media URLs are bound to the viewer (2026-09-13)
+
+Working-tree change, built directly on decisions 1-3 above (same handler,
+same `checkEntityScopedAccess` seam). Decisions 4-5 (the "where is this
+used" surface, and refusing silent merges) are still NOT built — a later
+slice, untouched here; upload/dedup paths untouched.
+
+- **Decision 6 (viewer binding).** `media.URLSigner.Sign/SignThumb` now take
+  a `viewer` string folded into the HMAC payload (`fileID:viewer:expires`,
+  `fileID:size:viewer:expires`); `Verify/VerifyThumb` take the PRESENTED
+  viewer and compare. Three viewer shapes: `ViewerSession(userID)` (a
+  Chronicle browser session), `ViewerAnonymous` (no session — a cookieless
+  request, or an anonymous public-campaign page view), and the fixed
+  sentinel `ViewerAPIKey` (any Bearer-token syncapi caller, Foundry
+  included). Every mint site now binds: `Handler.Upload` and
+  `Handler.CampaignMediaList` (`internal/plugins/media/handler.go`) bind to
+  the caller's own session; `syncapi.MediaAPIHandler.toAPIResponse` binds
+  every URL to `ViewerAPIKey`; `layouts.SetMediaURLFunc`/`SetMediaThumbFunc`
+  (wired in `internal/app/routes.go`'s `LayoutInjector`) resolve the viewer
+  ONCE per render from the same session lookup every other per-request
+  layout value uses, so a page's `<img>` tags and thumbnails all embed the
+  viewer of whoever is actually rendering that response.
+  **The Foundry cross-origin `<img>` flow keeps working** via a narrow,
+  deliberate carve-out in `Verify`/`VerifyThumb`: a cookieless request
+  PRESENTS as `ViewerAnonymous` (it has nothing else to present), and such a
+  request may ALSO satisfy a signature minted for the fixed `ViewerAPIKey`
+  sentinel — but a link minted for a specific `ViewerSession(userID)` is
+  NEVER satisfied by an anonymous presentation, which is exactly what makes
+  the binding real. Pinned by the load-bearing test
+  `TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign`
+  (`signed_url_trust_test.go`, updated to mint with `ViewerAPIKey` to match
+  production) and the new `viewer_binding_test.go`.
+  **Old (pre-decision-6) links are invalidated immediately, not honored
+  until they expire** — the new HMAC payload has no compatible encoding for
+  the old one, so `Verify` simply never finds a match for an old-format
+  signature. Chosen over honoring old links for their remaining TTL because
+  the old TTL (1h) was long enough that "wait it out" would have kept the
+  exact bearer-token behavior alive for up to an hour after every deploy;
+  the cost is a handful of already-open tabs/in-flight requests getting a
+  broken image right at deploy, fixed by a reload. Pinned by
+  `TestSignedURL_OldFormat_InvalidatedImmediately`.
+- **Decision 7 (public campaign narrowing).** `allowUnsignedAccess`'s public-
+  campaign branch no longer has the final word — `checkMediaAccess`'s
+  defense-in-depth switch now runs a second case for public campaigns,
+  reusing `checkEntityScopedAccess` VERBATIM (not a second predicate) with
+  `userID` possibly `""` for a true anonymous caller. `viewerVisibilityRole`
+  resolves an empty/unmatched user to `RoleNone`, i.e. "decision 1 with
+  `RoleNone`" per the ADR's own words. An authenticated member instead gets
+  their real promoted role, so a logged-in Player of a public campaign
+  isn't artificially capped at anonymous. **Consequence, not a bug:** the
+  no-references (decision 3) branch asks the same membership question it
+  always has, which an anonymous caller always fails — so a BARE, unsigned
+  `/media/:id` hit for an unreferenced public-campaign file (avatar,
+  backdrop) is now denied to a true anonymous caller too. Real page loads
+  are unaffected: every render mints a freshly viewer-bound SIGNED url
+  (decision 6, `ViewerAnonymous` for a logged-out visitor), which is
+  checked by signature validity alone and never reaches this fallback. Only
+  a truly bare URL (no query params at all — an old bookmark, a scraper,
+  hand-typed) hits the narrowed path.
+  `TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie`
+  (`signed_url_trust_test.go`) is the test the ADR named as pinning today's
+  (now former) behavior deliberately — its assertion flipped to DENY and its
+  comment says why, rather than being deleted. New tests
+  `TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied` /
+  `_VisiblePage_Allowed` (`viewer_binding_test.go`) cover the has-references
+  half directly (dm_only-only → denied, visible-page → allowed).
+- **TTL shortened 1h → 15m** (`media.SignedURLTTL`, `internal/plugins/
+  media/signed_url.go`). Chosen because viewer binding already closes the
+  cross-viewer sharing risk a shorter TTL alone can't; 15 minutes still
+  comfortably covers a page's image/thumbnail load time (including a slow
+  connection or a larger gallery) while cutting the residual same-viewer
+  replay window by 4x. Every `Sign`/`SignThumb` call site now uses the
+  constant instead of a hardcoded `1*time.Hour` literal.
+- **Log redaction:** `internal/middleware/logging.go`'s `sensitiveParams`
+  now includes `sig` and `expires` — before this, the request logger wrote
+  a live, directly-usable signed-URL credential into the log in plaintext
+  on every media request.
+- **Fails closed throughout**, same posture as decisions 1-3: any error
+  deciding access denies.
+- **Red-first evidence** (reverting each fix file to its exact pre-fix
+  content, running the new/updated tests, restoring byte-for-byte —
+  verified with `diff`) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-links-red.txt`
+  (session-local scratchpad, not part of the repo).
+- **Test honesty:** `internal/app/error_handler_api_type_test.go`'s four
+  tests exercise `(&App{}).errorHandler` directly against hand-built
+  `apperror.AppError`/`echo.NewHTTPError` values and never touch media,
+  logging, or routing — reverting this entire change set (all 5 edited
+  files) and re-running them was verified to produce byte-identical PASS
+  results. They cannot discriminate this change; not claimed as coverage
+  for it.
+- **Not built this pass:** decisions 4-5, unchanged from the note above.
+  `maps.image_id` / `map_tokens.image_path` remain outside every decision
+  in this ADR (unaffected either way, as noted 2026-09-12).
+
+### ADR-058 decisions 4-5 — the last slice: "where is this used" joins the permissions story, and the merge is refused (2026-09-13)
+
+Working-tree change, built on decisions 1-3's `checkEntityScopedAccess` /
+`FindReferences` / `EntityVisibilityFilter` seam and decisions 6-7's viewer
+binding. All seven ADR-058 decisions are now built.
+
+- **Decision 4 (where is this used).** `Handler.CampaignMediaRefs`
+  (`internal/plugins/media/handler.go`) is no longer Owner-only at the route
+  level — `internal/plugins/media/routes.go` registers it with NO role
+  middleware at all. The gate moved INSIDE the handler:
+  `cc.VisibilityRole() < int(campaigns.RoleScribe)` → `Forbidden`, the exact
+  threshold and promotion formula (DM-granted → Owner) the entities plugin's
+  visibility glance uses (`entities/visibility_glance.templ`), so a co-DM
+  (Player role + a DM grant) sees the list too — a route-level
+  `RequireRole(RoleScribe)` reads the RAW `MemberRole` and would have missed
+  that promotion. The returned list is then filtered through the new
+  `Handler.filterViewableRefs`, reusing the SAME `EntityVisibilityFilter`
+  seam decision 1 wired — never a second copy of the predicate — because a
+  Scribe is not automatically the DM and a custom-restricted page can name
+  specific users and exclude one. `CampaignMedia` (the browse page) and
+  `CampaignDeleteMedia` are UNCHANGED (still Owner-only route gates) — this
+  slice only widens the usage-list endpoint itself; today's browser-page UI
+  still only surfaces the "Show references" button to Owners, so a Scribe
+  who cannot open that page cannot yet trigger this from the existing UI.
+  The endpoint is now correctly gated and filtered for the DM team generally
+  (any future or existing Scribe-reachable surface — e.g. the media picker —
+  can call it safely); wiring a NEW picker-side entry point was out of scope
+  (that UI lives in the entities-plugin-adjacent editor surfaces this pass
+  did not touch).
+- **Decision 5 (the merge).** `mediaService.Upload`'s per-campaign
+  content-hash dedup (`FindByContentHash` short-circuit) used to merge ANY
+  byte-identical upload unconditionally. `canMergeWithExisting`
+  (`internal/plugins/media/service.go`) now asks: does the UPLOADER (not the
+  as-yet-nonexistent destination page) see every entity `FindReferences`
+  reports for the MATCHED file? Reuses `FindReferences` +
+  `FilterViewableEntityIDs` — the identical seam, not a second predicate —
+  aggregated with ALL rather than decision 1's ANY (the mirror question: "is
+  there anything a merge would newly reveal to this uploader"). A file
+  nothing yet references is vacuously mergeable (decision 3 parity). Any
+  error resolving the question refuses the merge, same as an explicit "no".
+  `MemberChecker`/`EntityVisibilityFilter` are now ALSO wired onto the
+  service (`mediaService.SetMemberChecker`/`SetEntityVisibilityFilter`,
+  called in `internal/app/routes.go` with the SAME adapter instances the
+  handler already uses) because the merge decision is made deep inside
+  `Upload`, before any HTTP-layer check runs, and applies to every caller of
+  `Upload` — notes attachments, campaign backdrops, the Foundry sync API —
+  not only `/media/upload`. `promotedVisibilityRole` (`handler.go`) is now a
+  package-level function so `Handler.viewerVisibilityRole` and
+  `canMergeWithExisting` share one copy of the DM-grant promotion formula.
+  **The trap, resolved:** a REFUSED merge must not itself leak that a hidden
+  match exists — confirming that would let an uploader fingerprint a hidden
+  page's artwork with candidate images, ADR-055 rule 3 reintroduced at the
+  moment this rule tries to help. A refused merge is therefore SILENT: it
+  falls through to storing a genuinely separate row and returns a response
+  indistinguishable from an ordinary upload — `MediaFile.MatchedExisting`/
+  `UsedBy` (new, transient, `json:"-"`, decision 4's data doing double duty)
+  are only ever set on the SAFE-merge path, where the uploader already
+  proved they can see every one of those pages, so there is nothing left to
+  filter before handing it back. `UploadResponse` carries the same two
+  fields (`deduplicated`/`used_by`, both `omitempty`) for exactly the same
+  reason. A safe merge is also told to the uploader server-side via
+  `slog.Info`; a refused one likewise logs server-side only (never
+  client-visible) so an operator can still see the near-miss.
+- **Fails closed throughout**, same posture as decisions 1-3/6-7: any error
+  resolving mergeability or filtering the usage list denies/hides rather
+  than defaulting to "yes"/"show it".
+- **Red-first evidence** (temporarily reinstating the exact pre-fix
+  `CampaignMediaRefs` body and the exact pre-decision-5 unconditional-merge
+  block, re-running the new tests, then restoring byte-for-byte) is saved at
+  `/tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/media-merge-red.txt`
+  (session-local scratchpad, not part of the repo). Two of the eight new
+  tests pass even against the reverted code and are NOT red-first evidence
+  for what they sound like they cover — see the PR/report for which two and
+  why (one proves a response-shape property that only exists once the new
+  fields exist at all; the other is a co-DM regression guard against a
+  *different*, more-naive fix, not against the ADR's original bug, which had
+  no gate whatsoever).
+- **Test honesty:** `internal/app/error_handler_api_type_test.go`'s four
+  tests exercise `(&App{}).errorHandler` directly against hand-built
+  `apperror.AppError`/`echo.NewHTTPError` values and never touch media —
+  reverting this change's `internal/app/routes.go` edit (the only file this
+  slice touched in that package) and re-running them was verified to
+  produce byte-identical PASS results. They cannot discriminate this
+  change; not claimed as coverage for it.
+- **Not built this pass:** wiring decision 4's usage list into a
+  Scribe-reachable UI (e.g. the media-picker widget) — the endpoint is safe
+  and available for it, but no new UI surface was added. `maps.image_id` /
+  `map_tokens.image_path` remain outside every decision in this ADR
+  (unaffected either way, as noted 2026-09-12).
+
+### Chrome, permissions and Customize designs — APPROVED (2026-09-12)
+
+Six render rounds on one canvas
+(https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90);
+the operator approved overall. Rulings and specs: `.ai/designs/2026-09-12-
+header-and-nav.md` (addenda), ADR-057 as amended (permissions editing
+opens from the glance icon), `2026-09-12-permissions-indicator.md`. **Build
+order and standing rules: `.ai/designs/2026-09-12-build-order.md`** — start
+with P-1 (permissions glance + slide-out), Sonnet `go-dev` + `reviewer`, one
+PR per slice, nothing merges until the demolition deploy is confirmed.
+
+### ADR-057 slice 3 — one visibilityGlance component, seven copies replaced (2026-09-12)
+
+Committed to `claude/determined-davinci-5ut5f5`. **There is no PR** — see
+the correction note at the top of this file. Replaced all seven hand-rolled globe/lock/shield copies
+the census in `.ai/designs/2026-09-12-permissions-indicator.md` found with
+one `visibilityGlance` templ component (`entities/visibility_glance.templ`):
+`visibility_badge.templ` (header) and `entity_card.templ` (card) are now thin
+calls to it; `show.templ`'s `blockDetails` and child-entity-list, and
+`category_dashboard.templ`'s table row and tree node, call it directly. The
+DM-team gate (`VisibilityRole() >= RoleScribe`) lives INSIDE the component —
+not at call sites — fixing two defects at once: three of the seven had no
+gate at all (shown to Players), and all seven gated on raw `MemberRole` (no
+co-DM ever saw one). Colour is tokens only (`var(--color-accent)` /
+`var(--color-fg-muted)`); every hard-coded `#0d9488` is gone from the
+entities plugin, and the amber "private" colour vocabulary on the category
+table row is gone with it.
+
+**Deleted per ADR-057 decision 5** (editing lives in edit mode only):
+`blockPermissions` + its `"permissions"` block registration,
+`EnsurePermissionsBlockInDefaults` (service method + interface method — its
+one caller in `internal/app/routes.go` had ALSO already been removed,
+independently, by the time this landed — see that file's boot-reconciler
+comment), and every generated/preset `row-perm` row
+(`model.go`'s `DefaultLayout`/`CharacterLayout`,
+`layout_preset_service.go`'s `permissionsRow()` + its 3 call sites). A layout
+already stored in the database with a `row-perm` row still renders — minus
+the block — because `RenderBlock` already drops an unregistered block type
+silently; pinned by `TestStoredRowPermRendersWithoutPermissionsBlock` rather
+than a migration (Chronicle's migrations are append-only/schema-only).
+
+Guard: `visibility_glance_guard_test.go` scans the entities plugin's own
+`.templ` sources (not the whole tree — `static/js/widgets/db_explorer.js:22`
+carries the same `#0d9488` hex as an unrelated calendar swatch) for the hex,
+for `fa-shield-halved` outside `visibility_glance.templ`, and for a literal
+`data-visibility-badge="..."` attribute outside it. New tests
+(`visibility_glance_render_test.go`) render the REAL call sites (not a
+fixture) and were red-first verified against a temporarily-reintroduced
+raw-`MemberRole` gate and a temporarily-reintroduced "no gate" state before
+being restored to green.
+
+Not built this pass (separate slices per the design doc): slice 4's hover
+popover, and the icon-click edit trigger from the ADR-057 amendment.
+
+### ADR-054 task #6 — the six loaded-but-uncocked partial-update guns, fixed (2026-09-12)
+
+Follow-up to the sweep below, same day, same branch. The four "Loaded, no
+caller yet" findings plus two siblings the sweep found by shape
+(`maps.UpdateDrawingInput`, `maps.UpdateLayerInput` — no shipped caller
+either, fixed anyway since they share `UpdateTokenInput`'s structure and are
+reachable via syncapi) are now presence-aware and load-merge-write, matching
+`entities.UpdateEntityInput`'s reference shape:
+
+- **`maps.UpdateTokenInput`** — every field but `Name`/`ExpectedUpdatedAt`
+  converted to `patch.Field[T]`, including fields that were ALREADY a Go
+  pointer (`Bar1Value`, `AuraRadius`, …) — a plain `*T` bound from JSON can't
+  tell absent from explicit-null either, so the pointer type alone protected
+  nothing. Both the web handler and the syncapi twin fixed.
+- **`maps.UpdateDrawingInput`** / **`maps.UpdateLayerInput`** — same
+  treatment, both callers.
+- **`maps.UpdateMapInput`** — `ImageID`/`ImageWidth`/`ImageHeight`/
+  `Description` now nil-preserve; `BackgroundColor`'s pre-existing
+  pointer-sentinel tri-state is untouched.
+- **`timeline.UpdateTimelineInput`** — `VisibilityRules`/`DescriptionHTML`
+  now presence-aware. `UpdateTimelineVisibilityAPI`'s existing
+  re-read-then-echo pattern still works (converted to `patch.Of`/
+  `patch.FromPtr`) — it is safe specifically because it reads and rewrites
+  within the same request, not a stale snapshot.
+- **`tags.UpdateTagRequest`** + the service (`tagService.Update` now takes
+  `UpdateTagInput{Name string; Color, DmOnly *bool}`) + the syncapi twin —
+  ADR-056 named this the worst finding of the toggle-truth sweep.
+
+**The scanner widened** (`partial_update_contract_test.go` now matches
+`Update*Request` too, not only `Update*Input`). It immediately surfaced ten
+MORE unaudited `*Request` structs on day one (`campaigns.*`×3,
+`entities.UpdateEntityRequest`, `entities.UpdateEntityTypeRequest`,
+`entity_notes.UpdateNoteRequest`, `notes.UpdateNoteRequest`,
+`posts.UpdatePostRequest`, `relations.UpdateRelationMetadataRequest`,
+`smtp.UpdateSMTPRequest`) — none audited by this task, all added to
+`notYetSwept` with that stated honestly. `entities.UpdateEntityRequest` and
+`entities.UpdateEntityTypeRequest` in particular look like the exact shape
+this ratchet exists to catch and are good next candidates. Every fix has a
+red-then-green regression test (`*_partial_update_test.go` next to each
+package) that was run against the unfixed code first.
+
+**Not done here:** the ~15 remaining pre-existing `notYetSwept` entries
+(`packages.*`, `entities.UpdateEntityTypeInput`, `campaigns.UpdateCampaignInput`,
+the three CALV5-salvage calendar inputs, etc.) — out of this task's named
+scope. `internal/plugins/sessions/`, `internal/widgets/entity_notes/` and
+`internal/plugins/campaigns/` were changed by the parallel worktree agent (56ed8d91) and merged in 93de5c6a.
+`make verify` green.
+
+### Three sweeps, three ADRs, and the "twenty unaudited structs" booking discharged (2026-09-12)
+
+Three read-only sweeps on 2026-09-12, every finding hand-verified before it was
+acted on: the `Update*Input` partial-update class, visibility across maps /
+notes / timeline / sessions, and every owner-facing toggle against what it
+actually gates. The rulings are **ADR-054** (the sync API checks the same locks
+as the web — six routes were coarser), **ADR-055** (visibility models stay
+per-subsystem; the read-path rule is the one shared invariant; the campaign
+default stays entity-only), **ADR-056** (a toggle says what it does — code
+where the label is a promise, copy where it is a name; the "Private" default
+option is removed rather than built).
+
+**Live now, confirmed:** a Player's browser session reads fog of war through
+`/api/v1` (web requires Owner); session pages named linked private entities;
+Player Notes' five routes ignored the toggle — BOTH FIXED in 56ed8d91, merged 93de5c6a. **Loaded, no caller yet:** a
+position-only token update flips `IsHidden` to false; renaming a timeline wipes
+its per-user visibility rules (the handler's request struct has no field for
+them, so every call sends blank — and blank means everyone); renaming a DM-only
+tag turns off DM-only; renaming a map unlinks its image. All four reproduced by
+a temporary test that was then deleted.
+
+**The guard for that class is half-blind:** `partial_update_contract_test.go`
+matches only `Update*Input`; `Update*Request` structs are invisible to it. Its
+`notYetSwept` map has exactly 20 entries — that IS the number the todo carried
+for a month; the sweep has now walked all of them.
+
+**Held on purpose:** fog, layers and map-write tightening wait until the
+operator's Foundry key has been read from a live instance (ADR-054 §4) — the
+module reads fog, and role-from-creator is only safe if the creator is who we
+think. Everything else proceeds on `claude/determined-davinci-5ut5f5`. Nothing
+merges until the operator has deployed the calendar demolition and confirmed it.
+
+
+### The campaign "Sync API" toggle did nothing; it now refuses Bearer keys (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged). ADR-053.
+
+Switching a campaign's **Sync API** addon off had no effect anywhere. The
+`/api/v1` group carried no addon gate, and `syncAPIService.AuthenticateKey`
+checks prefix, bcrypt hash, `IsActive` and expiry but never reads
+`campaign_addons` — so every issued Bearer token stayed live against ~50
+campaign-scoped endpoints, and `AuthenticateKeyForWS` (same function) kept the
+WebSocket sync channel open too. Only `calGroup` and `mapGroup` were ever
+gated: the pattern existed and was never applied to the addon that governs the
+API itself.
+
+**It refuses the KEY, not the route.** `RequireSyncAPIAddon` gates real Bearer
+keys on both `/api/v1` groups and short-circuits for the synthetic session key
+Chronicle's own browser widgets carry — `/api/v1/*` is dual-auth, and
+`sync-api` is an INTEGRATION toggle, not a feature switch. Reusing
+`RequireAddonAPI` (the one-line version) 404s the layout editor the moment an
+owner touches the switch; that regression is pinned by a test. The refusal is
+**403 `sync_api_disabled`**, never 404 — the Foundry module reads a 404 on an
+API route as "this Chronicle is too old" and buries the real cause.
+
+**Enforcement defaults to DENIED, and that is the deployment risk.**
+`IsEnabledForCampaign` returns false when no `campaign_addons` row exists, and
+the only backfill that ever wrote those rows (syncapi migration 003) ran once.
+Two things close that: `CreateKey` now enables the addon (otherwise a new key
+is dead until the next restart), and `syncapi.ReconcileAddonEnablement` runs at
+boot from `internal/app/routes.go` for campaigns that own keys.
+
+**The reconciler keys on "is there a row", not "is it enabled".** Migration
+003's `ON DUPLICATE KEY UPDATE enabled = 1` was fine as a one-shot; as a boot
+reconciler it would re-enable every key-owning campaign on every restart, so
+switching the toggle off would last until the next deploy. `enabled = 0` is an
+owner's decision and is left alone — hence the new
+`addons.HasCampaignAddonRecord`.
+
+**Residual, booked in `.ai/todo.md`:** the WebSocket is enforced at CONNECT;
+an already-open socket is not dropped. That matches key revocation and
+`IsDmGranted`, which are also reconnect-scoped — making this toggle stronger
+than revocation would be incoherent.
+
+### The campaign default visibility setting reached only ONE of five creation paths (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged).
+
+A campaign's `DefaultVisibility` setting (`"dm_only"` / `"private"` / `""`)
+had exactly one consumer in the whole repo: the web entity-creation form.
+Every other path that builds a `CreateEntityInput` ignored it and produced a
+PUBLIC entity, so a DM who set "DM Only" still got player-visible content out
+of Foundry sync, the shop widget's quick-create and bestiary creature import.
+Same defect class as the `{name}`-only push that once published a hidden
+character entity to every player (sweep R4).
+
+**One implementation now**: `campaigns.CampaignSettings.ResolveNewEntityPrivacy(patch.Field[bool])`,
+next to the setting it interprets, plus `DefaultsToPrivate()` for callers
+that have no client input to merge. The four-line inline block in
+`entities/handler.go` is gone — it calls the shared method like everyone else.
+
+**Fixed**: `entities.QuickCreateAPI` (shop widget), syncapi `CreateEntity`
+(`is_private` `bool` → `patch.Field[bool]`), syncapi batch-sync `case
+"create"` (`.Val(false)` threw away a distinction the field already carried),
+and `bestiaryEntityCreatorAdapter.CreateFromStatblock` (now carries
+`campaignSvc`).
+
+**The absent/explicit-false distinction is the point.** An explicit
+`is_private: false` stays public; only an ABSENT field falls back to the
+campaign default. Collapsing them in either direction is a different bug.
+
+**Reads fail CLOSED.** An unreadable campaign resolves to private, loudly
+logged. Over-hiding is one toggle; publishing a hidden entity to the table
+cannot be taken back. The syncapi read is lazy and memoized — one per
+request, none at all for a batch that creates nothing or that states
+`is_private` on every create.
+
+**Deliberately untouched**: `ai_workspace/importer/committer.go` (its own
+per-import visibility control — a product decision nobody has made) and
+`app/export_adapters.go`'s campaign-import create (restores a complete
+exported row, so `is_private` is always explicit and the default must not
+override it). The settings-UI copy discrepancy is booked in `.ai/todo.md`.
+
+### Toolchain moved to Go 1.27.1; x/crypto, x/net, echo/v4 unmuted (2026-09-11)
+
+Branch `claude/determined-davinci-5ut5f5` (pushed, not merged — see the
+CALENDAR V5 gate below; nothing stacks on `main` until the operator has
+deployed). Closes booked item (1) below.
+
+**Target chosen:** golang.org/x/crypto and golang.org/x/net's current
+releases (v0.57.0 / v0.59.0) both declare `go 1.26.0`; golang.org/x/vuln
+(govulncheck) v1.8.0 also declares `go 1.26.0`; echo/v4 v4.15.4 only needs
+`go 1.25.0`. So 1.26 was the floor. Landed on **1.27.1** instead — the
+newest stable release (verified against the `golang.org/toolchain` module
+list on proxy.golang.org: 1.27.0/1.27.1 are tagged final, not `rc*`) —
+because it's a superset of that floor, it's what dependabot's already-open
+PR #600 targets for the Dockerfile (`golang:1.27-alpine`, confirmed to
+exist on the registry), and there's no reason to land on the trailing edge
+of support when the leading edge is already available and green here.
+
+**Moved together:** `go.mod` (`go 1.27.1`), every `go-version` in
+`ci.yml` (5 jobs), `Dockerfile`'s builder stage, and `.golangci.yml`'s
+`run.go` (not explicitly asked for, but leaving it at `1.24` while
+everything else moved would be the same kind of unnoticed divergence this
+whole exercise exists to close).
+
+**Dependencies actually bumped** (not just unmuted): x/crypto v0.46.0 →
+v0.57.0, x/net v0.48.0 → v0.59.0, echo/v4 v4.15.0 → v4.15.4, plus their
+transitive train (gommon, go-isatty, go-colorable, x/time, x/sys, x/text).
+`go mod tidy` also reclassified a dozen-plus packages from `// indirect` to
+direct `require` — pre-existing go.mod drift the version bump surfaced, not
+something this change introduced.
+
+**Found and fixed, not skipped:** bumping go.mod's language version to
+1.27 broke the pinned `golangci-lint-action@v7 version: v2.5.0` outright —
+its release binary was built with go1.25.1, and golangci-lint refuses to
+analyze a module declaring a newer `go` directive than the binary that
+would check it. Re-pinned to v2.13.2 (release binary confirmed locally
+built with go1.27.1; upstream policy keeps its own minimum at "latest-1").
+That surfaced 17 real, pre-existing findings from newer default checks (2
+govet deprecated-identifier, 15 staticcheck QF1012 `WriteString(Sprintf(...))`
+→ `Fprintf`) in `internal/plugins/smtp/service.go`,
+`internal/plugins/sessions/availability_egress_test.go`, and
+`internal/wire/{plugin_import_guard,wire_contract}_test.go` — fixed
+mechanically in the same change rather than landing a red Lint job.
+
+**govulncheck: re-pinned, NOT verified clean.** Re-pinned CI's install to
+v1.8.0 (needs go ≥1.26.0, satisfied). Could not run it for real from this
+authoring sandbox — `vuln.go.dev` returns 403 from the sandbox's egress
+policy, the same gap booked item (2) below already named. `continue-on-error:
+true` stays in `ci.yml` on purpose: do not remove it without an actual clean
+run in hand (CI's own job output, or a run from a network that can reach
+vuln.go.dev) — read that before the next release.
+
+**Not verified in this sandbox:** an actual `docker build .` — no Docker
+daemon is reachable here (`docker.sock` absent). Verified instead, from the
+sandbox's network: `golang:1.27-alpine` and `golang:1.27.1-alpine` both
+exist on the registry (anonymous manifest HEAD, HTTP 200). Someone with a
+daemon should still run the real build once before this lands anywhere.
+
+Full local proof: `make verify` (templ generate, build, vet, all eight
+`tools/` guards, `go test ./... -short` — 46 packages, 0 failures) followed
+by `make test-js` (97/97) and `make lint` (0 issues) all green on this
+branch as of this commit.
+
 ### Shotgun security sweep (2026-09-06) — small fixes, two follow-ups booked
 
 Six cheap checkers over rarely-inspected areas (secrets, deps, cookies/
@@ -37,12 +597,13 @@ cookie's clear branch now carries SameSite like its set branch. Fixed in
 the Foundry module (its own commit): the API key was a WORLD-scoped setting,
 readable by every player via `game.settings.get` — now client-scoped with a
 migration that deletes the world document.
-**Booked, not done:** (1) bumping echo/x-crypto/x-net moves `go.mod` to
-Go ≥1.25 — CI pins 1.24 with GOTOOLCHAIN=local and the Dockerfile builder
-would move too; do it as its own change with an image test. (2)
-`govulncheck` runs `continue-on-error` in CI, so its findings never block;
-it could not be run from the authoring sandbox (vuln DB blocked) — read the
-CI job output, or run it locally, before the next release.
+**Booked, not done:** (1) DONE 2026-09-11 — see the toolchain-move entry
+above; go.mod/ci.yml/Dockerfile now on Go 1.27.1, echo/x-crypto/x-net
+bumped, image build itself untested (no Docker daemon in that sandbox
+either — someone with one should run it). (2) `govulncheck` still runs
+`continue-on-error` in CI, so its findings still never block; still could
+not be run from an authoring sandbox (vuln DB blocked, unchanged) — read
+the CI job output, or run it locally, before the next release.
 
 ### CALENDAR V5 CLEAN SLATE — read this before touching anything calendar-shaped (2026-08-28)
 

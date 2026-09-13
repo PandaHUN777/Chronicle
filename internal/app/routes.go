@@ -82,22 +82,59 @@ func (a *bestiaryUserFetcherAdapter) GetUserPublicInfo(ctx context.Context, user
 
 // bestiaryEntityCreatorAdapter wraps entities.EntityService to implement the
 // bestiary.EntityCreator interface for importing creatures into campaigns.
+//
+// It carries campaignSvc only to read the campaign's DefaultVisibility
+// setting. The bestiary plugin has no opinion about visibility and its
+// EntityCreator interface has no is_private parameter, so an import is
+// always the ABSENT case: the campaign default decides.
 type bestiaryEntityCreatorAdapter struct {
-	svc entities.EntityService
+	svc         entities.EntityService
+	campaignSvc campaigns.CampaignService
 }
 
 // CreateFromStatblock creates a new entity in a campaign from a bestiary statblock.
 // Uses entity type ID 0 (default) since the real type depends on system configuration.
+//
+// Visibility comes from the campaign's DefaultVisibility setting. The
+// bestiary's EntityCreator interface has no is_private parameter and the
+// import UI has no per-import visibility control, so every import is the
+// ABSENT case: the campaign default is the only input there is. This was not
+// set at all until now, so an imported boss statblock landed visible to the
+// whole party in a campaign the DM had set to "DM Only".
 func (a *bestiaryEntityCreatorAdapter) CreateFromStatblock(ctx context.Context, campaignID, userID, name string, statblock json.RawMessage) (string, error) {
 	input := entities.CreateEntityInput{
 		Name:       name,
 		FieldsData: map[string]any{"statblock_json": string(statblock)},
+		IsPrivate:  a.defaultPrivate(ctx, campaignID),
 	}
 	ent, err := a.svc.Create(ctx, campaignID, userID, input)
 	if err != nil {
 		return "", err
 	}
 	return ent.ID, nil
+}
+
+// defaultPrivate reports whether this campaign's DefaultVisibility setting
+// means "new content starts hidden".
+//
+// It FAILS CLOSED. An import whose campaign settings cannot be read still
+// succeeds — a transient read failure is no reason to break creature import —
+// but it succeeds hidden, because "we could not find out what the DM asked
+// for" is not a licence to publish. Over-hiding costs the DM one toggle;
+// revealing a boss statblock to the party cannot be undone.
+func (a *bestiaryEntityCreatorAdapter) defaultPrivate(ctx context.Context, campaignID string) bool {
+	if a.campaignSvc == nil {
+		slog.Error("bestiary import: no campaign service wired; imported entity defaults to private",
+			slog.String("campaign_id", campaignID))
+		return true
+	}
+	campaign, err := a.campaignSvc.GetByID(ctx, campaignID)
+	if err != nil || campaign == nil {
+		slog.Error("bestiary import: could not read campaign default visibility; imported entity defaults to private",
+			slog.String("campaign_id", campaignID), slog.Any("error", err))
+		return true
+	}
+	return campaign.ParseSettings().DefaultsToPrivate()
 }
 
 // bestiaryCampaignRoleAdapter wraps campaigns.CampaignService to implement the
@@ -316,6 +353,7 @@ func (a *addonListerAdapter) ListForPluginHub(ctx context.Context, campaignID st
 			AddonID:        ca.AddonID,
 			Slug:           ca.AddonSlug,
 			Name:           ca.AddonName,
+			Description:    ca.AddonDescription,
 			Icon:           ca.AddonIcon,
 			Category:       string(ca.AddonCategory),
 			Enabled:        ca.Enabled,
@@ -461,17 +499,31 @@ func (a *entityCampaignCheckerAdapter) EntityBelongsToCampaign(ctx context.Conte
 	return entity.CampaignID == campaignID, nil
 }
 
+// entityVisibilityFilterAdapter wraps entities.EntityService to implement the
+// sessions.EntityVisibilityFilter interface, so the sessions plugin can hide a
+// linked entity's name from a viewer who could not see that entity directly
+// (ADR-055 rule 3) without importing the entities plugin's repository.
+type entityVisibilityFilterAdapter struct {
+	svc entities.EntityService
+}
+
+// FilterViewableEntityIDs delegates to the entities plugin's own visibility
+// policy — the same one entity pages and the relations widget already apply.
+func (a *entityVisibilityFilterAdapter) FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error) {
+	return a.svc.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, userID)
+}
+
 // CALV5-PLACEHOLDER: ten cross-plugin bridge adapters stood here, wiring the
 // calendar to the rest of Chronicle in both directions:
 //
-//   toward the calendar — timelineForCalendarAdapter, calendarSyncLinkAdapter,
-//   calendarEntityCreatorAdapter, calendarRSVPNotifierAdapter,
-//   calendarAvailabilityAdapter (member zones, exception dates, offered
-//   windows), calendarBenchScheduleAdapter, calendarOwnWeekAdapter;
+//	toward the calendar — timelineForCalendarAdapter, calendarSyncLinkAdapter,
+//	calendarEntityCreatorAdapter, calendarRSVPNotifierAdapter,
+//	calendarAvailabilityAdapter (member zones, exception dates, offered
+//	windows), calendarBenchScheduleAdapter, calendarOwnWeekAdapter;
 //
-//   away from it — calendarListerAdapter, calendarEventListerAdapter and
-//   calendarEraListerAdapter, which fed timeline its CalendarRef /
-//   CalendarEventRef / CalendarEra.
+//	away from it — calendarListerAdapter, calendarEventListerAdapter and
+//	calendarEraListerAdapter, which fed timeline its CalendarRef /
+//	CalendarEventRef / CalendarEra.
 //
 // The outward three are simply not wired now; timeline already treats those
 // interfaces as optional and nil-guards them (service.go's calEras returns
@@ -806,12 +858,25 @@ type mapEventPublisherAdapter struct {
 	bus ws.EventBus
 }
 
-// publishWithAudience wraps ws.NewMessage with the RequiresDM audience
-// flag derived from the source row. Pulled out so every map sub-resource
+// publishWithAudience wraps ws.NewMessage with the audience derived from
+// the source row: the binary RequiresDM (dm_only) flag, plus — for
+// markers and drawings, which carry per-user visibility_rules — the
+// explicit allowed/denied user sets. Pulled out so every map sub-resource
 // emit funnels the same way — one place to audit, not five.
-func (a *mapEventPublisherAdapter) publishWithAudience(msgType ws.MessageType, campaignID, resourceID string, payload any, dmOnly bool) {
+//
+// rules is nil for source kinds that don't carry per-user overrides
+// (tokens, fog); those pass dmOnly with rules=nil, same as before S1.
+// The hub (internal/websocket/hub.go) is what actually enforces this per
+// recipient — this method only COMPUTES the audience, per ADR-055 rule 3
+// applied to this channel: broadcast to everyone and hope the client
+// hides it, or send a redacted stub, are both the thing rule 3 forbids.
+func (a *mapEventPublisherAdapter) publishWithAudience(msgType ws.MessageType, campaignID, resourceID string, payload any, dmOnly bool, rules *maps.VisibilityRules) {
 	msg := ws.NewMessage(msgType, campaignID, resourceID, payload)
 	msg.RequiresDM = dmOnly
+	if rules != nil {
+		msg.AllowedUsers = rules.AllowedUsers
+		msg.DeniedUsers = rules.DeniedUsers
+	}
 	a.bus.Publish(msg)
 }
 
@@ -831,7 +896,7 @@ func (a *mapEventPublisherAdapter) PublishDrawingEvent(eventType string, campaig
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, drawing.ID, drawing, drawing.Visibility == "dm_only")
+	a.publishWithAudience(msgType, campaignID, drawing.ID, drawing, drawing.Visibility == "dm_only", maps.ParseVisibilityRules(drawing.VisibilityRules))
 }
 
 // PublishTokenEvent translates map token domain events into WebSocket messages.
@@ -852,7 +917,7 @@ func (a *mapEventPublisherAdapter) PublishTokenEvent(eventType string, campaignI
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, token.ID, token, token.IsHidden)
+	a.publishWithAudience(msgType, campaignID, token.ID, token, token.IsHidden, nil)
 }
 
 // PublishTokenPositionEvent broadcasts a token position update via WebSocket.
@@ -932,7 +997,7 @@ func (a *mapEventPublisherAdapter) PublishFogEvent(eventType string, campaignID,
 	if region != nil {
 		payload["region"] = region
 	}
-	a.publishWithAudience(msgType, campaignID, mapID, payload, true)
+	a.publishWithAudience(msgType, campaignID, mapID, payload, true, nil)
 }
 
 // PublishMarkerEvent translates map marker domain events into WebSocket messages.
@@ -951,7 +1016,7 @@ func (a *mapEventPublisherAdapter) PublishMarkerEvent(eventType string, campaign
 	default:
 		return
 	}
-	a.publishWithAudience(msgType, campaignID, marker.ID, marker, marker.IsDMOnly())
+	a.publishWithAudience(msgType, campaignID, marker.ID, marker, marker.IsDMOnly(), maps.ParseVisibilityRules(marker.VisibilityRules))
 }
 
 // (foundryVTTBannerAdapter + GetFoundryModuleBanner removed in NW-2.2
@@ -1047,6 +1112,35 @@ type mediaMemberCheckerAdapter struct {
 func (a *mediaMemberCheckerAdapter) IsCampaignMember(campaignID, userID string) bool {
 	member, err := a.svc.GetMember(context.Background(), campaignID, userID)
 	return err == nil && member != nil
+}
+
+// MemberRole returns the caller's membership role in the campaign, or
+// campaigns.RoleNone if they are not a member (including "campaign doesn't
+// exist" and any other lookup error — fail closed, never guess a role).
+func (a *mediaMemberCheckerAdapter) MemberRole(campaignID, userID string) int {
+	member, err := a.svc.GetMember(context.Background(), campaignID, userID)
+	if err != nil || member == nil {
+		return int(campaigns.RoleNone)
+	}
+	return int(member.Role)
+}
+
+// IsUserDmGranted reports whether the campaign Owner has granted the user
+// co-DM/dm_only visibility (ADR-058: the media plugin needs the SAME
+// promotion campaigns.CampaignContext.VisibilityRole() applies elsewhere,
+// but has no *CampaignContext to call it on — /media/:id carries no
+// :campaignId to hang campaigns.RequireCampaignAccess off of). Delegates to
+// the campaign service's own IsUserDmGranted rather than re-deriving the
+// DmGrantIDs check here, so this stays a thin signal, not a second copy of
+// that predicate. Any lookup error resolves to false (not granted) — the
+// safe direction, since a wrongly-withheld promotion only lowers a
+// viewer's role, never raises it.
+func (a *mediaMemberCheckerAdapter) IsUserDmGranted(campaignID, userID string) bool {
+	granted, err := a.svc.IsUserDmGranted(context.Background(), campaignID, userID)
+	if err != nil {
+		return false
+	}
+	return granted
 }
 
 // storageLimiterAdapter wraps settings.SettingsService to implement the
@@ -1549,25 +1643,22 @@ func (a *App) RegisterRoutes() {
 	}()
 
 	// One-shot boot reconcilers for entity_types, run SERIALLY in a single
-	// goroutine. The permissions and player-notes backfills both read a full
-	// pre-backfill snapshot and then rewrite the whole layout_json per row, so
-	// running them as two uncoordinated goroutines let the second clobber the
-	// first's block on a type missing BOTH — a type would end up with only one
-	// of {permissions, entity_notes} until the next boot (#514 backfill
-	// lost-update race, coordinator verification). Chaining them serializes
-	// the writes: permissions completes before player-notes reads. The
+	// goroutine. The permissions-block backfill that used to lead this chain
+	// is gone: ADR-057 decision 5 removed the permissions block from the read
+	// page, so there is nothing to backfill into a layout any more. Its
+	// lesson is kept because the hazard is not — any two reconcilers that
+	// each read a full pre-backfill snapshot and then rewrite the whole
+	// layout_json per row will have the second clobber the first's block on a
+	// type missing BOTH, leaving that type with only one of them until the
+	// next boot (#514 backfill lost-update race). So a new layout_json
+	// reconciler joins THIS chain rather than starting its own goroutine. The
 	// gm_only field-flag sync runs last; it touches a different column
-	// (fields, not layout_json) so it can't clobber the layout backfills, but
-	// keeping all entity_types reconcilers in one ordered goroutine is the
-	// simplest guarantee. Each step is idempotent; a failure is logged and the
-	// chain continues so one bad step can't strand the others.
+	// (fields, not layout_json) so it cannot clobber the layout backfills,
+	// but keeping all entity_types reconcilers in one ordered goroutine is
+	// the simplest guarantee. Each step is idempotent; a failure is logged
+	// and the chain continues so one bad step can't strand the others.
 	go func() {
 		ctx := context.Background()
-		if n, err := entityService.EnsurePermissionsBlockInDefaults(ctx); err != nil {
-			slog.Warn("entity_types: permissions block backfill failed", slog.Any("error", err))
-		} else if n > 0 {
-			slog.Info("entity_types: permissions block backfill added to layouts", slog.Int("rows", n))
-		}
 
 		// Player Notes was only wired into new default layouts, so custom
 		// sub-categories created earlier never showed the block even with the
@@ -1790,6 +1881,29 @@ func (a *App) RegisterRoutes() {
 
 	// Wire campaign membership checker for private media access control.
 	mediaHandler.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
+
+	// ADR-058 decision 1: a picture inherits the visibility of the pages
+	// that use it. Reuses the SAME entityVisibilityFilterAdapter sessions,
+	// npcs and armory already wire above/below — media does not get a
+	// fourth copy of the entity visibility predicate, only another
+	// pointer at the one canonical seam.
+	mediaHandler.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
+
+	// ADR-058 decision 5: the SAME two seams, wired onto the SERVICE too
+	// (not just the handler) so mediaService.Upload can decide whether a
+	// content-hash dedup match is safe to merge. That decision is made deep
+	// inside Upload, before any HTTP-layer check runs, and applies to every
+	// caller of Upload (notes attachments, campaign backdrops, the Foundry
+	// sync API) — not just the /media/upload route. Same adapter instances
+	// as above; never a second copy of either predicate.
+	mediaService.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
+	mediaService.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
+
+	// ADR-058 Consequences: caches the entity-scoped access decision per
+	// (file, viewer) so a lookup isn't repeated on every image request.
+	// Same *redis.Client every other Redis-backed cache in this codebase
+	// uses (e.g. entities.Handler.SetCache); nil-safe if Redis init failed.
+	mediaHandler.SetCache(a.Redis)
 
 	media.RegisterRoutes(e, mediaHandler, authService, resolveMaxUpload, a.Config.Upload.ServeRateLimit)
 	// Campaign media routes registered after addon service init (needs media-gallery addon gating).
@@ -2237,6 +2351,26 @@ func (a *App) RegisterRoutes() {
 	// request logging, security monitoring, and admin dashboard.
 	syncRepo := syncapi.NewSyncAPIRepository(a.DB)
 	syncService := syncapi.NewSyncAPIService(syncRepo)
+	// The campaign "Sync API" addon toggle is what gates external Bearer
+	// access (REST via syncapi.RequireSyncAPIAddon, WebSocket via
+	// AuthenticateKeyForWS). Both read it through this gate; the WS path
+	// fails CLOSED if this line is ever dropped, which is the intended
+	// direction for a security control.
+	syncService.SetAddonGate(addonService)
+	// One-time, idempotent startup backfill, same shape and same rules as
+	// backfillPlayerCharacterTypes above: enable sync-api for campaigns that
+	// already own API keys but have no recorded toggle state, so enforcing
+	// the toggle cannot cut off an integration that was working. Enables
+	// ONLY where no campaign_addons row exists — a row saying enabled=0 is
+	// an owner's decision and is left alone. Best-effort: a failure is
+	// logged with the manual remedy and never blocks startup.
+	if n, err := syncapi.ReconcileAddonEnablement(context.Background(), syncService, addonService); err != nil {
+		slog.Error("sync-api addon enablement backfill failed; campaigns that already use the "+
+			"Sync API may be refused until an owner enables Sync API on the campaign's Extensions page (sidebar → Extensions)",
+			slog.String("error", err.Error()))
+	} else if n > 0 {
+		slog.Info("sync-api addon enablement backfill complete", slog.Int("campaigns", n))
+	}
 	syncHandler := syncapi.NewHandler(syncService)
 	// Inject sync mapping service early so the owner dashboard can show sync status.
 	syncMappingRepoEarly := syncapi.NewSyncMappingRepository(a.DB)
@@ -2375,12 +2509,11 @@ func (a *App) RegisterRoutes() {
 	// from syncapi's. Both served Foundry and they overlapped. Rebuild one, not
 	// two — syncapi's is the newer and the one the module's contract documents.
 
-
 	// Bestiary plugin: community creature sharing with ratings, favorites, import.
 	bestiaryRepo := bestiary.NewBestiaryRepository(a.DB)
 	bestiarySvc := bestiary.NewBestiaryService(bestiaryRepo)
 	bestiarySvc.SetUserFetcher(&bestiaryUserFetcherAdapter{authSvc: authService})
-	bestiarySvc.SetEntityCreator(&bestiaryEntityCreatorAdapter{svc: entityService})
+	bestiarySvc.SetEntityCreator(&bestiaryEntityCreatorAdapter{svc: entityService, campaignSvc: campaignService})
 	bestiarySvc.SetCampaignRoleChecker(&bestiaryCampaignRoleAdapter{svc: campaignService})
 	bestiarySvc.SetCampaignSystemFetcher(&bestiaryCampaignSystemAdapter{svc: campaignService})
 	bestiaryHandler := bestiary.NewHandler(bestiarySvc)
@@ -2413,7 +2546,7 @@ func (a *App) RegisterRoutes() {
 	// Sessions plugin: game session scheduling, linked entities, RSVP tracking.
 	// Entity campaign checker prevents cross-campaign entity linking (IDOR).
 	sessionsRepo := sessions.NewSessionRepository(a.DB)
-	sessionsService := sessions.NewSessionService(sessionsRepo, &entityCampaignCheckerAdapter{svc: entityService})
+	sessionsService := sessions.NewSessionService(sessionsRepo, &entityCampaignCheckerAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	sessionsHandler := sessions.NewHandler(sessionsService)
 	sessionsHandler.SetMemberLister(campaignService)
 	sessionsHandler.SetMailSender(smtpService, a.Config.BaseURL)
@@ -2480,7 +2613,7 @@ func (a *App) RegisterRoutes() {
 	entityNotesNotifier := &entityNotesNotifierHolder{}
 	entityNotesService := entity_notes.NewService(entityNotesRepo, entityNotesNotifier.Notify)
 	entityNotesHandler := entity_notes.NewHandler(entityNotesService)
-	entity_notes.RegisterRoutes(e, entityNotesHandler, campaignService, authService)
+	entity_notes.RegisterRoutes(e, entityNotesHandler, campaignService, authService, addonService)
 
 	// Tags widget: campaign-scoped entity tagging (CRUD + entity associations).
 	// Created before sync API so the tag service is available for the REST API handler.
@@ -2517,6 +2650,9 @@ func (a *App) RegisterRoutes() {
 	if urlSigner != nil {
 		mediaAPIHandler.SetURLSigner(urlSigner)
 	}
+	// Needed to resolve the caller's role for ListMedia's Scribe+ gate
+	// (finding 3, .ai/designs/2026-09-12-security-audit-findings.md).
+	mediaAPIHandler.SetCampaignService(campaignService)
 
 	// Sync mapping handler for Foundry VTT bidirectional sync.
 	// Reuses the sync mapping service created earlier for the owner dashboard.
@@ -2539,8 +2675,13 @@ func (a *App) RegisterRoutes() {
 	}
 
 	// NPC plugin: gallery/hub view for revealed character entities.
+	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
+	// adapter wired into sessions above — so the NPC gallery's Player/
+	// anonymous view is narrowed by the entities plugin's own canonical
+	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
+	// .ai/designs/2026-09-12-security-audit-findings.md).
 	npcRepo := npcs.NewNPCRepository(a.DB)
-	npcSvc := npcs.NewNPCService(npcRepo, &npcEntityTypeFinderAdapter{svc: entityService})
+	npcSvc := npcs.NewNPCService(npcRepo, &npcEntityTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	npcHandler := npcs.NewHandler(npcSvc)
 	npcHandler.SetVisibilityToggler(&npcVisibilityTogglerAdapter{svc: entityService})
 	npcs.RegisterRoutes(e, npcHandler, campaignService, authService, addonService)
@@ -2550,8 +2691,13 @@ func (a *App) RegisterRoutes() {
 	entityHandler.SetNPCSectionProvider(npcHandler)
 
 	// Armory plugin: gallery/hub view for item-category entities.
+	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
+	// adapter wired into sessions above — so the Armory gallery's Player/
+	// anonymous view is narrowed by the entities plugin's own canonical
+	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
+	// .ai/designs/2026-09-12-security-audit-findings.md).
 	armoryRepo := armory.NewArmoryRepository(a.DB)
-	armorySvc := armory.NewArmoryService(armoryRepo, &armoryItemTypeFinderAdapter{svc: entityService})
+	armorySvc := armory.NewArmoryService(armoryRepo, &armoryItemTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	armoryHandler := armory.NewHandler(armorySvc)
 
 	// Instance service: named inventory collections per campaign.
@@ -2898,7 +3044,15 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		cards, err := npcHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, int(bctx.CC.MemberRole), "", limit)
+		// Promoted role, not the raw one: a co-DM must see in this
+		// embedded NPC block exactly what they see in the full
+		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
+		// system-assigned, so Chronicle honours it everywhere). The
+		// handlers themselves were fixed in the same change; this call
+		// site supplies the role as a PARAMETER, so it would have kept
+		// narrowing a co-DM to Player and the two surfaces would have
+		// disagreed about the same content on the same page.
+		cards, err := npcHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
 		}
@@ -2912,7 +3066,15 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		cards, err := armoryHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, int(bctx.CC.MemberRole), "", limit)
+		// Promoted role, not the raw one: a co-DM must see in this
+		// embedded armory block exactly what they see in the full
+		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
+		// system-assigned, so Chronicle honours it everywhere). The
+		// handlers themselves were fixed in the same change; this call
+		// site supplies the role as a PARAMETER, so it would have kept
+		// narrowing a co-DM to Player and the two surfaces would have
+		// disagreed about the same content on the same page.
+		cards, err := armoryHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
 		}
@@ -3561,13 +3723,28 @@ func (a *App) RegisterRoutes() {
 			ctx = layouts.SetActivePath(ctx, c.Request().URL.Path)
 		}
 
-		// Signed media URL generators for templates.
+		// Signed media URL generators for templates. Bound to whoever is
+		// RENDERING this response (ADR-058 decision 6) — resolved from the
+		// same session lookup every other per-request layout value above
+		// already uses, ONCE per render, and closed over by both funcs so
+		// a single response's <img> tags and thumbnails all embed the same
+		// viewer regardless of how many fileIDs the templates hand in. A
+		// session cookie present means the viewer is that user; none means
+		// the viewer is anonymous (a public-campaign page viewed logged
+		// out) — LayoutInjector has no way to learn anything more specific
+		// than that, and doesn't need to: media.URLSigner.Verify derives
+		// the exact same PRESENTED identity from the exact same session
+		// lookup when these links are later fetched.
 		if urlSigner != nil {
+			viewer := media.ViewerAnonymous
+			if userID := auth.GetUserID(c); userID != "" {
+				viewer = media.ViewerSession(userID)
+			}
 			ctx = layouts.SetMediaURLFunc(ctx, func(fileID string) string {
-				return urlSigner.Sign(fileID, 1*time.Hour)
+				return urlSigner.Sign(fileID, viewer, media.SignedURLTTL)
 			})
 			ctx = layouts.SetMediaThumbFunc(ctx, func(fileID, size string) string {
-				return urlSigner.SignThumb(fileID, size, 1*time.Hour)
+				return urlSigner.SignThumb(fileID, size, viewer, media.SignedURLTTL)
 			})
 		}
 

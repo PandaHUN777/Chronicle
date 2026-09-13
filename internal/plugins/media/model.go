@@ -33,6 +33,26 @@ type MediaFile struct {
 	// nil means the file has no campaign (avatars, backdrops). Used by the
 	// serve handler to enforce access control on private campaign media.
 	CampaignIsPublic *bool `json:"-"`
+
+	// MatchedExisting and UsedBy are transient, ADR-058 decision 5 fields —
+	// never persisted (Create/FindByID/etc. never populate them). Set ONLY
+	// by mediaService.Upload's dedup path, and ONLY when the content-hash
+	// match was safe to merge (canMergeWithExisting said yes): MatchedExisting
+	// marks that this call reused an existing row instead of writing a new
+	// one, and UsedBy names every page already using it — decision 4's
+	// "where is this used" data, reused here.
+	//
+	// A REFUSED merge (the uploader can't see every referencing page) never
+	// touches either field — the MediaFile it returns is a genuinely fresh
+	// row built the same way an ordinary upload is, so both stay at their
+	// zero value. That is load-bearing, not incidental: json:"-" keeps them
+	// out of any accidental whole-struct serialization, but the real
+	// guarantee is that a refused merge's response is byte-for-byte what an
+	// ordinary upload's response would be. Telling the uploader "this
+	// matched a file you can't see" would let them fingerprint a hidden
+	// page's artwork with their own candidate images — see UploadResponse.
+	MatchedExisting bool       `json:"-"`
+	UsedBy          []MediaRef `json:"-"`
 }
 
 // UploadInput holds the validated input for creating a media file.
@@ -53,6 +73,24 @@ type UploadResponse struct {
 	ThumbnailURL string `json:"thumbnail_url,omitempty"`
 	MimeType     string `json:"mime_type"`
 	FileSize     int64  `json:"file_size"`
+
+	// Deduplicated and UsedBy surface ADR-058 decision 5's SAFE merge case:
+	// this upload matched an existing file's content hash and the uploader
+	// could already see every page using it, so it was merged rather than
+	// stored again. UsedBy is decision 4's "where is this used" list, reused
+	// here rather than rebuilt, and needs no separate filtering pass — a
+	// safe merge already proves the uploader can see all of it.
+	//
+	// A REFUSED merge (the uploader can't see at least one referencing page)
+	// leaves both fields at their zero value, `omitempty` drops them from
+	// the JSON entirely, and the rest of this struct is populated exactly
+	// like an ordinary upload's. That is deliberate, not an oversight: this
+	// response must never let an uploader distinguish "matched a file you
+	// can't see" from "no match at all" — the former would confirm a hidden
+	// page's artwork exists by trying candidate images, which is the ADR-055
+	// rule 3 leak this whole arc exists to close.
+	Deduplicated bool       `json:"deduplicated,omitempty"`
+	UsedBy       []MediaRef `json:"used_by,omitempty"`
 }
 
 // --- MIME Type Validation ---
@@ -104,12 +142,14 @@ const (
 )
 
 // MediaRef is a lightweight reference from an entity to a media file.
-// Used by the campaign media browser to show which entities use each file.
+// Used by the campaign media browser to show which entities use each file,
+// AND (ADR-058) by checkMediaAccess to decide whether a file inherits an
+// entity's visibility instead of falling back to plain campaign membership.
 type MediaRef struct {
 	EntityID   string `json:"entity_id"`
 	EntityName string `json:"entity_name"`
 	EntitySlug string `json:"entity_slug"`
-	RefType    string `json:"ref_type"` // "image" (entity image) or "content" (in editor HTML).
+	RefType    string `json:"ref_type"` // "image" (entity image_path or cover_image_path) or "content" (in editor HTML).
 }
 
 // CampaignMediaStats holds aggregate storage stats scoped to one campaign.

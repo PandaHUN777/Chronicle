@@ -246,7 +246,18 @@ func (r *timelineRepo) Delete(ctx context.Context, id string) error {
 
 // --- Search ---
 
-// Search returns timelines matching a name query, filtered by role-based visibility.
+// Search returns timelines matching a name query, filtered by role-based
+// (dm_only) visibility ONLY — the same SQL-expressible half List narrows on
+// (see List's doc comment). It does NOT and cannot apply the per-user
+// visibility_rules allow/deny list; that requires the row's parsed rules and
+// the caller's user id, neither of which SQL can decide. The caller
+// (service.go's SearchTimelines) is responsible for running the result
+// through filterTimelinesByUser afterward, exactly as ListTimelines does for
+// List — it used not to (2026-09-12 audit finding 4 follow-up), which let a
+// restricted timeline's NAME reach a viewer the allow-list excludes, down to
+// an anonymous one. Do not "fix" that here by hand-rolling the allow/deny
+// check into SQL: it is already implemented once, in canUserView, and ADR-058
+// is exactly the rule against a second copy.
 func (r *timelineRepo) Search(ctx context.Context, campaignID, query string, role int) ([]Timeline, error) {
 	visFilter := "AND t.visibility = 'everyone'"
 	if permissions.CanSeeDmOnly(role) {

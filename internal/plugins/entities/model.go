@@ -93,9 +93,11 @@ type TemplateBlock struct {
 
 // CharacterLayout is the default page layout for player-character types: the
 // dynamic character-sheet surface (the "big widget") full-width, then the
-// player-notes block, with the permissions block beneath it for per-player
-// sharing. Owners can customize it in the layout editor like any other layout
-// — every block is a normal block.
+// player-notes block. Owners can customize it in the layout editor like any
+// other layout — every block is a normal block. It no longer carries a
+// trailing permissions row (ADR-057 decision 5: visibility editing lives
+// only in edit mode, via form.templ's inline widget, not an auto-appended
+// read-page block).
 func CharacterLayout() EntityTypeLayout {
 	return EntityTypeLayout{
 		Rows: []TemplateRow{
@@ -112,27 +114,17 @@ func CharacterLayout() EntityTypeLayout {
 				},
 			},
 			entityNotesRow("row-notes", "col-notes", "blk-notes"),
-			{
-				ID: "row-perm",
-				Columns: []TemplateColumn{
-					{
-						ID:    "col-perm",
-						Width: 12,
-						Blocks: []TemplateBlock{
-							{ID: "blk-perm", Type: "permissions"},
-						},
-					},
-				},
-			},
 		},
 	}
 }
 
 // DefaultLayout returns the standard two-column layout used for new entity types.
-// Includes a full-width player-notes block and a permissions block at the
-// bottom so operators get per-player notes and per-player sharing on every
-// new type without hunting through edit forms. Both are addon/identity-gated
-// at render time, so they cost nothing on types where they don't apply.
+// Includes a full-width player-notes block so operators get per-player notes
+// on every new type without hunting through edit forms; it is
+// addon/identity-gated at render time, so it costs nothing on types where it
+// doesn't apply. No longer carries a trailing permissions row (ADR-057
+// decision 5: visibility editing lives only in edit mode, via form.templ's
+// inline widget, not an auto-appended read-page block).
 func DefaultLayout() EntityTypeLayout {
 	return EntityTypeLayout{
 		Rows: []TemplateRow{
@@ -159,18 +151,6 @@ func DefaultLayout() EntityTypeLayout {
 				},
 			},
 			entityNotesRow("row-notes", "col-notes", "blk-notes"),
-			{
-				ID: "row-perm",
-				Columns: []TemplateColumn{
-					{
-						ID:    "col-perm",
-						Width: 12,
-						Blocks: []TemplateBlock{
-							{ID: "blk-perm", Type: "permissions"},
-						},
-					},
-				},
-			},
 		},
 	}
 }

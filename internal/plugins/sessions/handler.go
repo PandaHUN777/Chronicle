@@ -92,6 +92,19 @@ func (h *Handler) ShowSession(c echo.Context) error {
 	isScribe := cc.MemberRole >= campaigns.RoleScribe
 	userID := auth.GetUserID(c)
 
+	// ADR-055 rule 3: a linked entity's name must be ABSENT for a viewer who
+	// could not see that entity directly — never rendered, not merely hidden
+	// by CSS or replaced with a placeholder. The repository join that built
+	// session.Entities has no privacy predicate of its own (it can't, without
+	// importing the entities plugin's repository — rule 8), so this is the
+	// gate.
+	ctx := c.Request().Context()
+	visibleEntities, err := h.svc.FilterEntitiesForViewer(ctx, cc.Campaign.ID, session.Entities, int(cc.VisibilityRole()), userID)
+	if err != nil {
+		return err
+	}
+	session.Entities = visibleEntities
+
 	return middleware.Render(c, http.StatusOK,
 		SessionDetailPage(cc, session, csrfToken, isOwner, isScribe, userID))
 }

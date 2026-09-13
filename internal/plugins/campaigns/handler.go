@@ -100,9 +100,13 @@ type AuditLogger interface {
 // `ListForPluginHub` is already the operator-facing catalog; carrying the
 // capability flags here keeps a single source of truth.
 type PluginHubAddon struct {
-	AddonID        int
-	Slug           string
-	Name           string
+	AddonID int
+	Slug    string
+	Name    string
+	// Description is the addon's canonical one-line blurb (ADR-056: sourced
+	// from the addons service's single builtinAddons copy, not re-derived or
+	// hand-maintained per render site — see pluginDescription's removal).
+	Description    string
 	Icon           string
 	Category       string
 	Enabled        bool
@@ -113,7 +117,7 @@ type PluginHubAddon struct {
 	// extension settings/onboarding page). NeedsSetup is true when that page has
 	// outstanding, actionable checks for this campaign — the card shows a "Setup"
 	// nudge until the owner completes or dismisses it.
-	HasSetup  bool
+	HasSetup   bool
 	NeedsSetup bool
 }
 
@@ -156,17 +160,17 @@ type SystemLister interface {
 // Handler handles HTTP requests for campaign operations. Handlers are thin:
 // bind request, call service, render response. No business logic lives here.
 type Handler struct {
-	service       CampaignService
-	groupSvc      GroupService
-	entityLister  EntityTypeLister
-	layoutFetcher EntityTypeLayoutFetcher
-	recentLister  RecentEntityLister
-	auditLogger   AuditLogger
-	addonLister       AddonLister
+	service            CampaignService
+	groupSvc           GroupService
+	entityLister       EntityTypeLister
+	layoutFetcher      EntityTypeLayoutFetcher
+	recentLister       RecentEntityLister
+	auditLogger        AuditLogger
+	addonLister        AddonLister
 	systemAddonEnabler SystemAddonEnabler
-	mediaUploader     MediaUploader
-	smtpChecker       SMTPChecker
-	systemLister      SystemLister
+	mediaUploader      MediaUploader
+	smtpChecker        SMTPChecker
+	systemLister       SystemLister
 	// extraSettingsTabs holds factory functions other plugins
 	// contribute via RegisterSettingsTab (see settings_tabs.go).
 	// Each factory is invoked per-request with the live
@@ -365,10 +369,15 @@ func (h *Handler) Show(c echo.Context) error {
 	transfer, _ := h.service.GetPendingTransfer(c.Request().Context(), cc.Campaign.ID)
 
 	// Fetch recently updated pages for the dashboard.
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
+	// cc.MemberRole — this list threads straight through to the entities
+	// repository's visibility filter (the same rule CheckEntityAccess and
+	// GetChildren use), and a Co-DM already sees dm_only entities in the
+	// entities plugin's own list/category views, so the dashboard must agree.
 	var recentEntities []RecentEntity
 	if h.recentLister != nil {
 		recentEntities, _ = h.recentLister.ListRecentForDashboard(
-			c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), auth.GetUserID(c), 8,
+			c.Request().Context(), cc.Campaign.ID, int(cc.VisibilityRole()), auth.GetUserID(c), 8,
 		)
 	}
 
@@ -1269,10 +1278,12 @@ func (h *Handler) OwnerDashboard(c echo.Context) error {
 		return apperror.NewMissingContext()
 	}
 
+	// ADR-057 slice 2 (P1FIX): see Show's identical comment above — the owner
+	// dashboard's recent-entities list must use the same promoted role.
 	var recentEntities []RecentEntity
 	if h.recentLister != nil {
 		recentEntities, _ = h.recentLister.ListRecentForDashboard(
-			c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), auth.GetUserID(c), 8,
+			c.Request().Context(), cc.Campaign.ID, int(cc.VisibilityRole()), auth.GetUserID(c), 8,
 		)
 	}
 

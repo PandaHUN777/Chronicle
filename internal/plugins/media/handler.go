@@ -12,6 +12,7 @@ import (
 	"unicode"
 
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 	"github.com/keyxmakerx/chronicle/internal/middleware"
@@ -19,10 +20,48 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// MemberChecker verifies campaign membership without importing the full
-// campaigns service. Implemented via an adapter in app/routes.go.
+// MemberChecker verifies campaign membership and role without importing the
+// full campaigns service. Implemented via an adapter in app/routes.go.
 type MemberChecker interface {
 	IsCampaignMember(campaignID, userID string) bool
+
+	// MemberRole returns the caller's membership role in campaignID as an
+	// int on campaigns.Role's own scale (RoleNone=0, RolePlayer=1,
+	// RoleScribe=2, RoleOwner=3), or RoleNone if the user is not a member.
+	// Used to gate campaign-scoped media writes (Upload) at the same
+	// Scribe+ threshold every other campaign media write route already
+	// enforces (routes.go: CampaignDeleteMedia is Owner, the media-picker
+	// list and entity image endpoints are Scribe) — finding 1 of
+	// .ai/designs/2026-09-12-security-audit-findings.md.
+	MemberRole(campaignID, userID string) int
+
+	// IsUserDmGranted reports whether the campaign Owner has granted the
+	// user dm_only/co-DM visibility (mirrors campaigns.CampaignService.
+	// IsUserDmGranted). ADR-058 decision on entity-scoped media access
+	// requires the PROMOTED role (campaigns.CampaignContext.VisibilityRole()'s
+	// formula: DM-granted → RoleOwner, else the raw MemberRole) wherever a
+	// campaign context exists — a co-DM sees what the DM sees, operator
+	// ruling `4df13033`. There is no *campaigns.CampaignContext on the
+	// unscoped /media/:id route, so checkMediaAccess recomposes the same
+	// formula from MemberRole + this call rather than re-deriving DM-grant
+	// membership itself (that predicate lives in campaigns; this is a
+	// signal, not a policy).
+	IsUserDmGranted(campaignID, userID string) bool
+}
+
+// EntityVisibilityFilter narrows a set of entity IDs down to the ones a
+// given viewer (role + userID) may see. Implemented by an adapter over the
+// entities plugin's canonical EntityService.FilterViewableEntityIDs — the
+// SAME method sessions, the relations widget, armory and npcs already call.
+// Media does NOT get its own copy of the visibility predicate (that bug
+// shipped three times already); it only ever forwards to this seam.
+//
+// ADR-058: a file at least one entity references is readable when at least
+// one of those entities is visible to the viewer. Nil is a valid (if
+// unwired) value — checkMediaAccess fails closed when it is nil, never
+// silently skips the check.
+type EntityVisibilityFilter interface {
+	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
 
 // SecurityEventLogger records security events for the admin security dashboard.
@@ -33,10 +72,17 @@ type SecurityEventLogger interface {
 
 // Handler handles HTTP requests for media operations.
 type Handler struct {
-	service        MediaService
-	signer         *URLSigner
-	memberChecker  MemberChecker
-	securityLogger SecurityEventLogger
+	service          MediaService
+	signer           *URLSigner
+	memberChecker    MemberChecker
+	securityLogger   SecurityEventLogger
+	entityVisibility EntityVisibilityFilter
+	// cache is optional (nil in tests and in any deploy without Redis
+	// wired). Every read goes through a nil check and a miss/error falls
+	// through to computing the decision fresh — ADR-058 Consequences:
+	// "If the cache is unavailable the rule still applies; it gets
+	// slower, not laxer."
+	cache *redis.Client
 }
 
 // NewHandler creates a new media handler.
@@ -54,6 +100,23 @@ func (h *Handler) SetURLSigner(signer *URLSigner) {
 // on private campaign media. Called during wiring in app/routes.go.
 func (h *Handler) SetMemberChecker(checker MemberChecker) {
 	h.memberChecker = checker
+}
+
+// SetEntityVisibilityFilter wires the entity-visibility seam (ADR-058
+// decision 1). Called during wiring in app/routes.go, reusing the same
+// entityVisibilityFilterAdapter sessions/npcs/armory already construct
+// there — media does not get its own adapter type either.
+func (h *Handler) SetEntityVisibilityFilter(f EntityVisibilityFilter) {
+	h.entityVisibility = f
+}
+
+// SetCache wires the Redis client used to cache the ADR-058 entity-scoped
+// access decision per (file, viewer). Called during wiring in app/routes.go
+// with the same *redis.Client every other Redis-backed cache in this
+// codebase uses (e.g. entities.Handler.SetCache) — nil is fine and simply
+// disables caching (every request recomputes the decision, fail-safe).
+func (h *Handler) SetCache(rdb *redis.Client) {
+	h.cache = rdb
 }
 
 // SetSecurityLogger wires a security event logger for recording media events
@@ -75,6 +138,29 @@ func (h *Handler) Upload(c echo.Context) error {
 	userID := auth.GetUserID(c)
 	if userID == "" {
 		return apperror.NewUnauthorized("authentication required")
+	}
+
+	// Authorize the write BEFORE touching the file: campaign_id is caller-
+	// supplied form data, and until this check existed nothing verified the
+	// caller belonged to that campaign at all — any authenticated user who
+	// knew a campaign UUID could write into its media space, and the dedup
+	// short-circuit in mediaService.Upload (FindByContentHash) would hand
+	// back an EXISTING file's id/signed URL for that campaign on a byte
+	// match (finding 1, .ai/designs/2026-09-12-security-audit-findings.md).
+	// Scribe+ matches every other campaign-scoped media write route: the
+	// picker list and entity image endpoints require Scribe, and
+	// CampaignDeleteMedia requires Owner. A blank campaign_id (avatars,
+	// backdrops — routed through /account/avatar and /campaigns/:id/backdrop
+	// respectively, never this endpoint today) stays unscoped, as before;
+	// this gate only applies once the caller names a campaign.
+	if campaignID := c.FormValue("campaign_id"); campaignID != "" {
+		if h.memberChecker == nil || h.memberChecker.MemberRole(campaignID, userID) < int(campaigns.RoleScribe) {
+			slog.Warn("media upload: rejected, insufficient campaign role",
+				slog.String("user_id", userID),
+				slog.String("campaign_id", campaignID),
+			)
+			return apperror.NewForbidden("insufficient permissions to upload media to this campaign")
+		}
 	}
 
 	file, err := c.FormFile("file")
@@ -155,12 +241,15 @@ func (h *Handler) Upload(c echo.Context) error {
 			"size":        mediaFile.FileSize,
 		})
 
-	// Return signed URLs if signer is available.
+	// Return signed URLs if signer is available. Bound to the uploader's own
+	// session (ADR-058 decision 6) -- userID is already known non-empty,
+	// checked at the top of this handler.
 	var url, thumbURL string
 	if h.signer != nil {
-		url = h.signer.Sign(mediaFile.ID, 1*time.Hour)
+		viewer := ViewerSession(userID)
+		url = h.signer.Sign(mediaFile.ID, viewer, SignedURLTTL)
 		if _, ok := mediaFile.ThumbnailPaths["300"]; ok {
-			thumbURL = h.signer.SignThumb(mediaFile.ID, "300", 1*time.Hour)
+			thumbURL = h.signer.SignThumb(mediaFile.ID, "300", viewer, SignedURLTTL)
 		}
 	} else {
 		url = "/media/" + mediaFile.ID
@@ -175,6 +264,14 @@ func (h *Handler) Upload(c echo.Context) error {
 		ThumbnailURL: thumbURL,
 		MimeType:     mediaFile.MimeType,
 		FileSize:     mediaFile.FileSize,
+		// ADR-058 decision 5: populated ONLY when the service safely
+		// merged this upload into an existing file (mediaFile.MatchedExisting).
+		// A refused merge leaves mediaFile.UsedBy nil and MatchedExisting
+		// false, so these two lines add nothing to an ordinary upload's
+		// response — see UploadResponse's own comment for why that must
+		// hold.
+		Deduplicated: mediaFile.MatchedExisting,
+		UsedBy:       mediaFile.UsedBy,
 	})
 }
 
@@ -232,9 +329,22 @@ func (h *Handler) ServeThumbnail(c echo.Context) error {
 	return c.File(thumbPath)
 }
 
-// checkMediaAccess enforces signed URL verification and private campaign
-// access control. Returns nil if access is allowed, or an error to return
-// to the client.
+// currentViewerIdentity resolves the PRESENTED viewer identity for a
+// request verifying a signed media URL (ADR-058 decision 6): the session's
+// user id when a Chronicle session cookie is present, or ViewerAnonymous
+// when it is not. A cross-origin <img> request (no cookie -- Foundry's
+// flow) always presents as anonymous here by construction; Verify itself
+// decides whether that may still satisfy a link minted for ViewerAPIKey.
+func currentViewerIdentity(c echo.Context) string {
+	if userID := auth.GetUserID(c); userID != "" {
+		return ViewerSession(userID)
+	}
+	return ViewerAnonymous
+}
+
+// checkMediaAccess enforces signed URL verification and private/public
+// campaign access control. Returns nil if access is allowed, or an error to
+// return to the client.
 func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool, thumbSize string) error {
 	// Files without a campaign (avatars, backdrops) are public.
 	if file.CampaignID == nil {
@@ -244,24 +354,27 @@ func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool
 	fileID := file.ID
 	expiresStr := c.QueryParam("expires")
 	sig := c.QueryParam("sig")
+	presentedViewer := currentViewerIdentity(c)
 
 	// signatureValid is hoisted to the function scope so the defense-in-depth
 	// block below can gate on it. A valid signed URL is itself proof of
-	// authorization (HMAC-SHA256 over fileID:expires, with a server-side
-	// secret) and the leak surface is time-bounded by the `expires` claim
-	// the verifier enforces. Without this hoist, cross-origin <img>
-	// requests from Foundry — which can't carry Chronicle session cookies —
-	// would fail the defense-in-depth check, hit the framework's 404 path,
-	// and redirect-loop to /login. C-MEDIA-SIGNED-URL-TRUST (Bug #23).
+	// authorization (HMAC-SHA256 over fileID:viewer:expires, with a
+	// server-side secret) and the leak surface is time-bounded by the
+	// `expires` claim the verifier enforces AND (ADR-058 decision 6) scoped
+	// to the viewer it was minted for. Without this hoist, cross-origin
+	// <img> requests from Foundry — which can't carry Chronicle session
+	// cookies — would fail the defense-in-depth check, hit the framework's
+	// 404 path, and redirect-loop to /login. C-MEDIA-SIGNED-URL-TRUST
+	// (Bug #23).
 	signatureValid := false
 
 	// Check signed URL if signer is configured.
 	if h.signer != nil {
 		if expiresStr != "" && sig != "" {
 			if isThumb {
-				signatureValid = h.signer.VerifyThumb(fileID, thumbSize, expiresStr, sig)
+				signatureValid = h.signer.VerifyThumb(fileID, thumbSize, presentedViewer, expiresStr, sig)
 			} else {
-				signatureValid = h.signer.Verify(fileID, expiresStr, sig)
+				signatureValid = h.signer.Verify(fileID, presentedViewer, expiresStr, sig)
 			}
 		}
 
@@ -277,21 +390,92 @@ func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool
 	// Defense-in-depth: for private campaigns, ALSO require authenticated
 	// campaign membership IF we did not validate a signed URL above. A
 	// valid signed URL is itself proof of authorization — h.signer.Verify
-	// rejects expired URLs (`time.Now().Unix() > expires` per
-	// signed_url.go), and HMAC-SHA256 over a server-side secret means
-	// signatures cannot be forged. Skipping the cookie+membership check
-	// when signatureValid lets cross-origin <img> tags from Foundry
-	// resolve normally; without this, the operator's maps redirect-loop
-	// to /login (Bug #23, 2026-05-19).
-	if !signatureValid && file.CampaignIsPublic != nil && !*file.CampaignIsPublic {
+	// rejects expired URLs and signatures minted for a different viewer,
+	// and HMAC-SHA256 over a server-side secret means signatures cannot be
+	// forged. Skipping the cookie+membership check when signatureValid lets
+	// cross-origin <img> tags from Foundry resolve normally; without this,
+	// the operator's maps redirect-loop to /login (Bug #23, 2026-05-19).
+	if !signatureValid {
 		userID := auth.GetUserID(c)
-		if userID == "" {
-			return apperror.NewNotFound("media file not found")
+
+		// Site admins bypass every check below, on a public or private
+		// campaign alike — unchanged from the pre-ADR-058 behaviour. This
+		// ADR narrows what a campaign MEMBER (or, decision 7, an anonymous
+		// visitor) may reach, not a site admin.
+		if session := auth.GetSession(c); session != nil && session.IsAdmin {
+			return nil
 		}
-		if h.memberChecker != nil && !h.memberChecker.IsCampaignMember(*file.CampaignID, userID) {
-			// Also allow site admins.
-			session := auth.GetSession(c)
-			if session == nil || !session.IsAdmin {
+
+		switch {
+		case file.CampaignIsPublic != nil && !*file.CampaignIsPublic:
+			// ADR-058 decisions 1-3: membership alone used to be enough for
+			// a private campaign — ANY role, on ANY entity's page, however
+			// hidden. checkEntityScopedAccess narrows that to "at least one
+			// entity referencing this file is visible to this viewer"
+			// whenever the file IS referenced by an entity, and falls back
+			// to the untouched membership check when it is not (avatars,
+			// backdrops, freshly uploaded files have no owning entity by
+			// construction).
+			//
+			// A private campaign never reaches that check anonymously: an
+			// anonymous caller is rejected here, before any entity-level
+			// "visible to everyone" grant could apply. Campaign privacy
+			// trumps an entity's own visibility setting — that setting is
+			// meant for the campaign's members, not the open internet.
+			if userID == "" {
+				return apperror.NewNotFound("media file not found")
+			}
+			allowed, err := h.checkEntityScopedAccess(c.Request().Context(), file, userID)
+			if err != nil {
+				// FAIL CLOSED (ADR-058): a broken reference or visibility
+				// lookup is never treated as "yes". Log the real reason,
+				// return the same generic 404 as every other denial on this
+				// path so a probing client can't tell "hidden" from "broken".
+				slog.Error("media: entity-scoped access check failed; denying access",
+					slog.String("file_id", file.ID),
+					slog.String("campaign_id", *file.CampaignID),
+					slog.Any("error", err),
+				)
+				return apperror.NewNotFound("media file not found")
+			}
+			if !allowed {
+				return apperror.NewNotFound("media file not found")
+			}
+
+		case file.CampaignIsPublic != nil && *file.CampaignIsPublic:
+			// ADR-058 decision 7: allowUnsignedAccess used to grant an
+			// unsigned request to ANY file in a public campaign, so the
+			// entire internet could read DM-only artwork given only an id.
+			// Narrowed to decision 1's own predicate — reusing
+			// checkEntityScopedAccess rather than a second copy of it,
+			// exactly as the ADR calls for.
+			//
+			// userID may be "" here (an anonymous caller is allowed to
+			// REACH this check on a public campaign, unlike the private
+			// branch above): checkEntityScopedAccess's own
+			// viewerVisibilityRole resolves an unknown/empty user to
+			// RoleNone, which is "decision 1 with RoleNone" verbatim. An
+			// authenticated member instead gets their real promoted role,
+			// so a logged-in Player of a public campaign is not
+			// artificially capped at anonymous. The no-references branch
+			// (decision 3) asks the same membership question it always
+			// has, which an anonymous caller always fails — the ADR's
+			// consequence, not an oversight: an unreferenced file (avatar,
+			// backdrop, fresh upload) is still openly reachable through a
+			// freshly-minted, viewer-bound SIGNED url (decision 6 mints
+			// one on every render, authenticated or not); this branch is
+			// only the fallback for a request presenting no signature at
+			// all.
+			allowed, err := h.checkEntityScopedAccess(c.Request().Context(), file, userID)
+			if err != nil {
+				slog.Error("media: entity-scoped access check failed (public campaign); denying access",
+					slog.String("file_id", file.ID),
+					slog.String("campaign_id", *file.CampaignID),
+					slog.Any("error", err),
+				)
+				return apperror.NewNotFound("media file not found")
+			}
+			if !allowed {
 				return apperror.NewNotFound("media file not found")
 			}
 		}
@@ -300,11 +484,211 @@ func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool
 	return nil
 }
 
-// allowUnsignedAccess is the fallback when no valid signed URL is present.
-// Allows access for authenticated campaign members so old unsigned URLs
-// still work during the migration period.
+// mediaAccessCacheTTL bounds how long an ADR-058 entity-scoped access
+// decision is trusted before being recomputed. Short on purpose: it caps
+// how long a viewer keeps reading a file after an owner hides the last
+// page that made it visible — the ADR's "someone will lose access to an
+// image they can see today" consequence should bite within about a
+// minute, well inside the up-to-1-hour window a signed URL already
+// tolerates today (decision 6, link-binding, is a separate slice). 60s
+// also matches the short-lived cache entities.Handler already uses for
+// its own hover-card lookups (Cache-Control: private, max-age=60): long
+// enough that one page load's worth of repeated <img>/thumbnail requests
+// from the same viewer hits it, short enough that "reload in a minute"
+// after a permissions change is a real fix, not a euphemism.
+const mediaAccessCacheTTL = 60 * time.Second
+
+// mediaAccessCacheAllow/Deny are the cached payloads for the ADR-058
+// entity-scoped decision. Plain strings (not "true"/"false" or JSON) so an
+// unrecognized value — a future format change, or a stray key collision —
+// is trivially detected and treated as a miss rather than misread.
+const (
+	mediaAccessCacheAllow = "1"
+	mediaAccessCacheDeny  = "0"
+)
+
+// mediaAccessCacheKey scopes the cache to one file and one viewer exactly
+// as ADR-058's Consequences call for ("caching the decision per (file,
+// viewer)"). Only ever written for the has-references branch of
+// checkEntityScopedAccess — the no-references (decision 3) branch is
+// deliberately left uncached, see that function's comment.
+func mediaAccessCacheKey(fileID, userID string) string {
+	return "media:access:" + fileID + ":" + userID
+}
+
+// checkEntityScopedAccess applies ADR-058 decisions 1-3, and (reused
+// verbatim per decision 7) the has-references half of decision 7's public-
+// campaign rule. Two callers, two userID shapes:
+//
+//   - The private-campaign branch of checkMediaAccess always passes a real,
+//     non-empty, authenticated userID — it rejects anonymous callers and
+//     bypasses site admins before ever reaching here.
+//   - The public-campaign branch (decision 7) may pass userID == "" for an
+//     anonymous caller. viewerVisibilityRole resolves that to RoleNone via
+//     the SAME MemberChecker calls it always makes (an unwired or
+//     no-match lookup already resolves to "not a member" / RoleNone), so
+//     nothing below needs a special case for it — an anonymous viewer
+//     simply gets the same answer a very-not-a-member authenticated
+//     viewer would.
+//
+// FAILS CLOSED THROUGHOUT: an error from the reference lookup, or from the
+// visibility filter, denies access — it is never treated as "unreferenced"
+// (which would grant plain membership access) or as "visible". Over-hiding
+// costs an owner one reload; publishing a hidden page's artwork cannot be
+// taken back.
+func (h *Handler) checkEntityScopedAccess(ctx context.Context, file *MediaFile, userID string) (bool, error) {
+	campaignID := *file.CampaignID
+
+	// Cache check FIRST: on a hit this skips BOTH the reference lookup
+	// (repository.go's entry_html LIKE scan) and the visibility filter
+	// call entirely — the actual "lookup per image request" cost ADR-058
+	// Consequences calls out. A miss (including redis.Nil, a connection
+	// error, or an unrecognized payload) simply falls through to a fresh
+	// computation: the cache is a speed optimization, never a source of
+	// truth, so its unavailability can only make this slower, never
+	// laxer.
+	cacheKey := mediaAccessCacheKey(file.ID, userID)
+	if h.cache != nil {
+		switch cached, cerr := h.cache.Get(ctx, cacheKey).Result(); {
+		case cerr == nil && cached == mediaAccessCacheAllow:
+			return true, nil
+		case cerr == nil && cached == mediaAccessCacheDeny:
+			return false, nil
+		}
+	}
+
+	refs, err := h.service.FindReferences(ctx, campaignID, file.ID)
+	if err != nil {
+		return false, fmt.Errorf("finding media references for access check: %w", err)
+	}
+
+	if len(refs) == 0 {
+		// Decision 3: no entity references this file (an avatar, a
+		// campaign backdrop, a just-uploaded file, or a file genuinely
+		// never used anywhere) — campaign membership decides, as before.
+		// Deliberately NOT cached: this was already the cheap path before
+		// ADR-058, and caching it would add a staleness window a revoked
+		// campaign member could ride out that decision 3 never asked for.
+		//
+		// An ABSENT checker refuses rather than admits. The previous line
+		// here read `h.memberChecker == nil || …`, so an unwired dependency
+		// silently granted every caller. That is the defect class ADR-053
+		// named when the Sync API gate was built — "a security control that
+		// silently no-ops when its dependency is missing" — and it is worth
+		// correcting even though routes.go wires this unconditionally
+		// (SetMemberChecker, one call site), because the whole value of a
+		// fail-closed default is that it holds on the day someone adds a
+		// second construction path and forgets. The upload gate a few
+		// hundred lines above already refuses on nil; these two now agree.
+		if h.memberChecker == nil {
+			return false, fmt.Errorf("media: member checker not configured")
+		}
+		return h.memberChecker.IsCampaignMember(campaignID, userID), nil
+	}
+
+	// Decision 1: at least one referencing entity must be visible to this
+	// viewer.
+	if h.entityVisibility == nil {
+		// Misconfiguration, not a policy outcome — the caller logs this
+		// loudly and returns the same generic 404 as a real denial.
+		return false, fmt.Errorf("media: entity visibility filter not configured")
+	}
+
+	entityIDs := make([]string, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref.EntityID] {
+			continue
+		}
+		seen[ref.EntityID] = true
+		entityIDs = append(entityIDs, ref.EntityID)
+	}
+
+	role := h.viewerVisibilityRole(campaignID, userID)
+
+	viewable, err := h.entityVisibility.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, userID)
+	if err != nil {
+		return false, fmt.Errorf("filtering viewable entities for access check: %w", err)
+	}
+
+	allowed := false
+	for _, ok := range viewable {
+		if ok {
+			allowed = true
+			break
+		}
+	}
+
+	if h.cache != nil {
+		val := mediaAccessCacheDeny
+		if allowed {
+			val = mediaAccessCacheAllow
+		}
+		if err := h.cache.Set(ctx, cacheKey, val, mediaAccessCacheTTL).Err(); err != nil {
+			// Cache write failure never affects the decision just made —
+			// only the NEXT request's cost. Log and move on.
+			slog.Warn("media: failed to cache entity-scoped access decision",
+				slog.String("file_id", file.ID), slog.Any("error", err))
+		}
+	}
+
+	return allowed, nil
+}
+
+// viewerVisibilityRole computes the SAME promotion
+// campaigns.CampaignContext.VisibilityRole() applies (DM-granted →
+// RoleOwner, else the raw member role) using the MemberChecker seam,
+// since the unscoped /media/:id route never resolves a real
+// *campaigns.CampaignContext (there is no :campaignId in that route to
+// hang campaigns.RequireCampaignAccess middleware off of). A co-DM must
+// see what the DM sees here too, exactly as it does for sessions,
+// relations, armory and npcs (operator ruling, `4df13033`).
+//
+// Delegates to the package-level promotedVisibilityRole so
+// mediaService.canMergeWithExisting (ADR-058 decision 5) asks the exact
+// same promotion formula rather than growing a second copy of it.
+// CampaignMediaRefs (decision 4) doesn't need this helper at all — it
+// already has a real *campaigns.CampaignContext and calls
+// cc.VisibilityRole() directly.
+func (h *Handler) viewerVisibilityRole(campaignID, userID string) int {
+	return promotedVisibilityRole(h.memberChecker, campaignID, userID)
+}
+
+// promotedVisibilityRole is the shared ADR-058 promotion formula: DM-granted
+// → RoleOwner, else the raw member role. A nil checker (or any error
+// surfaced as a plain false from IsUserDmGranted) resolves to the raw,
+// un-promoted role — never a guessed promotion. That is the safe direction:
+// it can only make a dm_only/custom-restricted entity LESS visible to this
+// viewer, never more, which is exactly this ADR's fail-closed posture.
+//
+// Package-level, not a Handler method, because mediaService.
+// canMergeWithExisting (decision 5's merge-eligibility check) needs the
+// identical formula and lives on a different receiver type entirely — this
+// is the one place the formula is written down.
+func promotedVisibilityRole(checker MemberChecker, campaignID, userID string) int {
+	if checker == nil {
+		return int(campaigns.RoleNone)
+	}
+	if checker.IsUserDmGranted(campaignID, userID) {
+		return int(campaigns.RoleOwner)
+	}
+	return checker.MemberRole(campaignID, userID)
+}
+
+// allowUnsignedAccess is the COARSE fallback gate when no valid signed URL
+// is present -- it decides only whether checkMediaAccess proceeds to its
+// fine-grained defense-in-depth switch at all, not the final answer. That
+// switch (ADR-058 decisions 1-3 for private campaigns, decision 7 for
+// public ones) runs regardless of what this function returns true for, and
+// can still deny. Allows access for authenticated campaign members so old
+// unsigned URLs still work during the migration period.
 func (h *Handler) allowUnsignedAccess(c echo.Context, file *MediaFile) bool {
-	// Public campaigns: allow unsigned access (backward compatible).
+	// Public campaigns: let the request through to the decision-7 check
+	// below rather than answering "signed URL required" outright. This
+	// function no longer has the final word for a public campaign — it
+	// used to (ADR-058 finding: "allowUnsignedAccess returns true for ANY
+	// file whose campaign is public"), which is exactly what decision 7
+	// narrows.
 	if file.CampaignIsPublic != nil && *file.CampaignIsPublic {
 		return true
 	}
@@ -485,6 +869,16 @@ func (h *Handler) CampaignMediaList(c echo.Context) error {
 		return err
 	}
 
+	// Bind every URL this response mints to the caller's own session
+	// (ADR-058 decision 6). This route requires auth.RequireAuth
+	// (routes.go), so userID is expected non-empty; falling back to
+	// ViewerAnonymous if it somehow is not only narrows who can use the
+	// resulting link, never widens it.
+	viewer := ViewerAnonymous
+	if userID := auth.GetUserID(c); userID != "" {
+		viewer = ViewerSession(userID)
+	}
+
 	type mediaListItem struct {
 		ID           string    `json:"id"`
 		OriginalName string    `json:"original_name"`
@@ -506,12 +900,12 @@ func (h *Handler) CampaignMediaList(c echo.Context) error {
 			CreatedAt:    f.CreatedAt,
 		}
 		// Same signed-URL logic the upload handler uses — keep the
-		// picker's URLs valid for an hour, fall back to unsigned when
-		// no signer is configured (dev / tests).
+		// picker's URLs viewer-bound and short-lived (SignedURLTTL),
+		// fall back to unsigned when no signer is configured (dev / tests).
 		if h.signer != nil {
-			item.URL = h.signer.Sign(f.ID, 1*time.Hour)
+			item.URL = h.signer.Sign(f.ID, viewer, SignedURLTTL)
 			if thumb := pickThumbnail(f); thumb != "" {
-				item.ThumbnailURL = h.signer.SignThumb(f.ID, thumb, 1*time.Hour)
+				item.ThumbnailURL = h.signer.SignThumb(f.ID, thumb, viewer, SignedURLTTL)
 			}
 		} else {
 			item.URL = "/media/" + f.ID
@@ -612,17 +1006,87 @@ func (h *Handler) CampaignDeleteMedia(c echo.Context) error {
 
 // CampaignMediaRefs returns an HTMX fragment showing which entities reference
 // a media file (GET /campaigns/:id/media/:mid/refs).
+//
+// ADR-058 decision 4: this used to be reachable only through the Owner-only
+// campaign media browser route. The list NAMES PAGES — exactly what ADR-055
+// rule 3 says a Player must never receive — so the gate lives HERE, inside
+// the handler, keyed on the same promoted role the entities plugin's
+// visibility glance uses (VisibilityRole() >= RoleScribe): a route-level
+// RequireRole(RoleScribe) checks the raw MemberRole and would miss a co-DM
+// (Player role + a DM grant), who must see what the DM sees here too, same
+// as everywhere else this ADR touches. routes.go registers this route with
+// no role middleware at all for exactly that reason.
+//
+// The list itself is then filtered to entities THIS viewer may see (reusing
+// the exact FilterViewableEntityIDs seam decision 1 wired into
+// checkMediaAccess — never a second copy of the predicate): a Scribe is not
+// automatically the DM, and an Owner-only fragment merely turning into a
+// Scribe-only one would just be the same leak from a new angle — a
+// custom-restricted page can still name specific users and exclude a Scribe
+// who isn't one of them.
 func (h *Handler) CampaignMediaRefs(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
 		return apperror.NewNotFound("campaign not found")
 	}
 
+	if cc.VisibilityRole() < int(campaigns.RoleScribe) {
+		return apperror.NewForbidden("insufficient permissions")
+	}
+
+	ctx := c.Request().Context()
 	mediaID := c.Param("mid")
-	refs, err := h.service.FindReferences(c.Request().Context(), cc.Campaign.ID, mediaID)
+	refs, err := h.service.FindReferences(ctx, cc.Campaign.ID, mediaID)
 	if err != nil {
 		return err
 	}
 
+	refs = h.filterViewableRefs(ctx, cc, auth.GetUserID(c), refs)
+
 	return middleware.Render(c, http.StatusOK, MediaRefsFragment(cc, mediaID, refs))
+}
+
+// filterViewableRefs narrows refs down to the entities userID may actually
+// see, using cc's promoted VisibilityRole() — the same promotion formula
+// checkEntityScopedAccess applies for decision 1, so a co-DM sees what the
+// DM sees here too. FAILS CLOSED: a nil filter, or a filter error, empties
+// the list and logs loudly rather than risking a page name the viewer
+// cannot open. This is a display feature layered on top of the real access
+// gate above, so failing closed here means "show nothing", not "500" — an
+// empty "Not referenced by any pages" is always a true statement about what
+// THIS viewer can be shown, even when the tool couldn't verify more.
+func (h *Handler) filterViewableRefs(ctx context.Context, cc *campaigns.CampaignContext, userID string, refs []MediaRef) []MediaRef {
+	if len(refs) == 0 {
+		return refs
+	}
+	if h.entityVisibility == nil {
+		slog.Error("media: entity visibility filter not configured; hiding all media references",
+			slog.String("campaign_id", cc.Campaign.ID))
+		return nil
+	}
+
+	entityIDs := make([]string, 0, len(refs))
+	seen := make(map[string]bool, len(refs))
+	for _, ref := range refs {
+		if seen[ref.EntityID] {
+			continue
+		}
+		seen[ref.EntityID] = true
+		entityIDs = append(entityIDs, ref.EntityID)
+	}
+
+	viewable, err := h.entityVisibility.FilterViewableEntityIDs(ctx, cc.Campaign.ID, entityIDs, cc.VisibilityRole(), userID)
+	if err != nil {
+		slog.Error("media: filtering viewable entities for media refs failed; hiding all references",
+			slog.String("campaign_id", cc.Campaign.ID), slog.Any("error", err))
+		return nil
+	}
+
+	filtered := make([]MediaRef, 0, len(refs))
+	for _, ref := range refs {
+		if viewable[ref.EntityID] {
+			filtered = append(filtered, ref)
+		}
+	}
+	return filtered
 }

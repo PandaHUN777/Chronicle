@@ -154,18 +154,28 @@ func (h *Handler) UpdateTag(c echo.Context) error {
 		return apperror.NewNotFound("tag not found")
 	}
 
+	// PARTIAL update: absent preserves, a present value replaces (sweep R4 /
+	// ADR-056). A rename that omits color/dmOnly must not clobber them.
 	var req UpdateTagRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return apperror.NewBadRequest("invalid JSON body")
 	}
 
-	// Only Owners and site admins can set the dm_only flag on tags.
+	// Only Owners and site admins can set the dm_only flag on tags. The
+	// downgrade applies only to an EXPLICIT attempt to turn it on — an
+	// absent dmOnly key is not an attempt to change it, so it stays nil
+	// and preserves whatever is already stored.
 	dmOnly := req.DmOnly
-	if dmOnly && cc.MemberRole < campaigns.RoleOwner && !cc.IsSiteAdmin {
-		dmOnly = false
+	if dmOnly != nil && *dmOnly && cc.MemberRole < campaigns.RoleOwner && !cc.IsSiteAdmin {
+		f := false
+		dmOnly = &f
 	}
 
-	tag, err := h.service.Update(c.Request().Context(), tagID, req.Name, req.Color, dmOnly)
+	tag, err := h.service.Update(c.Request().Context(), tagID, UpdateTagInput{
+		Name:   req.Name,
+		Color:  req.Color,
+		DmOnly: dmOnly,
+	})
 	if err != nil {
 		return err
 	}
@@ -262,8 +272,12 @@ func (h *Handler) GetEntityTags(c echo.Context) error {
 		// Fail closed: a missing gate must never serve ungated entity tags.
 		return apperror.NewInternal(errors.New("tags: entity gate not configured"))
 	}
+	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
+	// cc.MemberRole. canSeeDmOnly (used just below) already checks
+	// cc.IsDmGranted directly for dm_only tag content, but this gate used to
+	// 404 a Co-DM before canSeeDmOnly's branch could ever run.
 	campaignID, canView, err := h.entityGate.ResolveViewableEntity(
-		c.Request().Context(), entityID, int(cc.MemberRole), auth.GetUserID(c))
+		c.Request().Context(), entityID, int(cc.VisibilityRole()), auth.GetUserID(c))
 	if err != nil {
 		return err // NotFound for a missing entity; propagates real errors.
 	}

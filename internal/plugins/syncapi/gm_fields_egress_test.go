@@ -67,6 +67,14 @@ func (s *stubCampaignSvcForGM) GetMember(_ context.Context, _, _ string) (*campa
 	return &campaigns.CampaignMember{Role: s.role}, nil
 }
 
+// IsUserDmGranted: none of this file's fixtures are DM-granted. Explicit
+// (rather than relying on the embedded campaigns.CampaignService, which
+// would panic on a nil-interface call) because ADR-057 slice 1 made
+// GetEntity's CheckEntityAccess call check this for any role<Owner caller.
+func (s *stubCampaignSvcForGM) IsUserDmGranted(_ context.Context, _, _ string) (bool, error) {
+	return false, nil
+}
+
 func gmTestFixtures() (*entities.Entity, *entities.EntityType) {
 	et := &entities.EntityType{ID: 7, Fields: []entities.FieldDefinition{
 		{Key: "might", Label: "Might"},

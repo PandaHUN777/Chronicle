@@ -504,10 +504,10 @@ func TestUpdateTimeline_Success(t *testing.T) {
 
 	err := svc.UpdateTimeline(context.Background(), "tl-1", UpdateTimelineInput{
 		Name:        "New Name",
-		Visibility:  "everyone",
-		ZoomDefault: ZoomYear,
-		Icon:        "fa-timeline",
-		Color:       "#ff0000",
+		Visibility:  patch.Of("everyone"),
+		ZoomDefault: patch.Of(ZoomYear),
+		Icon:        patch.Of("fa-timeline"),
+		Color:       patch.Of("#ff0000"),
 	})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -520,8 +520,8 @@ func TestUpdateTimeline_NotFound(t *testing.T) {
 
 	err := svc.UpdateTimeline(context.Background(), "nonexistent", UpdateTimelineInput{
 		Name:        "X",
-		Visibility:  "everyone",
-		ZoomDefault: ZoomYear,
+		Visibility:  patch.Of("everyone"),
+		ZoomDefault: patch.Of(ZoomYear),
 	})
 	assertAppError(t, err, 404)
 }
@@ -536,8 +536,8 @@ func TestUpdateTimeline_EmptyName(t *testing.T) {
 
 	err := svc.UpdateTimeline(context.Background(), "tl-1", UpdateTimelineInput{
 		Name:        "",
-		Visibility:  "everyone",
-		ZoomDefault: ZoomYear,
+		Visibility:  patch.Of("everyone"),
+		ZoomDefault: patch.Of(ZoomYear),
 	})
 	assertAppError(t, err, 422)
 }
@@ -552,8 +552,8 @@ func TestUpdateTimeline_InvalidVisibility(t *testing.T) {
 
 	err := svc.UpdateTimeline(context.Background(), "tl-1", UpdateTimelineInput{
 		Name:        "X",
-		Visibility:  "invalid",
-		ZoomDefault: ZoomYear,
+		Visibility:  patch.Of("invalid"),
+		ZoomDefault: patch.Of(ZoomYear),
 	})
 	assertAppError(t, err, 422)
 }
@@ -1014,7 +1014,7 @@ func TestSearchTimelines_Success(t *testing.T) {
 	}
 	svc := newTestTimelineService(repo)
 
-	results, err := svc.SearchTimelines(context.Background(), "camp-1", "heroes", 3)
+	results, err := svc.SearchTimelines(context.Background(), "camp-1", "heroes", 3, "owner-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -1037,7 +1037,7 @@ func TestSearchTimelines_Empty(t *testing.T) {
 	}
 	svc := newTestTimelineService(repo)
 
-	results, err := svc.SearchTimelines(context.Background(), "camp-1", "nonexistent", 3)
+	results, err := svc.SearchTimelines(context.Background(), "camp-1", "nonexistent", 3, "owner-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}

@@ -100,7 +100,7 @@ internet.
 
 ### Bare metal
 
-Requires Go 1.24+, MariaDB 10.11+, Redis 7+, and a build of Tailwind +
+Requires Go 1.27+, MariaDB 10.11+, Redis 7+, and a build of Tailwind +
 templ — see `Makefile` for the targets. Production bare-metal is not
 the recommended path; the compose stack pins versions and ships a
 correct `mariadb-client` for backups.

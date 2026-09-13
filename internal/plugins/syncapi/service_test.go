@@ -15,36 +15,37 @@ import (
 
 // mockSyncAPIRepo implements SyncAPIRepository for testing.
 type mockSyncAPIRepo struct {
-	createKeyFn           func(ctx context.Context, key *APIKey) error
-	findKeyByIDFn         func(ctx context.Context, id int) (*APIKey, error)
-	findKeyByPrefixFn     func(ctx context.Context, prefix string) (*APIKey, error)
-	listKeysByUserFn      func(ctx context.Context, userID string) ([]APIKey, error)
-	listKeysByCampaignFn  func(ctx context.Context, campaignID string) ([]APIKey, error)
-	listAllKeysFn         func(ctx context.Context, limit, offset int) ([]APIKey, int, error)
-	updateKeyActiveFn     func(ctx context.Context, id int, active bool) error
-	updateKeyLastUsedFn   func(ctx context.Context, id int, ip string) error
-	deleteKeyFn           func(ctx context.Context, id int) error
-	logRequestFn          func(ctx context.Context, log *APIRequestLog) error
-	listRequestLogsFn     func(ctx context.Context, filter RequestLogFilter) ([]APIRequestLog, int, error)
-	getReqTimeSeriesFn    func(ctx context.Context, since time.Time, interval string) ([]TimeSeriesPoint, error)
-	getTopIPsFn           func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
-	getTopPathsFn         func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
-	getTopKeysFn          func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
-	logSecurityEventFn    func(ctx context.Context, event *SecurityEvent) error
-	listSecurityEventsFn  func(ctx context.Context, filter SecurityEventFilter) ([]SecurityEvent, int, error)
-	resolveSecurityEvtFn  func(ctx context.Context, id int64, adminID string) error
-	getSecTimeSeriesFn    func(ctx context.Context, since time.Time) ([]TimeSeriesPoint, error)
-	addIPBlockFn          func(ctx context.Context, block *IPBlock) error
-	removeIPBlockFn       func(ctx context.Context, id int) error
-	listIPBlocksFn        func(ctx context.Context) ([]IPBlock, error)
-	isIPBlockedFn         func(ctx context.Context, ip string) (bool, error)
-	getStatsFn            func(ctx context.Context, since time.Time) (*APIStats, error)
-	getCampaignStatsFn    func(ctx context.Context, campaignID string, since time.Time) (*APIStats, error)
-	getBeaconFn           func(ctx context.Context, campaignID string) (*CalendarDateBeacon, error)
-	upsertBeaconFn        func(ctx context.Context, beacon *CalendarDateBeacon) error
-	upsertBeaconCalls     []CalendarDateBeacon
-	confirmBeaconFn       func(ctx context.Context, campaignID string, year, month, day int, appliedAt time.Time) error
-	confirmBeaconCalls    []confirmBeaconCall
+	createKeyFn               func(ctx context.Context, key *APIKey) error
+	findKeyByIDFn             func(ctx context.Context, id int) (*APIKey, error)
+	findKeyByPrefixFn         func(ctx context.Context, prefix string) (*APIKey, error)
+	listKeysByUserFn          func(ctx context.Context, userID string) ([]APIKey, error)
+	listKeysByCampaignFn      func(ctx context.Context, campaignID string) ([]APIKey, error)
+	listCampaignIDsWithKeysFn func(ctx context.Context) ([]string, error)
+	listAllKeysFn             func(ctx context.Context, limit, offset int) ([]APIKey, int, error)
+	updateKeyActiveFn         func(ctx context.Context, id int, active bool) error
+	updateKeyLastUsedFn       func(ctx context.Context, id int, ip string) error
+	deleteKeyFn               func(ctx context.Context, id int) error
+	logRequestFn              func(ctx context.Context, log *APIRequestLog) error
+	listRequestLogsFn         func(ctx context.Context, filter RequestLogFilter) ([]APIRequestLog, int, error)
+	getReqTimeSeriesFn        func(ctx context.Context, since time.Time, interval string) ([]TimeSeriesPoint, error)
+	getTopIPsFn               func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
+	getTopPathsFn             func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
+	getTopKeysFn              func(ctx context.Context, since time.Time, limit int) ([]TopEntry, error)
+	logSecurityEventFn        func(ctx context.Context, event *SecurityEvent) error
+	listSecurityEventsFn      func(ctx context.Context, filter SecurityEventFilter) ([]SecurityEvent, int, error)
+	resolveSecurityEvtFn      func(ctx context.Context, id int64, adminID string) error
+	getSecTimeSeriesFn        func(ctx context.Context, since time.Time) ([]TimeSeriesPoint, error)
+	addIPBlockFn              func(ctx context.Context, block *IPBlock) error
+	removeIPBlockFn           func(ctx context.Context, id int) error
+	listIPBlocksFn            func(ctx context.Context) ([]IPBlock, error)
+	isIPBlockedFn             func(ctx context.Context, ip string) (bool, error)
+	getStatsFn                func(ctx context.Context, since time.Time) (*APIStats, error)
+	getCampaignStatsFn        func(ctx context.Context, campaignID string, since time.Time) (*APIStats, error)
+	getBeaconFn               func(ctx context.Context, campaignID string) (*CalendarDateBeacon, error)
+	upsertBeaconFn            func(ctx context.Context, beacon *CalendarDateBeacon) error
+	upsertBeaconCalls         []CalendarDateBeacon
+	confirmBeaconFn           func(ctx context.Context, campaignID string, year, month, day int, appliedAt time.Time) error
+	confirmBeaconCalls        []confirmBeaconCall
 }
 
 // confirmBeaconCall captures one ConfirmCalendarDateBeacon invocation.
@@ -86,6 +87,13 @@ func (m *mockSyncAPIRepo) ListKeysByUser(ctx context.Context, userID string) ([]
 func (m *mockSyncAPIRepo) ListKeysByCampaign(ctx context.Context, campaignID string) ([]APIKey, error) {
 	if m.listKeysByCampaignFn != nil {
 		return m.listKeysByCampaignFn(ctx, campaignID)
+	}
+	return nil, nil
+}
+
+func (m *mockSyncAPIRepo) ListCampaignIDsWithKeys(ctx context.Context) ([]string, error) {
+	if m.listCampaignIDsWithKeysFn != nil {
+		return m.listCampaignIDsWithKeysFn(ctx)
 	}
 	return nil, nil
 }
@@ -619,6 +627,15 @@ func TestAuthenticateKey_SharedByRESTAndWS(t *testing.T) {
 		},
 	}
 	svc := NewSyncAPIService(repo)
+	// The WS half now also consults the campaign's "Sync API" addon toggle
+	// (AuthenticateKeyForWS), and an unwired gate is treated as a wiring
+	// fault rather than as permission — so this parity test has to state
+	// that the campaign has the integration switched ON. Its subject is
+	// unchanged: both paths must resolve the same token through the same
+	// lookup. The gate's own behaviour is covered in addon_gate_test.go.
+	wsGate := newFakeAddonGate()
+	wsGate.enabled[storedKey.CampaignID] = true
+	svc.SetAddonGate(wsGate)
 	ctx := context.Background()
 
 	// REST path: service.AuthenticateKey(rawKey) → *APIKey

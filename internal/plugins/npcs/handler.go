@@ -57,10 +57,13 @@ func (h *Handler) Index(c echo.Context) error {
 // a featured portrait row (entities bearing featureTag) above the full
 // role-aware list. It satisfies entities.NPCSectionProvider (injected there), so
 // the core entities plugin never imports this addon. Role matches the gallery's
-// (int(cc.MemberRole)) so reveal/hide visibility is unchanged.
+// (CountAPI's cc.VisibilityRole()) so reveal/hide visibility is unchanged —
+// both sides now promote a DM-granted co-DM to Owner for visibility (operator
+// ruling, .ai/todo.md 2026-09-12: the co-DM promotion crosses plugin lines),
+// so a co-DM sees dm_only/custom-restricted NPCs here too, same as an Owner.
 func (h *Handler) NPCSection(ctx context.Context, cc *campaigns.CampaignContext, userID, csrfToken, featureTag string) templ.Component {
 	cid := cc.Campaign.ID
-	role := int(cc.MemberRole)
+	role := cc.VisibilityRole()
 
 	var featured []NPCCard
 	if featureTag != "" {
@@ -121,7 +124,9 @@ func (h *Handler) CountAPI(c echo.Context) error {
 	}
 
 	userID := auth.GetUserID(c)
-	count, err := h.svc.CountNPCs(c.Request().Context(), cc.Campaign.ID, int(cc.MemberRole), userID)
+	// See the matching comment on NPCSection: co-DMs are promoted for
+	// visibility so this badge count agrees with what NPCSection shows them.
+	count, err := h.svc.CountNPCs(c.Request().Context(), cc.Campaign.ID, cc.VisibilityRole(), userID)
 	if err != nil {
 		return apperror.NewInternal(err)
 	}

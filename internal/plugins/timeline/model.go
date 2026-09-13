@@ -208,15 +208,43 @@ type CreateTimelineInput struct {
 }
 
 // UpdateTimelineInput is the validated input for updating timeline settings.
+//
+// PARTIAL update, contract per 2026-08-07 sweep R4 (ADR-054 #2) — same
+// shape as this file's UpdateTimelineEventInput above: absent preserves,
+// explicit null clears, present replaces.
+//
+// This one fired on EVERY save, not just a narrow push: the web request
+// struct (handler.go UpdateAPI) has no visibility_rules or description_html
+// member at all, so those two keys were ALWAYS absent from the wire — and
+// UpdateTimeline assigned both unguarded, so every single settings save
+// bound them to Go's zero value and wrote it. canUserView() treats an
+// absent VisibilityRules as visible to everyone, so renaming a timeline
+// scoped to three players silently republished it to the whole campaign on
+// the very next save.
+//
+// VisibilityRules (and Visibility) stay owned by the dedicated
+// PUT .../visibility endpoint (UpdateTimelineVisibilityAPI) the same way
+// VisibilityRules is owned by PUT .../standalone-events/:eid/visibility for
+// events: the settings form's job is to stop DESTROYING these fields, not
+// to gain the ability to write them. That handler re-reads the row
+// immediately before this call and echoes every OTHER field back via
+// patch.Of/patch.FromPtr — safe there specifically because it is read and
+// rewritten within the same request, not a stale snapshot bound elsewhere
+// (the general rule against echoing untouched fields is about staleness,
+// not about echoing per se).
+//
+// Name is deliberately left a plain string: UpdateTimeline validates the
+// MERGED name is non-empty and rejects the whole call with 400 when it is
+// blank, so an absent name fails loudly instead of silently overwriting.
 type UpdateTimelineInput struct {
 	Name            string
-	Description     *string
-	DescriptionHTML *string
-	Color           string
-	Icon            string
-	Visibility      string
-	VisibilityRules *string
-	ZoomDefault     string
+	Description     patch.Field[string]
+	DescriptionHTML patch.Field[string]
+	Color           patch.Field[string]
+	Icon            patch.Field[string]
+	Visibility      patch.Field[string]
+	VisibilityRules patch.Field[string]
+	ZoomDefault     patch.Field[string]
 }
 
 // LinkEventInput is the validated input for linking a calendar event to a timeline.

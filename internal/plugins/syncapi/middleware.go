@@ -27,6 +27,12 @@ const apiKeyContextKey = "api_key"
 // that only makes sense for real keys.
 const synthKeySessionID = 0
 
+// SyncAPIAddonSlug is the campaign_addons slug behind the campaign's
+// "Sync API" toggle (seeded by db/migrations/000001_baseline.up.sql).
+// Exported because the reconciler, the service and the route wiring all
+// name the same addon and a second literal is how the two drift apart.
+const SyncAPIAddonSlug = "sync-api"
+
 // GetAPIKey retrieves the authenticated API key from the request context.
 // Under the multi-auth path (RequireAuthOrAPIKey), a session-authed caller
 // gets a synthetic APIKey with ID == 0; callers that need to distinguish
@@ -512,3 +518,103 @@ type AddonChecker interface {
 	IsEnabledForCampaign(ctx context.Context, campaignID, slug string) (bool, error)
 }
 
+// RequireSyncAPIAddon enforces the campaign's "Sync API" toggle against
+// EXTERNAL Bearer clients on /api/v1/*.
+//
+// THE BUG IT CLOSES. The toggle was decorative. `RequireAuthOrAPIKey` →
+// `RequireAPIKey` → `AuthenticateKey` validates prefix, bcrypt hash,
+// IsActive and expiry, and never looks at campaign_addons; the /api/v1
+// group carried no addon gate at all. An owner who switched Sync API off
+// kept every issued Bearer token fully live against ~50 campaign-scoped
+// endpoints. Only calGroup and mapGroup were ever gated (RequireAddonAPI,
+// "calendar" / "maps") — the pattern existed and was simply never applied
+// to the addon that governs the API itself.
+//
+// WHY NOT RequireAddonAPI. Two reasons, and both are the whole design:
+//
+//  1. It gates EVERY caller, and /api/v1/* is not only for external
+//     clients. First-party browser widgets authenticate on these same
+//     routes by session cookie (static/js/widgets/layout_editor.js reads
+//     /entity-types and /maps that way) and receive a synthetic APIKey
+//     with ID == synthKeySessionID. "Sync API" is an INTEGRATION toggle —
+//     an owner switching it off is revoking outside access, not asking
+//     Chronicle's own UI to stop working. So this middleware passes
+//     synthetic session identities through untouched, and a disabled
+//     addon is invisible to the app's own pages. (calendar/maps are
+//     FEATURE addons; gating their web callers too is correct for them
+//     and wrong here.)
+//  2. It answers 404. Chronicle's own Foundry module reads a 404 on an
+//     API route as "this Chronicle is too old to have that endpoint" and
+//     takes its version-compatibility path, which would bury the real
+//     reason under a wrong one — the same trap that made the calendar
+//     blackout answer 503 instead of 404 on purpose. The key here is
+//     authentic and the campaign is real; what is missing is
+//     authorization. That is a 403, carrying the machine-readable type
+//     "sync_api_disabled" so a client can say what actually happened
+//     instead of guessing from prose.
+//
+// Mounted on the /api/v1 groups rather than on the campaign sub-group so
+// a route added later cannot quietly land outside the gate, and it reads
+// the campaign from the KEY (key.CampaignID) rather than from c.Param("id")
+// so a future route without an :id segment is still covered.
+//
+// Fails closed on every uncertainty: no key, no campaign on the key, or an
+// unreadable addon state all refuse the request. Over-refusing an
+// integration costs one toggle; under-refusing is the bug being fixed.
+func RequireSyncAPIAddon(addonChecker AddonChecker) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			key := GetAPIKey(c)
+			if key == nil {
+				// Auth middleware must have run before this one; reaching
+				// here means the chain is mis-wired. Refuse rather than
+				// pass an unidentified caller through.
+				return apperror.NewUnauthorized("api key required")
+			}
+
+			// Trap 1: first-party browser widgets. A session-authed caller
+			// carries the synthetic sentinel ID and is not an integration.
+			if key.ID == synthKeySessionID {
+				return next(c)
+			}
+
+			if key.CampaignID == "" {
+				slog.Error("sync-api addon gate: bearer key has no campaign",
+					slog.Int("key_id", key.ID),
+				)
+				return syncAPIDisabledError()
+			}
+
+			enabled, err := addonChecker.IsEnabledForCampaign(
+				c.Request().Context(), key.CampaignID, SyncAPIAddonSlug)
+			if err != nil {
+				slog.Error("sync-api addon check failed",
+					slog.String("campaign_id", key.CampaignID),
+					slog.Int("key_id", key.ID),
+					slog.Any("error", err),
+				)
+				return &apperror.AppError{
+					Code:    http.StatusServiceUnavailable,
+					Type:    "service_unavailable",
+					Message: "temporarily unable to verify addon status",
+				}
+			}
+			if !enabled {
+				return syncAPIDisabledError()
+			}
+			return next(c)
+		}
+	}
+}
+
+// syncAPIDisabledError is the single response shape for "this campaign has
+// the Sync API switched off". Shared by the REST gate and named by the
+// WebSocket refusal so a client sees one condition, not two.
+func syncAPIDisabledError() *apperror.AppError {
+	return &apperror.AppError{
+		Code: http.StatusForbidden,
+		Type: "sync_api_disabled",
+		Message: "the Sync API integration is switched off for this campaign; " +
+			"a campaign owner can re-enable it on the campaign's Extensions page (sidebar → Extensions)",
+	}
+}

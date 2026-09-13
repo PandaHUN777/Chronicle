@@ -104,7 +104,7 @@ templ EntityShowPage(cc *campaigns.CampaignContext, entity *Entity, entityType *
 							if showAttributes {
 								@blockAttributes(cc, entity, entityType, csrfToken)
 							}
-							@blockDetails(entity)
+							@blockDetails(cc, entity)
 						</div>
 					</div>
 				}
@@ -242,11 +242,11 @@ templ blockTitle(cc *campaigns.CampaignContext, entity *Entity, csrfToken string
 					<i class="fa-regular fa-star text-lg"></i>
 				</button>
 				// Effective-visibility glance (C-PERM-W1-TAG-GRANTS): the constant
-				// header badge, Scribe+ only. Reads the per-request glance the show
-				// handler injected; nil for players (renders nothing).
-				if cc.MemberRole >= campaigns.RoleScribe {
-					@effectiveVisibilityBadge(GetEffectiveVisibility(ctx))
-				}
+				// header badge. Reads the per-request glance the show handler
+				// injected (nil when none was computed). The DM-team gate lives
+				// inside visibilityGlance itself (ADR-057 slice 3) — not here —
+				// so a co-DM (Player + IsDmGranted) sees it like an Owner does.
+				@effectiveVisibilityBadge(cc, entity, GetEffectiveVisibility(ctx))
 			</div>
 			// Aliases widget: displays alternative names for this entity.
 			<div
@@ -315,10 +315,12 @@ templ blockTitle(cc *campaigns.CampaignContext, entity *Entity, csrfToken string
 					<input type="text" x-model="parentId" class="input w-full text-sm" placeholder="Parent entity ID (or leave empty)"/>
 				</div>
 				// DM-Only toggle removed in C-PERMISSIONS-INLINE-COMPONENT.
-				// Visibility is owned by the slide-in permissions card
-				// (see blockPermissions). The metadata PUT below no longer
-				// carries is_private; UpdateMetadataAPI's nil-preserving
-				// service call keeps the entity's current value.
+				// Visibility editing now lives only in edit mode, via
+				// form.templ's inline permissions widget mount (ADR-057
+				// decision 5 — blockPermissions and its read-page mount were
+				// removed). The metadata PUT below no longer carries
+				// is_private; UpdateMetadataAPI's nil-preserving service call
+				// keeps the entity's current value.
 
 				<div class="flex items-center justify-end gap-3 pt-1">
 					<span x-show="saved" x-transition class="text-xs text-green-600">Saved!</span>
@@ -429,8 +431,11 @@ templ blockAttributes(cc *campaigns.CampaignContext, entity *Entity, entityType 
 	></div>
 }
 
-// blockDetails renders type badge, privacy indicator, and metadata timestamps.
-templ blockDetails(entity *Entity) {
+// blockDetails renders type badge, the shared visibility glance, and metadata
+// timestamps. Used to render its own privacy indicator with no role gate at
+// all — shown to Players (ADR-057 census row 3) — now replaced by
+// visibilityGlance, which gates itself.
+templ blockDetails(cc *campaigns.CampaignContext, entity *Entity) {
 	<div class="card p-4 space-y-4">
 		<!-- Type badge -->
 		<div class="flex items-center gap-2 flex-wrap">
@@ -446,15 +451,7 @@ templ blockDetails(entity *Entity) {
 			if entity.TypeLabel != nil && *entity.TypeLabel != "" {
 				<span class="text-sm text-fg-secondary">{ *entity.TypeLabel }</span>
 			}
-			if entity.Visibility == VisibilityCustom {
-				<span title="Custom permissions" style="color: #0d9488;">
-					<i class="fa-solid fa-shield-halved text-xs"></i>
-				</span>
-			} else if entity.IsPrivate {
-				<span class="text-fg-muted" title="Private (GM only)">
-					<i class="fa-solid fa-lock text-xs"></i>
-				</span>
-			}
+			@visibilityGlance(cc, entity, nil)
 		</div>
 
 		<!-- Metadata -->
@@ -615,26 +612,6 @@ templ blockEntityNotes(cc *campaigns.CampaignContext, entity *Entity, csrfToken 
 	></div>
 }
 
-// blockPermissions renders the per-entity permissions widget on the
-// entity show page. Mirrors the mount in form.templ — the widget is
-// fully self-contained: it fetches the current visibility / role-grants /
-// per-user grants from the endpoint and lets Owners edit. The
-// permissions API is Owner-only, so the block renders nothing for
-// non-owners — they'd just see a "Failed to load permissions" error
-// on every entity page otherwise. Auto-added to every entity-type
-// layout via the heal goroutine in routes.go so operators don't have
-// to drag it in manually.
-templ blockPermissions(cc *campaigns.CampaignContext, entity *Entity, csrfToken string) {
-	if cc.MemberRole >= campaigns.RoleOwner {
-		<div
-			data-widget="permissions"
-			data-endpoint={ fmt.Sprintf("/campaigns/%s/entities/%s/permissions", cc.Campaign.ID, entity.ID) }
-			data-editable="true"
-			data-csrf={ csrfToken }
-		></div>
-	}
-}
-
 // blockTextBlock renders a static rich text / HTML content block.
 // The content is stored in the block config under the "content" key.
 templ blockTextBlock(config map[string]any) {
@@ -716,11 +693,7 @@ templ blockChildren(cc *campaigns.CampaignContext, entity *Entity, children []En
 									}
 								</div>
 							</div>
-							if child.Visibility == VisibilityCustom {
-								<i class="fa-solid fa-shield-halved text-xs ml-auto shrink-0" title="Custom permissions" style="color: #0d9488;"></i>
-							} else if child.IsPrivate {
-								<i class="fa-solid fa-lock text-xs text-fg-muted ml-auto shrink-0" title="Private"></i>
-							}
+							@visibilityGlance(cc, &child, nil)
 						</div>
 					</a>
 				}

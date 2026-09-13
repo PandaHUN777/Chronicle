@@ -191,6 +191,28 @@ func (h *APIHandler) resolveUserID(c echo.Context) string {
 	return key.UserID
 }
 
+// visibilityRoleFor is the API-key path's equivalent of
+// campaigns.CampaignContext.VisibilityRole(): it promotes role to RoleOwner
+// when the caller has been DM-granted dm_only visibility in this campaign,
+// so a Co-DM's CheckEntityAccess call resolves the same way the web Show
+// handler's now does (ADR-057 slice 1, C-CODM-VIS-PARITY). Callers that are
+// already Owner (every stored Bearer key, per resolveRole) skip the extra
+// lookup. Only feed the RESULT into CheckEntityAccess — leave the caller's
+// own `role` variable alone for anything else in that handler (GM-field and
+// secret-stripping decisions stay on the real member role, mirroring the
+// entities-plugin GetEntry path's asymmetry: promoted for visibility, not
+// for what a Player-tier viewer's response gets redacted).
+func (h *APIHandler) visibilityRoleFor(ctx context.Context, campaignID, userID string, role int) int {
+	if role >= int(campaigns.RoleOwner) {
+		return role
+	}
+	granted, err := h.campaignSvc.IsUserDmGranted(ctx, campaignID, userID)
+	if err != nil || !granted {
+		return role
+	}
+	return int(campaigns.RoleOwner)
+}
+
 // --- Campaign Info ---
 
 // apiCampaignResponse is the API-safe representation of a campaign.
@@ -370,8 +392,18 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 	}
 
 	// Enforce visibility: check both legacy is_private and custom permissions.
+	// ADR-057 slice 1 (C-CODM-VIS-PARITY): CheckEntityAccess gets a promoted
+	// role when the caller is DM-granted, mirroring what
+	// campaigns.CampaignContext.VisibilityRole() does on the web path — a
+	// Co-DM must be able to read a dm_only entity through the sync API the
+	// same as they can open it on the web. There is no CampaignContext here
+	// (this handler is API-key authenticated, not session-cc-based), so the
+	// promotion is resolved directly via campaignSvc.IsUserDmGranted rather
+	// than reusing VisibilityRole() itself. `role` is deliberately left
+	// unpromoted for everything below this call (GM-field / secret
+	// stripping) — same asymmetry as the entities-plugin GetEntry path.
 	userID := h.resolveUserID(c)
-	access, accessErr := h.entitySvc.CheckEntityAccess(ctx, entity.ID, role, userID)
+	access, accessErr := h.entitySvc.CheckEntityAccess(ctx, entity.ID, h.visibilityRoleFor(ctx, entity.CampaignID, userID, role), userID)
 	if accessErr != nil || !access.CanView {
 		return apperror.NewNotFound("entity not found")
 	}
@@ -410,13 +442,86 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 
 // --- Entity Write ---
 
+// entityPrivacyResolver decides the is_private flag for entities created
+// through this API, merging what the client asked for over the campaign's
+// DefaultVisibility setting.
+//
+// The merge itself is campaigns.CampaignSettings.ResolveNewEntityPrivacy —
+// the single implementation every creation path in the repo shares. What
+// lives here is the two things that are specific to this surface:
+//
+//   - The settings read is LAZY and happens AT MOST ONCE. A sync batch may
+//     carry up to 2000 changes; re-reading the campaign per created entity
+//     would be 2000 queries for a value that cannot change mid-request. A
+//     request whose changes all state is_private explicitly, or that creates
+//     nothing, spends no read at all.
+//   - An unreadable campaign FAILS CLOSED. The setting is the only thing
+//     standing between a DM-only campaign and a publicly visible entity, so
+//     "we could not find out" resolves to private. Over-hiding costs the DM
+//     one toggle; publishing a hidden entity to the whole table cannot be
+//     taken back, which is the entire reason this code path was rewritten.
+type entityPrivacyResolver struct {
+	h          *APIHandler
+	campaignID string
+
+	loaded     bool                       // settings read attempted
+	settings   campaigns.CampaignSettings // valid only when !unreadable
+	unreadable bool                       // read failed; fail closed
+}
+
+// newEntityPrivacyResolver returns a resolver scoped to one request. It does
+// not touch the database; the read happens on the first absent is_private.
+func (h *APIHandler) newEntityPrivacyResolver(campaignID string) *entityPrivacyResolver {
+	return &entityPrivacyResolver{h: h, campaignID: campaignID}
+}
+
+// resolve merges one create request's is_private over the campaign default.
+func (r *entityPrivacyResolver) resolve(ctx context.Context, requested patch.Field[bool]) bool {
+	// An explicit value — true or false — is the client's decision and wins
+	// outright. It also means we never need the campaign settings, so a
+	// caller that always states its intent never pays for the read.
+	if v, ok := requested.Get(); ok {
+		return v
+	}
+
+	if !r.loaded {
+		r.loaded = true
+		if r.h == nil || r.h.campaignSvc == nil {
+			// A wiring bug, not a client error. Fail closed and say so.
+			slog.Error("api: no campaign service wired; new entity defaults to private",
+				slog.String("campaign_id", r.campaignID))
+			r.unreadable = true
+		} else if campaign, err := r.h.campaignSvc.GetByID(ctx, r.campaignID); err != nil || campaign == nil {
+			slog.Error("api: could not read campaign default visibility; new entity defaults to private",
+				slog.String("campaign_id", r.campaignID), slog.Any("error", err))
+			r.unreadable = true
+		} else {
+			r.settings = campaign.ParseSettings()
+		}
+	}
+	if r.unreadable {
+		return true
+	}
+	return r.settings.ResolveNewEntityPrivacy(requested)
+}
+
 // apiCreateEntityRequest is the JSON body for creating an entity via the API.
+//
+// IsPrivate is three-state for the same reason apiUpdateEntityRequest's is,
+// against a different failure. There is nothing stored to preserve on a
+// create, so this is not the partial-update contract — it is the campaign's
+// DefaultVisibility setting, which only has an opening when the client did
+// NOT state a preference. Bound as a plain bool, an omitted key decoded to
+// false and the entity was created PUBLIC: a DM who set the campaign default
+// to "DM Only" still got player-visible entities out of every Foundry sync,
+// because the module does not send is_private on create. patch.Field is what
+// keeps "the client said nothing" apart from "the client said public".
 type apiCreateEntityRequest struct {
-	Name         string         `json:"name"`
-	EntityTypeID int            `json:"entity_type_id"`
-	TypeLabel    string         `json:"type_label"`
-	IsPrivate    bool           `json:"is_private"`
-	FieldsData   map[string]any `json:"fields_data"`
+	Name         string            `json:"name"`
+	EntityTypeID int               `json:"entity_type_id"`
+	TypeLabel    string            `json:"type_label"`
+	IsPrivate    patch.Field[bool] `json:"is_private"`
+	FieldsData   map[string]any    `json:"fields_data"`
 	// OwnerUserID claims the entity for a player at create time.
 	// Optional. The server validates the user is a member of the
 	// target campaign and rejects with 400 otherwise. Foundry sync
@@ -460,11 +565,16 @@ func (h *APIHandler) CreateEntity(c echo.Context) error {
 		}
 	}
 
+	// An absent is_private falls back to the campaign's DefaultVisibility;
+	// an explicit value from the client wins. See entityPrivacyResolver.
+	isPrivate := h.newEntityPrivacyResolver(c.Param("id")).
+		resolve(c.Request().Context(), req.IsPrivate)
+
 	entity, err := h.entitySvc.Create(c.Request().Context(), c.Param("id"), key.UserID, entities.CreateEntityInput{
 		Name:         req.Name,
 		EntityTypeID: req.EntityTypeID,
 		TypeLabel:    req.TypeLabel,
-		IsPrivate:    req.IsPrivate,
+		IsPrivate:    isPrivate,
 		FieldsData:   req.FieldsData,
 		OwnerUserID:  req.OwnerUserID,
 	})
@@ -805,19 +915,35 @@ func (h *APIHandler) Sync(c echo.Context) error {
 	}
 
 	// Push: apply batch changes.
+	//
+	// One resolver for the whole batch: the campaign's DefaultVisibility
+	// cannot change mid-request, and it reads lazily, so a batch that
+	// creates nothing (or that states is_private on every create) never
+	// touches the campaigns table.
+	privacy := h.newEntityPrivacyResolver(campaignID)
+
 	var results []syncResult
 	for _, change := range req.Changes {
 		result := syncResult{Action: change.Action, EntityID: change.EntityID}
 
 		switch change.Action {
 		case "create":
-			// Create has no stored value to preserve, so each field
-			// reads with its zero default: absent is the same as empty.
+			// Create has no stored value to preserve, so the content
+			// fields read with their zero default: absent is the same as
+			// empty.
+			//
+			// is_private is the exception, and .Val(false) was the bug.
+			// This struct already carried the absent/explicit-false
+			// distinction and that line threw it away, so a batch create
+			// with no is_private came out PUBLIC even in a campaign whose
+			// default visibility is DM Only. Absent here means "the client
+			// has no opinion", which is precisely when the campaign default
+			// gets to decide.
 			entity, err := h.entitySvc.Create(ctx, campaignID, key.UserID, entities.CreateEntityInput{
 				Name:         change.Name.Val(""),
 				EntityTypeID: change.EntityTypeID,
 				TypeLabel:    change.TypeLabel.Val(""),
-				IsPrivate:    change.IsPrivate.Val(false),
+				IsPrivate:    privacy.resolve(ctx, change.IsPrivate),
 				FieldsData:   change.FieldsData,
 			})
 			if err != nil {

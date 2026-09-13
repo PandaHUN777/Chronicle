@@ -23,14 +23,6 @@ updates:
         patterns: ["golang.org/x/*"]
       go-minor-and-patch:
         update-types: ["minor", "patch"]
-    ignore:
-      # These three currently require a `go` directive >= 1.25/1.26, and CI pins
-      # Go 1.24 with GOTOOLCHAIN=local, so their PRs can only fail. Remove this
-      # block in the toolchain PR — that is the point at which they become
-      # mergeable, and they are the security-relevant ones.
-      - dependency-name: "golang.org/x/crypto"
-      - dependency-name: "golang.org/x/net"
-      - dependency-name: "github.com/labstack/echo/v4"
 
   - package-ecosystem: github-actions
     directory: /

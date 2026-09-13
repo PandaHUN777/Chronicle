@@ -12,19 +12,20 @@ import (
 
 // mockAddonRepo implements AddonRepository for testing.
 type mockAddonRepo struct {
-	countFn               func(ctx context.Context) (int, error)
-	listFn                func(ctx context.Context) ([]Addon, error)
-	findByIDFn            func(ctx context.Context, id int) (*Addon, error)
-	findBySlugFn          func(ctx context.Context, slug string) (*Addon, error)
-	createFn              func(ctx context.Context, addon *Addon) error
-	updateFn              func(ctx context.Context, addon *Addon) error
-	deleteFn              func(ctx context.Context, id int) error
-	updateStatusFn        func(ctx context.Context, id int, status AddonStatus) error
-	listForCampaignFn     func(ctx context.Context, campaignID string) ([]CampaignAddon, error)
-	enableForCampaignFn   func(ctx context.Context, campaignID string, addonID int, userID string) error
-	disableForCampaignFn  func(ctx context.Context, campaignID string, addonID int) error
-	isEnabledFn           func(ctx context.Context, campaignID string, addonSlug string) (bool, error)
-	updateCampaignCfgFn   func(ctx context.Context, campaignID string, addonID int, config map[string]any) error
+	countFn                  func(ctx context.Context) (int, error)
+	listFn                   func(ctx context.Context) ([]Addon, error)
+	findByIDFn               func(ctx context.Context, id int) (*Addon, error)
+	findBySlugFn             func(ctx context.Context, slug string) (*Addon, error)
+	createFn                 func(ctx context.Context, addon *Addon) error
+	updateFn                 func(ctx context.Context, addon *Addon) error
+	deleteFn                 func(ctx context.Context, id int) error
+	updateStatusFn           func(ctx context.Context, id int, status AddonStatus) error
+	listForCampaignFn        func(ctx context.Context, campaignID string) ([]CampaignAddon, error)
+	enableForCampaignFn      func(ctx context.Context, campaignID string, addonID int, userID string) error
+	disableForCampaignFn     func(ctx context.Context, campaignID string, addonID int) error
+	isEnabledFn              func(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	hasCampaignAddonRecordFn func(ctx context.Context, campaignID string, addonSlug string) (bool, error)
+	updateCampaignCfgFn      func(ctx context.Context, campaignID string, addonID int, config map[string]any) error
 }
 
 func (m *mockAddonRepo) Count(ctx context.Context) (int, error) {
@@ -112,6 +113,13 @@ func (m *mockAddonRepo) DisableForCampaign(ctx context.Context, campaignID strin
 func (m *mockAddonRepo) IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error) {
 	if m.isEnabledFn != nil {
 		return m.isEnabledFn(ctx, campaignID, addonSlug)
+	}
+	return false, nil
+}
+
+func (m *mockAddonRepo) HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error) {
+	if m.hasCampaignAddonRecordFn != nil {
+		return m.hasCampaignAddonRecordFn(ctx, campaignID, addonSlug)
 	}
 	return false, nil
 }

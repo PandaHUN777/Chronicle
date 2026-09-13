@@ -204,7 +204,7 @@ func TestDB_AnswerStampsCascadeWithTheCampaign(t *testing.T) {
 func TestDB_FortnightlyBlockProjectsOnAlternateWeeksOnly(t *testing.T) {
 	db := newScratchDB(t)
 	repo := NewSessionRepository(db)
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	campID, userID := seedCampaign(t, db)
 	ctx := context.Background()
 

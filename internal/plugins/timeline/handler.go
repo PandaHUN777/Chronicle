@@ -73,13 +73,22 @@ func (h *Handler) requireTimelineInCampaign(c echo.Context, timelineID, campaign
 }
 
 // effectiveRole returns the role to use for content filtering. When
-// "view as player" mode is active, owners see content as a player would.
+// "view as player" mode is active, owners see content as a player would —
+// that branch MUST win over the promotion below: an Owner (co-DM or not)
+// deliberately previewing the player experience needs the actual player
+// view, not their own promoted-for-visibility role.
+//
+// Outside preview mode, a DM-granted co-DM is promoted to Owner for
+// visibility via cc.VisibilityRole() (operator ruling, .ai/todo.md
+// 2026-09-12: the co-DM promotion crosses plugin lines) — the same
+// promotion every entity path already applies, so a co-DM sees dm_only
+// timeline events too.
 func effectiveRole(c echo.Context, cc *campaigns.CampaignContext) int {
 	ctx := c.Request().Context()
 	if layouts.IsViewingAsPlayer(ctx) {
 		return int(campaigns.RolePlayer)
 	}
-	return int(cc.MemberRole)
+	return cc.VisibilityRole()
 }
 
 // Index lists all timelines for a campaign.
@@ -118,7 +127,13 @@ func (h *Handler) Show(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// GetTimelineForViewer, not requireTimelineInCampaign: this is a public
+	// route (RequireViewAccess, reachable by an anonymous viewer on a public
+	// campaign), so the timeline's own visibility must be checked here too —
+	// requireTimelineInCampaign alone only confirms campaign scope
+	// (2026-09-12 audit finding 4). A viewer who may not see it gets the
+	// same NotFound as one that doesn't exist.
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
 	}
@@ -234,13 +249,19 @@ func (h *Handler) UpdateAPI(c echo.Context) error {
 		return err
 	}
 
+	// PARTIAL update: absent preserves, explicit null clears, a present
+	// value replaces (sweep R4 / ADR-054 #2). visibility_rules and
+	// description_html are deliberately NOT members here: the dedicated
+	// PUT .../visibility endpoint owns visibility_rules, and no caller
+	// today writes description_html for a timeline through any route — see
+	// UpdateTimelineInput's doc comment.
 	var req struct {
-		Name        string  `json:"name"`
-		Description *string `json:"description"`
-		Color       string  `json:"color"`
-		Icon        string  `json:"icon"`
-		Visibility  string  `json:"visibility"`
-		ZoomDefault string  `json:"zoom_default"`
+		Name        string              `json:"name"`
+		Description patch.Field[string] `json:"description"`
+		Color       patch.Field[string] `json:"color"`
+		Icon        patch.Field[string] `json:"icon"`
+		Visibility  patch.Field[string] `json:"visibility"`
+		ZoomDefault patch.Field[string] `json:"zoom_default"`
 	}
 	if err := c.Bind(&req); err != nil {
 		return apperror.NewBadRequest("invalid request")
@@ -523,7 +544,10 @@ func (h *Handler) TimelineDataAPI(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// Same fix as Show, for the same reason: this is the public JSON data
+	// endpoint the D3 visualization polls, reachable without an account on a
+	// public campaign (2026-09-12 audit finding 4).
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
 	}
@@ -789,16 +813,20 @@ func (h *Handler) UpdateTimelineVisibilityAPI(c echo.Context) error {
 		return apperror.NewBadRequest("invalid request")
 	}
 
-	// Build a full update preserving existing settings.
+	// Build a full update preserving existing settings. `t` was read fresh
+	// at the top of THIS request, so echoing it back via patch.Of/
+	// patch.FromPtr is safe here — it is not a stale snapshot bound
+	// elsewhere, which is what the "never echo untouched fields" rule
+	// guards against (see UpdateTimelineInput's doc comment).
 	if err := h.svc.UpdateTimeline(ctx, timelineID, UpdateTimelineInput{
 		Name:            t.Name,
-		Description:     t.Description,
-		DescriptionHTML: t.DescriptionHTML,
-		Color:           t.Color,
-		Icon:            t.Icon,
-		Visibility:      req.Visibility,
-		VisibilityRules: req.VisibilityRules,
-		ZoomDefault:     t.ZoomDefault,
+		Description:     patch.FromPtr(t.Description),
+		DescriptionHTML: patch.FromPtr(t.DescriptionHTML),
+		Color:           patch.Of(t.Color),
+		Icon:            patch.Of(t.Icon),
+		Visibility:      patch.Of(req.Visibility),
+		VisibilityRules: patch.FromPtr(req.VisibilityRules),
+		ZoomDefault:     patch.Of(t.ZoomDefault),
 	}); err != nil {
 		return err
 	}
@@ -975,7 +1003,13 @@ func (h *Handler) EmbedTimeline(c echo.Context) error {
 		timelineID = timelines[0].ID
 	}
 
-	t, err := h.requireTimelineInCampaign(c, timelineID, cc.Campaign.ID)
+	// Same fix as Show/TimelineDataAPI: an explicit ?timeline_id= is
+	// attacker-controlled and this route is public, so requireTimelineInCampaign
+	// alone (campaign scope only) let a dm_only timeline embed in full for a
+	// viewer with no account (2026-09-12 audit finding 4). Falling through to
+	// the existing empty-state render on error already matches this route's
+	// established "never error, always render something" contract.
+	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return middleware.Render(c, http.StatusOK, TimelineEmbedEmpty(cc))
 	}

@@ -249,9 +249,30 @@ func (a *App) errorHandler(err error, c echo.Context) {
 	_ = observability.RecordHTTPError(code, c.Request().Method, c.Path(), c.Request().URL.Path, kind, err)
 
 	// API requests always get JSON.
+	//
+	// `error` carries the MACHINE-READABLE condition, `message` the prose. The
+	// two field roles are the ones the Foundry module already reads
+	// (api-client.mjs: `err.code = parsed.error`, `err.serverMessage =
+	// parsed.message`), and the ones the calendar blackout response has used
+	// since 2026-08-21 (`{"error":"calendar_rebuilding", …}`).
+	//
+	// It used to emit http.StatusText(code) here unconditionally, which meant
+	// every domain error arrived at a client as the bare status word. A caller
+	// that wanted to tell "the Sync API toggle is off" from "you lack
+	// permission" — both 403 — had only the prose to go on, so
+	// syncapi.RequireSyncAPIAddon's `sync_api_disabled` type never reached the
+	// wire and its own ADR's promise that "a client can name the condition
+	// instead of parsing prose" was false as shipped.
+	//
+	// StatusText remains the fallback for an error that is not an AppError
+	// (Echo's router 404s, panic recovery), which have no type to offer.
 	if isAPIRequest(c) {
+		errorField := http.StatusText(code)
+		if appErr != nil && appErr.Type != "" {
+			errorField = appErr.Type
+		}
 		_ = c.JSON(code, map[string]string{
-			"error":   http.StatusText(code),
+			"error":   errorField,
 			"message": message,
 		})
 		return

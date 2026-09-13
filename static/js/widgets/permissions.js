@@ -51,6 +51,17 @@ Chronicle.register('permissions', {
       permissions: [],
       tagGrants: [],
       loading: true,
+      // loadFailed is the ADR-057 guard: the fields above are just the
+      // widget's initial guess, never a real answer. A Scribe's GET
+      // .../permissions 403s (the route is Owner-only) or the network can
+      // fail outright; either way state.visibility/isPrivate are still sat
+      // at their untouched init values afterward. Without this flag,
+      // getMode() cannot tell "loaded and Everyone" apart from "never
+      // loaded, defaulted to Everyone" -- which is exactly how a Scribe
+      // editing a DM-only entity used to see "Permissions - Everyone".
+      // renderTrigger()/renderBody() must check this BEFORE calling
+      // getMode(), not rely on the defaults being "probably right".
+      loadFailed: false,
       saving: false,
       saved: false,
       error: null,
@@ -234,6 +245,36 @@ Chronicle.register('permissions', {
     function renderTrigger() {
       if (!trigger) return;
       trigger.innerHTML = '';
+      // ADR-057 (adversarial-review follow-up, defect 1): a load that hasn't
+      // resolved yet is JUST AS UNKNOWN as one that failed -- state.loading
+      // starts true and getMode() would otherwise run against the untouched
+      // init defaults (visibility: 'default', isPrivate: false) for the
+      // entire in-flight window, painting "Everyone" until the response
+      // lands. Draft mode is excluded: it has no endpoint, never issues a
+      // request, and legitimately owns its mode locally from init -- init()
+      // -> load() resolves it synchronously before the first paint, but even
+      // the very first renderTrigger() call (which runs BEFORE load()) must
+      // not blank it, hence checking `!draftMode` here rather than relying on
+      // state.loading already being false by the time this runs.
+      var modeUnknown = state.loadFailed || (state.loading && !draftMode);
+      if (modeUnknown) {
+        var unknownIcon = document.createElement('i');
+        unknownIcon.className = 'fa-solid fa-circle-question text-xs';
+        trigger.appendChild(unknownIcon);
+        var unknownLabel = document.createElement('span');
+        unknownLabel.textContent = 'Permissions';
+        trigger.appendChild(unknownLabel);
+        // Defect 3: inline mode's expand affordance must survive this branch
+        // too -- the panel still opens on click even though the mode is
+        // unknown, so the chevron cannot be lost here the way it was when
+        // this branch returned before the `if (inline)` block below.
+        if (inline) {
+          var unknownChevron = document.createElement('i');
+          unknownChevron.className = 'fa-solid fa-chevron-down text-xs perm-trigger-chevron';
+          trigger.appendChild(unknownChevron);
+        }
+        return;
+      }
       var mode = getMode();
       var icon = mode === 'everyone' ? 'fa-globe' : mode === 'dm_only' ? 'fa-lock' : 'fa-shield-halved';
       var iconEl = document.createElement('i');
@@ -317,18 +358,40 @@ Chronicle.register('permissions', {
         errText.style.flex = '1';
         errText.textContent = state.error;
         errDiv.appendChild(errText);
-        var dismissBtn = document.createElement('button');
-        dismissBtn.type = 'button';
-        dismissBtn.className = 'perm-error-dismiss';
-        dismissBtn.innerHTML = '&times;';
-        dismissBtn.setAttribute('aria-label', 'Dismiss error');
-        dismissBtn.addEventListener('click', function () {
-          state.error = null;
-          state.errorCategory = null;
-          renderBody();
-        });
-        errDiv.appendChild(dismissBtn);
+        // Defect 2: a failed-LOAD error is not offered a dismiss button.
+        // state.error/errorCategory are shared between load() and save()'s
+        // catch blocks, but only a save error has real content underneath it
+        // to reveal once dismissed -- the mode picker / grant rows are
+        // already rendered from a real answer. A failed load has no such
+        // content: dismissing used to null state.error, re-render, and land
+        // straight in the `if (state.loadFailed) return;` below, leaving the
+        // panel completely empty with no way back inside the widget. Leaving
+        // this error non-dismissible keeps something honest on screen
+        // instead.
+        if (!state.loadFailed) {
+          var dismissBtn = document.createElement('button');
+          dismissBtn.type = 'button';
+          dismissBtn.className = 'perm-error-dismiss';
+          dismissBtn.innerHTML = '&times;';
+          dismissBtn.setAttribute('aria-label', 'Dismiss error');
+          dismissBtn.addEventListener('click', function () {
+            state.error = null;
+            state.errorCategory = null;
+            renderBody();
+          });
+          errDiv.appendChild(dismissBtn);
+        }
         bodyEl.appendChild(errDiv);
+      }
+
+      // ADR-057: a failed load has already said everything it honestly can
+      // via the perm-error region above. Rendering the mode picker or the
+      // read-only badge below this point would fall back to state's
+      // untouched init defaults (getMode() reading visibility: 'default',
+      // isPrivate: false) and repaint the same wrong "Everyone" claim the
+      // trigger used to make. Stop here instead -- an honest blank body.
+      if (state.loadFailed) {
+        return;
       }
 
       var mode = getMode();
@@ -657,6 +720,11 @@ Chronicle.register('permissions', {
         })
         .catch(function (err) {
           state.loading = false;
+          // Covers both a non-2xx response (the 403 a Scribe gets from the
+          // Owner-only route) and an outright network failure -- either way
+          // state.visibility/isPrivate were never replaced by a real answer,
+          // so render must not treat them as one (ADR-057).
+          state.loadFailed = true;
           state.error = err.message || 'Failed to load permissions';
           state.errorCategory = err.category || 'internal';
           renderTrigger();

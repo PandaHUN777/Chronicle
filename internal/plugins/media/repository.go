@@ -440,18 +440,36 @@ func (r *mediaRepository) ListAllFilenames(ctx context.Context) (map[string]bool
 }
 
 // FindReferences returns entities that reference the given media file.
-// Checks both entity image_path (direct reference) and entry_html (embedded in editor).
+// Checks entity image_path AND cover_image_path (direct references) and
+// entry_html (embedded in editor).
+//
+// ADR-058 "the whole rule leaking through a missing column": this query
+// used to union only image_path with an entry_html scan. cover_image_path
+// (migration 000004, the full-width banner block) was never in it, so a
+// picture used ONLY as a cover looked unreferenced to every caller of this
+// method — including checkMediaAccess's entity-visibility rule, which would
+// then fall through to decision 3's plain-membership path and leak a
+// dm_only page's cover art to any campaign member. A cover match is
+// reported with the same ref_type ('image') as a profile-image match: both
+// are direct, one-column bindings distinct from the entry_html scan, and
+// giving them the same label avoids the "where is this used" fragment
+// mislabeling a cover as "(in content)" — a decision-4 UI concern this
+// slice does not otherwise touch.
 func (r *mediaRepository) FindReferences(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
 	query := `SELECT id, name, slug, 'image' AS ref_type
 	          FROM entities
 	          WHERE campaign_id = ? AND image_path = ?
+	          UNION
+	          SELECT id, name, slug, 'image' AS ref_type
+	          FROM entities
+	          WHERE campaign_id = ? AND cover_image_path = ?
 	          UNION
 	          SELECT id, name, slug, 'content' AS ref_type
 	          FROM entities
 	          WHERE campaign_id = ? AND entry_html LIKE CONCAT('%/media/', ?, '%')
 	          ORDER BY name`
 
-	rows, err := r.db.QueryContext(ctx, query, campaignID, mediaID, campaignID, mediaID)
+	rows, err := r.db.QueryContext(ctx, query, campaignID, mediaID, campaignID, mediaID, campaignID, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("finding media references: %w", err)
 	}

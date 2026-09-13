@@ -4576,3 +4576,547 @@ cell's rendering is pixel-identical to what shipped.
 - Census + guard: `internal/widgets/calendar_block/moon_reach_probe_test.go`,
   registered in `tools/check-browser-probes.sh`
 - Data half of the same complaint: ADR pending / `internal/plugins/calendar/moon_fallback.go`
+
+---
+
+## ADR-053: The Sync API toggle refuses the Bearer key, not the route — and enabling it is a decision only a human or a key-creation makes
+
+**Date:** 2026-09-11 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** read-only audit of the `sync-api` addon toggle against current
+HEAD; implementation on branch `claude/determined-davinci-5ut5f5`.
+
+### Context
+
+A campaign has a "Sync API" addon toggle (slug `sync-api`, category
+`integration`, seeded by `db/migrations/000001_baseline.up.sql`). Switching it
+off did nothing at all.
+
+`internal/plugins/syncapi/routes.go` mounted `v1 := e.Group("/api/v1",
+RequireAuthOrAPIKey(...), RateLimit(...), RequireJSONContentType())` with no
+addon check, and the campaign sub-group underneath it carries ~50 endpoints.
+`RequireAuthOrAPIKey` → `RequireAPIKey` → `syncAPIService.AuthenticateKey`
+validates prefix, bcrypt hash, `IsActive` and expiry and never reads
+`campaign_addons`; `addons.IsEnabledForCampaign` is the only place "enabled" is
+ever evaluated and it was not on this path. The WebSocket had the same hole:
+`AuthenticateKeyForWS` delegates to the same `AuthenticateKey` and is wired at
+`internal/websocket/auth.go:81,107`.
+
+Only `calGroup` and `mapGroup` were gated, with `RequireAddonAPI(addonChecker,
+"calendar" / "maps")`. The pattern existed; it had simply never been applied to
+the addon that governs the API itself.
+
+### Decision
+
+**1. The toggle refuses REAL BEARER KEYS, and nothing else.**
+
+`RequireSyncAPIAddon` is mounted on both `/api/v1` groups (`v1` and
+`v1Multipart`), after the identity resolver and before the rate limiter. It
+short-circuits for any caller whose resolved `APIKey.ID == synthKeySessionID`.
+
+The rejected alternative was reusing `RequireAddonAPI`, which is one line. It
+gates EVERY caller — and `/api/v1/*` is dual-auth: Chronicle's own browser
+widgets authenticate there by session cookie
+(`static/js/widgets/layout_editor.js` reads `/entity-types` and `/maps` that
+way) and receive a synthetic key. `sync-api` is an **integration** toggle; an
+owner switching it off means "no outside clients", not "stop rendering my
+layout editor". `calendar` and `maps` are **feature** addons and gating their
+web callers too is right for them and wrong here. Pinned by
+`TestSyncAPIAddon_SessionCallerUnaffected`, which 404s under the naive fix.
+
+**2. It answers 403 `sync_api_disabled`, not 404.**
+
+Rejected 404 (what `RequireAddonAPI` returns) on evidence from the consumer:
+Chronicle's Foundry module reads a 404 on an API route as "this Chronicle is
+too old to have that endpoint" and takes its version-compatibility path, hiding
+the real cause — the same trap that made the calendar blackout answer 503
+rather than 404 on purpose. The key is authentic and the campaign is real; what
+is absent is authorization, which is 403. The machine-readable `type` lets a
+client name the condition instead of parsing prose.
+
+**3. It is NOT folded into `AuthenticateKey`.**
+
+Rejected: it would be one choke point covering REST and WS together, but every
+REST refusal would surface as `RequireAPIKey`'s blanket 401 "invalid api key",
+which is a lie — the key is valid. `AuthenticateKey` keeps answering one
+question ("is this token a live key?") and each transport shapes its own
+refusal: middleware for REST, `AuthenticateKeyForWS` for the socket.
+
+**4. The WebSocket is enforced AT CONNECT, and in-flight sessions are not
+dropped.**
+
+Rejected dropping live sockets. The hub has no disconnect-by-campaign
+mechanism, and adding one would make this toggle *stronger than key
+revocation*: deactivating or deleting an API key — the established revocation
+control — also only takes effect at reconnect, as does revoking a `dm_granted`
+flag (`Client.IsDmGranted`, "revoking a grant requires the user to reconnect").
+A toggle that outranks revocation would be incoherent, and building a
+revocation-polling loop into the hub in the same change as the gate widens the
+blast radius of the deploy for no gain over the control it would exceed.
+Booked in `.ai/todo.md`; the honest statement is that this is a connect-time
+control, uniformly with every other authorization fact the hub resolves.
+
+**5. Enforcement defaults to DENIED, so `CreateKey` records the decision.**
+
+`addons.IsEnabledForCampaign` returns false when no `campaign_addons` row
+exists. `syncapi/migrations/003_autoenable_existing_keys.up.sql` backfilled
+`enabled = 1` for campaigns with an `api_keys` row, but it ran once; any
+campaign that minted its first key afterwards sits at "no row".
+
+`syncAPIService.CreateKey` now calls `EnableForCampaignBySlug` after the key
+row commits. Rejected leaving it to the boot reconciler alone: a campaign
+minting its first key would get a token that is dead until the next server
+restart — "restart the server to make your new key work" is a worse defect than
+the one being closed. This does re-enable a toggle an owner may have switched
+off; that is deliberate and logged, because the owner is at that moment on the
+API keys screen asking for an external credential, and the `campaign_addons`
+row is the only record this system keeps of that. Nothing else re-enables it.
+Best-effort on failure: the key row is committed and its plaintext is shown
+once, so returning an error would destroy an unrecoverable credential.
+
+**6. The backfill is a reconciler keyed on "is there a row", not "is it on".**
+
+`syncapi.ReconcileAddonEnablement` runs at boot from
+`internal/app/routes.go`, alongside `backfillPlayerCharacterTypes`, and enables
+`sync-api` only for campaigns that own an API key and have **no
+`campaign_addons` row at all**. A row saying `enabled = 0` is an owner's
+decision and is left alone.
+
+This is the trap. Migration 003's `ON DUPLICATE KEY UPDATE enabled = 1` was
+harmless as a one-shot when "enabled" meant nothing; as a BOOT reconciler the
+same clause would re-enable every key-owning campaign on every restart, so
+switching the toggle off would last exactly until the next deploy — handing
+back the decorative toggle this ADR removes. Hence the new
+`HasCampaignAddonRecord`: `IsEnabledForCampaign` cannot distinguish "never
+configured" from "explicitly off" and is the wrong question for a backfill.
+Pinned by `TestReconcileAddonEnablement`, whose "deliberately switched it OFF"
+row fails under the migration's semantics.
+
+Per CLAUDE.md a one-time data fix is a reconciler, never a migration; it also
+has to be re-runnable, since a campaign can acquire its first key between two
+boots of an older build.
+
+**7. An unwired gate refuses.**
+
+`SetAddonGate` is injected in `internal/app/routes.go`. If that line is ever
+dropped, `AuthenticateKeyForWS` fails with a distinct internal error rather
+than assuming permission. A security control that silently no-ops when its
+dependency is missing is the defect class this ADR exists to remove.
+
+### Deliberately out of scope
+
+`/api/version` (unauthenticated by design, pre-dates auth) and
+`/api/v1/campaigns/:cid/foundry-vtt/module.{json,zip}`
+(`foundry_vtt.RegisterPublicRoutes`, its own per-campaign signed token, not a
+Bearer key) stay ungated. The operator must be able to fetch and update the
+module in order to reach the toggle at all.
+
+### Where it lives
+
+- `internal/plugins/syncapi/middleware.go` — `RequireSyncAPIAddon`,
+  `syncAPIDisabledError`, `SyncAPIAddonSlug`
+- `internal/plugins/syncapi/routes.go` — mounted on `v1` and `v1Multipart`
+- `internal/plugins/syncapi/service.go` — `SyncAPIAddonGate`, `SetAddonGate`,
+  the `AuthenticateKeyForWS` gate, `CreateKey`'s enable
+- `internal/plugins/syncapi/reconcile_addon_enablement.go` — the boot backfill
+- `internal/plugins/addons/{service,repository}.go` —
+  `EnableForCampaignBySlug`, `HasCampaignAddonRecord`
+- Tests: `internal/plugins/syncapi/addon_gate_test.go`,
+  `internal/plugins/syncapi/reconcile_addon_enablement_test.go`
+
+## ADR-054: The sync API is a second door to the same rooms, and it checks the same locks
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** three read-only sweeps on 2026-09-12 (partial-update structs,
+visibility across subsystems, toggle truth), findings verified by hand.
+
+### Context
+
+Six features across three plugins have the same defect: the web route enforces
+a role and the `/api/v1` twin enforces only a permission tier.
+
+| Resource | Web | `/api/v1` |
+|---|---|---|
+| fog of war (read) | `RequireRole(RoleOwner)` | `RequirePermission(PermRead)` |
+| fog of war (write/reset) | Owner | `PermWrite` — a Scribe |
+| map layers incl. `gm` | role-checked | no filter at all |
+| marker/drawing/token delete | Owner | `PermWrite` — a Scribe |
+| Player Notes toggle | hides the panel | five routes, zero checks |
+| Notes toggle | hides the notebook | journal page + API open |
+
+The mechanism is one function. `RequireAuthOrAPIKey` synthesises an `APIKey`
+from a browser session with `permissionsForCampaignRole(role)` — Owner gets
+`[read, write, sync]`, Scribe `[read, write]`, Player `[read]` — and every
+syncapi route then checks a *permission*. Any resource whose web rule is finer
+than "can read" or "can write" loses that rule on the way through. A player's
+ordinary session therefore reads fog of war that the web refuses them. Nobody
+built this as a hole; the API was built as a second, coarser vocabulary and
+routes were added to it one at a time without asking what the web twin required.
+
+### Decision
+
+**1. The invariant, stated once.** For every resource reachable through
+`/api/v1`, the API route's authorisation is at least as strict as the web
+route's for the same action. The API is not a different product with its own
+rules; it is another door into the same rooms.
+
+**2. The mechanism: routes declare a role floor, not only a permission.** Where
+a web route says `RequireRole(RoleOwner)`, its syncapi twin says so too. The
+role comes from:
+- the session, for the synthetic key — it already carries the member's role;
+- **the key's creating user, resolved live**, for a real Bearer key. A key acts
+  with its creator's *current* standing, never more. Demoting the creator
+  narrows every key they made, which is the intended reading of "demote".
+
+This is chosen over a fourth permission tier (`PermGM`) precisely because of
+the operator's Foundry key: that key was created by the Owner, so under
+role-from-creator it keeps reading fog and layers **without being re-issued**.
+A new tier would have required every existing integration key to be re-minted
+before map sync worked again, which is an outage dressed as a security fix.
+Role-from-creator only ever *narrows* the synthetic-session path — the one that
+is actually leaking — and leaves every legitimate key exactly as it is.
+
+**3. The guard: a contract test pairs each syncapi route with its web twin.**
+Modelled on `wire_contract_test.go`. For each `(resource, verb)` exposed on both
+surfaces, it asserts the API's role floor is ≥ the web's. A route with no web
+twin must say so explicitly in the pairing table. This is the part that makes
+the fix permanent: the sweep found six; without the guard the seventh is
+whoever adds the next route.
+
+**4. Ordering.** Fog, layers and map writes are **held** until the Foundry
+key's creating user and permissions have been read from a live instance —
+the operator's map sync depends on that route, and role-from-creator is only
+safe if the creator is who we think. Everything else under this ADR proceeds.
+
+### Rejected
+
+- **Collapsing syncapi into the plugins' own handlers.** Right in the long run —
+  one handler, one lock — and wrong now: it is a rewrite on the scale of the
+  calendar, and the calendar is the lesson.
+- **A `PermGM` tier.** Expresses one distinction, breaks every existing key
+  (above).
+- **Treating the six as six tickets.** They are one habit — "gate what you can
+  see" — and one habit needs one guard.
+
+### VERIFY at build
+
+**2026-09-12, later the same day — operator confirms the Foundry API key was
+created by the Owner account.** §4's hold is lifted; the three held fixes ship
+as one PR with the contract test. Still to verify at build:
+how a real key's `UserID` resolves to a campaign role today, and whether Scribes
+can mint keys. If they can, a Scribe-minted key acts as Scribe, which is correct
+and should be pinned by a test.
+
+---
+
+## ADR-055: Visibility stays per-subsystem; the read-path rule is the one thing they share
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** the 2026-09-12 visibility sweep across maps, notes, timeline,
+sessions, following the entity default-visibility fix (`3349269`).
+
+### Context
+
+Chronicle carries five visibility models because it carries five kinds of
+content:
+
+| Subsystem | Model |
+|---|---|
+| entities | `is_private` bool, plus `custom` mode with per-subject grants |
+| markers, drawings, timeline | `visibility` enum + `visibility_rules` allow/deny |
+| tokens | `is_hidden` |
+| notes | owner / `is_shared` / `shared_with` — starts most-private |
+| maps, sessions | none — shared by nature |
+
+The campaign `DefaultVisibility` setting is scoped to **entities** in its doc
+comment, in the settings copy (three times), and in the only code that reads
+it. The sweep found no creation-path inconsistency elsewhere: every marker,
+drawing, token and timeline path defaults to `"everyone"` identically, web and
+API alike. The obvious "fix" — make the campaign default reach everything — was
+considered and is the thing this ADR exists to refuse.
+
+What the sweep did find were four **read-path** leaks: a session page names
+linked entities without checking their privacy; fog of war and GM layers are
+listed to any player through the API; timeline `EventCount` still leaks the
+existence of events hidden by per-user rules.
+
+### Decision
+
+**1. The models stay separate.** A note is personal by nature; a marker on a
+shared map is public by nature; an entity is the thing a DM curates. They have
+different shapes because the content does. Unifying them is a rewrite, and the
+calendar is what a rewrite costs here.
+
+**2. The campaign default stays entity-only.** Recorded so nobody "fixes"
+markers or timelines to honour it. If a DM wants a hidden marker they hide the
+marker; that is one click on an object, not a campaign-wide policy.
+
+**3. The one rule every subsystem shares is on the read side:** *any query that
+returns content to a non-Owner filters by that subsystem's own visibility
+model, server-side, so hidden content is absent — not greyed, not counted, not
+named, not ordered around.* This was already the repo's stated principle. It
+now has an ADR number so a leak can cite what it violates.
+
+**4. The four leaks are fixed under rule 3**, each with its own model, none by
+inventing a shared one. Session entity names and the timeline count go now;
+fog and layers wait on ADR-054 §4.
+
+### Rejected
+
+- **A campaign-wide visibility default for everything.** Rejected above.
+- **"Private" as a creator-only visibility mode** for entities. The setting
+  promised it; the code never did; see ADR-056 for why the promise goes
+  rather than the code arriving.
+
+---
+
+## ADR-056: A toggle says what it does — code where the label is a promise, copy where the label is a name
+
+**Date:** 2026-09-12 · **Status:** Accepted · **Supersedes:** nothing ·
+**Context:** the 2026-09-12 toggle-truth sweep over 14 addon toggles and 3
+settings switches, every gate verdict confirmed by reading the route.
+
+### Context
+
+Two toggles were found wrong on 2026-09-11 in two different ways: Sync API
+promised to cut off access and cut off nothing (**overpromised**); Sessions was
+assumed dead and gated exactly one dashboard block while its real routes sat
+under Calendar (**misnamed**). The sweep then found the same two shapes across
+the rest of the catalogue, plus a third defect that is neither: **7 of 14
+addons show "Campaign extension." as their entire description on the page
+where an owner decides whether to enable them** — the real descriptions exist
+in `builtinAddons` and never reach the screen because `PluginHubAddon` has no
+`Description` field.
+
+Every one of these needed the same question answered before it could be fixed:
+is this a bug in the gate, or a bug in the words?
+
+### Decision
+
+**The test.** *If an owner would flip this believing it protects something or
+cuts something off, the gate must be real — code. If the label merely points
+at the wrong thing, the label moves — copy.* A control that lies about
+protection is worse than no control, because the owner stops worrying.
+
+Applied:
+
+| Toggle | Verdict | Fix |
+|---|---|---|
+| Sync API | overpromised | **code** — done, ADR-053 |
+| Player Notes | overpromised (five routes ungated) | **code** — gate the routes on the addon for every caller; it is a feature toggle, not an integration one, so no session short-circuit |
+| Notes (floating) | overpromised (journal page + API open) | **code**, lower priority — same treatment |
+| Sessions | misnamed | **copy** — describe the widget it gates; say Sessions lives under Calendar |
+| Co-DM "control the live world-state" | promises a capability no route can exercise | **copy** now — drop the clause while the calendar is mid-rebuild; **code** when V5 wires `RequireCapability` |
+| Calendar card | honest gate, undisclosed rebuild | **copy** — the disclosure every other surface already carries |
+| Media Gallery "upload" | names an action that is deliberately never gated | **copy** — drop the word |
+| Default Visibility "Private" | promises creator-only; delivers DM-only | **copy — remove the option.** See below |
+| 8 generic descriptions | information missing | **code** — thread `Description` through `PluginHubAddon` |
+| `settingsFeaturesTab` chain (~900 lines) | dead, drifted duplicate of the hub | **code** — delete |
+
+**On "Private".** Two options that do the same thing is one option with a lie
+attached. The honest alternatives were to build creator-only visibility or to
+remove the claim. Creator-only already exists — per entity, via `custom` mode
+with a user-subject grant — and a campaign-wide creator-only default would hide
+a DM's work from their own co-DM, which is a niche want dressed as a default.
+The option goes. Campaigns already storing `"private"` keep behaving exactly as
+they do today (it collapses to `is_private=true`); the constant stays for
+compatibility; the radio button does not. Removing a lying option beats
+building what it lied about.
+
+**Also under this ADR:** the partial-update contract test only recognises
+structs named `Update*Input`; every `Update*Request` is invisible to it, and
+the worst finding of the sweep (`tags.UpdateTagRequest`, a rename turns off
+DM-only) lives exactly there. The scanner widens to `*Request`. A guard that
+can see half the surface is a guard that certifies the other half by silence.
+
+### Rejected
+
+- **Fixing the descriptions by hand-editing the switch statement.** The text
+  already exists once, in `builtinAddons`; a second copy is the drift the sweep
+  found in the dead template.
+- **Gating Player Notes with the Sync-API-style session short-circuit.** That
+  short-circuit exists because `sync-api` is an *integration* toggle and
+  first-party widgets share its routes. Player Notes is a *feature* toggle; off
+  means off for everyone, or the toggle is decorative again.
+
+## ADR-057: One visibility glance, shown to those who can change it, edited only in edit mode
+
+**Date:** 2026-09-12 · **Status:** Accepted; render signed by the operator 2026-09-12 · **AMENDED 2026-09-12 (operator picked Option B):** editing opens from the glance icon — click, Owner only — as the widget's existing right-edge slide-in card (`permissions.js` default layout, 420px, 280ms, backdrop). Hover stays the read-only key; the edit form's inline mount (`form.templ` `data-layout="inline"`) retires once the icon trigger ships. Optional continuity: the icon pulses once as the card enters and the card header repeats the shield — CSS only, inside the motion budget. A hover-opened editor was considered and rejected: hover already means "tell me", and an editor that dismisses on mouse drift loses toggles.
+**Context:** operator ask ("a basic nice looking icon that the owner/scribes/
+co-owners see, that tells them who has access at a glance, maybe with a hover
+over key, and clicking edit is where you should see the permissions — which
+currently show as a random icon that doesn't match theme at the bottom") plus
+the 2026-09-12 permissions research, every claim read from source.
+
+### Context
+
+There is not one visibility indicator; there are **four**, each its own
+implementation of the same three-glyph vocabulary (`fa-globe` / `fa-lock` /
+`fa-shield-halved`):
+
+| Where | File | Who sees it | Colour |
+|---|---|---|---|
+| Header, beside the name | `entities/visibility_badge.templ:10-32` | Scribe+ (raw `MemberRole`) | `#0d9488` hard-coded |
+| List-grid card | `entities/entity_card.templ:78-100` | Scribe+ | `#0d9488` hard-coded |
+| **"Details" card, bottom right** | `entities/show.templ:432-457` `blockDetails` | **everyone who can open the page — Players included** | `#0d9488` hard-coded |
+| "Permissions" row, last row of every page | `permissions.js` via `blockPermissions`, `show.templ:618-636`, auto-appended by `EnsurePermissionsBlockInDefaults` (`service.go:2653-2699`) | Owner only | theme tokens (the only one) |
+
+The third row is the operator's "random icon at the bottom": no role parameter
+at all, shown to Players, painted a colour no theme defines. The fourth is the
+editor, bolted onto the read page.
+
+Two defects were found alongside: **a Co-DM cannot open a DM-only entity.**
+`VisibilityRole()` promotes a DM-granted member to Owner for list filtering
+(`campaigns/model.go:248-263`) and its doc comment says that is the design —
+but every one of the nine `CheckEntityAccess` call sites passes raw
+`MemberRole` instead (`entities/handler.go:599,1714,1800,1866,2096,3171,3246,
+3486`; `syncapi/api_handler.go:374`). `BacklinksFragment` does both in one
+function, lines 3229 and 3246: the Co-DM sees the list and is 404'd on the
+target. No test covers it. And **a Scribe editing a DM-only entity is shown
+"Permissions · Everyone"**: the widget's `load()` fires a GET the Scribe cannot
+make (route is Owner-only), swallows the 403, and renders its init defaults
+(`permissions.js:47-48,170-174,607-666`). An actively wrong glance.
+
+### Decision
+
+1. **One component.** `visibilityGlance(state, viewer)` in the entities
+   plugin replaces all four. Same three glyphs — they are learned. The header
+   position (beside the name) is the one that stays; it is where the eye
+   already goes for the name and it is what the operator asked for.
+2. **Seen by the DM team, never by Players or visitors.** The gate is
+   `VisibilityRole() >= RoleScribe`, so a Co-DM sees it. A Player never does:
+   a badge saying "custom" on something they *can* see tells them others
+   cannot, which is evidence of hidden structure — ADR-055 rule 3 forbids
+   exactly that. The indicator is a tool for people who can change access,
+   not a label for people subject to it.
+3. **Colour from tokens.** `var(--color-accent)` for custom, `--color-fg-muted`
+   for everyone and DM-only. `#0d9488` is deleted from the tree; the guard is a
+   grep in the render-contract test.
+4. **Hover is a key, not a tooltip.** A popover, portalled to `<body>`, that
+   names who has access: "Everyone in the campaign" · "DM team only (Owner,
+   Scribes, co-DMs)" · for custom, the actual grants — role tiers, named
+   members, groups — plus the tag-widening line the existing tooltip already
+   builds (`visibility_glance.go:94-121`). Native `title=` goes.
+5. **Editing lives in edit mode only.** The auto-appended "Permissions" row
+   and its heal goroutine are removed from the read page. The edit form's
+   inline widget (`form.templ:281-296`) is the one editor. This is the half
+   of the ask that is a subtraction, and it is the bigger improvement.
+6. **The two defects are fixed under this ADR, first**, because they need no
+   design: every `CheckEntityAccess` caller passes `VisibilityRole()`; the
+   widget renders nothing on a failed load, never a default.
+7. **`public` as a grant subject is finished as its own later slice.**
+   Migration `000028` added it to the enum so an owner could reveal an entity
+   to logged-out visitors; the list filter honours it; `ValidSubjectType`
+   refuses to write it and `GetEffectivePermission` ignores it. Half-wired is
+   worse than absent. It gets wired, not deleted — after the glance ships.
+8. **No "the party" audience this pass.** Groups are manual and unseeded; a
+   `role:1` grant ("every Player") is the working equivalent. A seeded
+   "Party" group is booked as a nicety.
+9. **The build waits on a render the operator has signed.** Standing order.
+
+### Rejected
+
+- **Keeping four implementations and fixing the colour.** The colour is the
+  symptom; the fourth copy is the disease.
+- **A reduced indicator for Players** ("you can see this"). Any Player-facing
+  state is a leak of the other states.
+- **Merging with tag grants.** Tags widen visibility additively through a
+  separate table; the glance *reports* that in the popover and must not own it.
+
+## ADR-058: A picture inherits the permissions of the pages that use it
+
+**Date:** 2026-09-12 · **Status:** Accepted; operator-ruled. Implementation in
+slices, see `.ai/designs/2026-09-12-security-audit-findings.md` for the audit
+this answers.
+
+### Context
+
+The 2026-09-12 audit found that `checkMediaAccess`
+(`internal/plugins/media/handler.go`) decides from: the file's campaign,
+whether that campaign is public, the signature pair, the caller's user id,
+campaign membership, and site-admin. Membership is ROLE-BLIND
+(`GetMember(...) != nil`). It never consults the visibility of the entity the
+file hangs off, because `media_files` carries no reference to one.
+
+So **any member of a campaign, of any role, can read any image in that
+campaign** — DM-only pages, custom-restricted pages, GM map layers. Three
+doors that handed out file ids wholesale were closed the same day
+(`61af48c5`, `901df82b`), but closing doors is not the same as locking the
+room: anyone who learns an id another way still reads the image.
+
+Two further facts shape the answer, and the second is the one that is easy to
+miss:
+
+1. **One file, many pages.** A picture can be referenced by several entities —
+   as the main image, as a cover, or inline in entry HTML.
+2. **Chronicle MERGES identical uploads.** `service.go:189` looks up
+   `FindByContentHash(ctx, campaignID, hash)` and reuses the existing row. So
+   two uploads of the same bytes become one file, and a file can end up shared
+   between pages nobody deliberately linked. The operator's question — "a
+   picture can be used multiple places?" — is what surfaced this.
+
+### Decision
+
+1. **A picture is readable if AT LEAST ONE page using it is visible to the
+   viewer.** Not "hidden if any page using it is hidden".
+   The strict rule is worse, not safer: a picture on both a public page and a
+   hidden one would break the public page with a dead image, and a dead image
+   where a picture obviously belongs is itself evidence that something is being
+   withheld — the exact shape ADR-055 rule 3 forbids. It is also futile: the
+   picture is already on screen on a page the viewer may open.
+2. **This protects the picture, not the fact of reuse.** Putting a hidden
+   page's artwork onto a visible page publishes that artwork, and no access
+   rule can undo it. That is true today; this decision makes it the explicit
+   reason rather than an accident. Hence 4 and 5.
+3. **Files no page references keep today's behaviour** — campaign membership
+   at the existing threshold. Avatars, campaign backdrops and freshly uploaded
+   files have no owning entity by construction, and failing them closed would
+   break the app.
+4. **The "where is this used" list becomes part of the permissions story.** It
+   exists (`FindReferences`) and is shown only in one Owner-only fragment. An
+   owner must be able to see, before publishing, what else a picture is on.
+5. **Merging across different permission levels is refused, and the author is
+   told.** A silent merge is how a secret map's artwork becomes reachable
+   months later with nobody deciding anything. Both halves were ruled by the
+   operator ("Yes please to both"): do not merge when the existing file's pages
+   and the new upload's destination do not agree, and say so when it happens.
+6. **A signed URL is bound to the viewer.** Today it is an HMAC over
+   `fileID:expires` only, valid an hour, so it is a bearer token: whoever holds
+   the link uses it. Binding the identity in means a copied link is inert for
+   anyone else. This does not replace 1 — a member can still mint their own —
+   it stops the link LEAVING.
+7. **A public campaign stops serving every file unsigned.** `allowUnsignedAccess`
+   returns true for any file whose campaign is public, so today the whole
+   internet can read every image in a public campaign, DM-only artwork
+   included. Unsigned anonymous access is narrowed to pictures used by pages an
+   anonymous viewer may actually see, which is decision 1 with `RoleNone`.
+
+### Consequences, including the unwelcome ones
+
+- **A lookup per image request.** Mitigated by caching the decision per
+  (file, viewer) — Chronicle already runs Redis — and by 3's cheap path for
+  unreferenced files. If the cache is unavailable the rule still applies; it
+  gets slower, not laxer.
+- **`FindReferences` is incomplete and must be fixed FIRST.**
+  `repository.go:444-456` unions `entities.image_path` and an `entry_html LIKE`
+  — it does NOT look at `cover_image_path`. A cover image would therefore look
+  unreferenced and fall through to decision 3, which is the whole rule leaking
+  through a missing column. This is not optional and is not a later slice.
+- **The `LIKE` on `entry_html` is a scan.** It is acceptable per-request only
+  behind the cache. If it proves too slow, the answer is an explicit
+  media-to-entity link table, not relaxing the rule.
+- **Someone will lose access to an image they can see today.** That is the
+  point. It is a behaviour change on a live system and belongs in release
+  notes, not in a silent deploy.
+
+### Rejected
+
+- **Adding an `entity_id` to `media_files`.** A single owner is wrong: one
+  file legitimately serves many pages, and a merge makes that common rather
+  than exceptional. A join table is the honest schema and is the fallback if
+  the query cost bites — deliberately not built first, since the rule can ship
+  without a migration.
+- **Relying on unguessable ids.** They are v4 UUIDs from crypto/rand, so
+  enumeration is not viable — but "you cannot guess it" is not an access
+  control, and every leak fixed today was a way of being handed one.
+- **Shortening the TTL alone.** It narrows the window and changes nothing
+  about who may read. Worth doing, not a substitute.

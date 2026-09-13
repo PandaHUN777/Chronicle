@@ -75,38 +75,6 @@ func systemOptionsJSON(opts []SystemOption) string {
 	return string(b)
 }
 
-// pluginHubAddonsJSON serializes addons to JSON for the Alpine.js features tab.
-func pluginHubAddonsJSON(addons []PluginHubAddon) string {
-	type addonJS struct {
-		AddonID     int    `json:"addon_id"`
-		Slug        string `json:"slug"`
-		Name        string `json:"name"`
-		Icon        string `json:"icon"`
-		Category    string `json:"category"`
-		Enabled     bool   `json:"enabled"`
-		Installed   bool   `json:"installed"`
-		Description string `json:"description"`
-	}
-	out := make([]addonJS, len(addons))
-	for i, a := range addons {
-		out[i] = addonJS{
-			AddonID:     a.AddonID,
-			Slug:        a.Slug,
-			Name:        a.Name,
-			Icon:        a.Icon,
-			Category:    a.Category,
-			Enabled:     a.Enabled,
-			Installed:   a.Installed,
-			Description: pluginDescription(a.Slug),
-		}
-	}
-	b, err := json.Marshal(out)
-	if err != nil {
-		return "[]"
-	}
-	return string(b)
-}
-
 // CampaignSettingsPage renders the tabbed campaign settings hub.
 //
 // Tab list is built by the Handler (see settings_tabs.go) and passed
@@ -180,75 +148,6 @@ templ settingsTabButton(t SettingsTab) {
 templ settingsActivityTab(cc *CampaignContext) {
 	<div id="activity-content" hx-get={ fmt.Sprintf("/campaigns/%s/activity/fragment", cc.Campaign.ID) } hx-trigger="intersect once" hx-swap="innerHTML">
 		<div class="text-center py-12 text-fg-muted text-sm"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Loading activity...</div>
-	</div>
-}
-
-// settingsFeaturesTab renders the Features tab: addon toggles with optimistic UI.
-// Toggles fire in the background — the card updates instantly, then confirms with the server.
-templ settingsFeaturesTab(cc *CampaignContext, addons []PluginHubAddon, csrfToken string) {
-	<div class="space-y-4">
-		<p class="text-xs text-fg-secondary">Enable or disable features for this campaign. Disabling does not delete data.</p>
-		<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"
-			x-data={ fmt.Sprintf(`{
-				addons: %s,
-				async toggle(addon) {
-					const action = addon.enabled ? 'disable' : 'enable';
-					addon.enabled = !addon.enabled;
-					try {
-						const form = new FormData();
-						form.append('action', action);
-						form.append('csrf_token', '%s');
-						const res = await fetch('/campaigns/%s/addons/' + addon.addon_id + '/toggle', {
-							method: 'PUT',
-							body: form,
-							credentials: 'same-origin',
-							headers: { 'X-CSRF-Token': Chronicle.getCsrf() }
-						});
-						if (!res.ok) {
-							addon.enabled = !addon.enabled;
-							Chronicle.notify('Failed to ' + action + ' ' + addon.name, 'error');
-						}
-					} catch (e) {
-						addon.enabled = !addon.enabled;
-						Chronicle.notify('Failed to ' + action + ' ' + addon.name, 'error');
-					}
-				}
-			}`, pluginHubAddonsJSON(addons), csrfToken, cc.Campaign.ID) }
-		>
-			<template x-for="addon in addons" :key="addon.slug">
-				<div class="card p-3 flex items-center gap-3 transition-all"
-					:class="addon.enabled ? 'ring-1 ring-accent/30' : 'opacity-70'"
-				>
-					<div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-						:class="addon.enabled ? 'bg-accent/10' : 'bg-surface-alt'"
-					>
-						<i :class="'fa-solid ' + addon.icon + ' text-base ' + (addon.enabled ? 'text-accent' : 'text-fg-muted')"></i>
-					</div>
-					<div class="flex-1 min-w-0">
-						<div class="text-sm font-semibold text-fg" x-text="addon.name"></div>
-						<div class="text-[10px] text-fg-muted" x-text="addon.description"></div>
-					</div>
-					<template x-if="addon.installed">
-						<button
-							type="button"
-							@click="toggle(addon)"
-							class="shrink-0 px-3 py-1 text-xs font-medium rounded-full transition-colors"
-							:class="addon.enabled
-								? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 hover:bg-emerald-200 dark:hover:bg-emerald-900/50'
-								: 'bg-surface-alt text-fg-muted border border-edge hover:bg-accent/10 hover:text-accent'"
-						>
-							<span x-show="addon.enabled"><i class="fa-solid fa-check text-[10px] mr-1"></i>On</span>
-							<span x-show="!addon.enabled"><i class="fa-solid fa-plus text-[10px] mr-1"></i>Off</span>
-						</button>
-					</template>
-					<template x-if="!addon.installed">
-						<span class="shrink-0 px-3 py-1 text-xs font-medium rounded-full bg-surface-alt text-fg-muted border border-edge">
-							Soon
-						</span>
-					</template>
-				</div>
-			</template>
-		</div>
 	</div>
 }
 
@@ -368,19 +267,20 @@ templ settingsGeneralTab(cc *CampaignContext, csrfToken, systemOptionsJSON strin
 					</div>
 				</label>
 				<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-alt cursor-pointer transition-colors">
-					<input type="radio" name="default_vis" value="dm_only" :checked="visibility === 'dm_only'" @change="save('dm_only')" class="accent-accent"/>
+					<input type="radio" name="default_vis" value="dm_only" :checked="visibility === 'dm_only' || visibility === 'private'" @change="save('dm_only')" class="accent-accent"/>
 					<div>
 						<span class="text-sm font-medium text-fg">DM Only</span>
 						<p class="text-xs text-fg-secondary">New entities are hidden from players until explicitly revealed.</p>
 					</div>
 				</label>
-				<label class="flex items-center gap-3 p-2 rounded hover:bg-surface-alt cursor-pointer transition-colors">
-					<input type="radio" name="default_vis" value="private" :checked="visibility === 'private'" @change="save('private')" class="accent-accent"/>
-					<div>
-						<span class="text-sm font-medium text-fg">Private</span>
-						<p class="text-xs text-fg-secondary">New entities are visible only to the creator until permissions are set.</p>
-					</div>
-				</label>
+				// "Private" (creator-only) was removed here — ADR-056. Storage has
+				// exactly one flag (entities.is_private), so it was DM Only under a
+				// second name that promised a creator-only behavior nothing
+				// implemented. A campaign already storing "private" keeps behaving
+				// exactly as it does today (DefaultVisibilityPrivate in model.go
+				// still collapses to is_private=true); only the option to CHOOSE it
+				// is gone. Real creator-only visibility exists per-entity via
+				// "custom" mode with a user-subject grant, for the DM who wants it.
 				<div class="flex items-center gap-2 pt-1">
 					<span x-show="saving" class="text-xs text-fg-muted"><i class="fa-solid fa-spinner fa-spin"></i> Saving...</span>
 					<span x-show="saved" x-transition class="text-xs text-green-600">Saved</span>
@@ -683,7 +583,7 @@ templ settingsPeopleTab(cc *CampaignContext, members []CampaignMember, transfer 
 			}
 		}`, cc.Campaign.ID, cc.Campaign.ID, cc.Campaign.ID) }>
 			<h2 class="text-lg font-semibold text-fg mb-2">Co-DM Access</h2>
-			<p class="text-sm text-fg-secondary mb-4">Make a trusted member a <strong>co-DM</strong>: they can see DM-only content, control the live world-state (advance time, weather, mood), and author secrets — without full ownership (no transfer, delete, member management, or calendar structure editing).</p>
+			<p class="text-sm text-fg-secondary mb-4">Make a trusted member a <strong>co-DM</strong>: they can see DM-only content and author secrets — without full ownership (no transfer, delete, member management, or calendar structure editing).</p>
 			<div x-show="loading" class="text-sm text-fg-muted"><i class="fa-solid fa-spinner fa-spin"></i> Loading members...</div>
 			<div x-show="!loading">
 				<template x-if="members.length === 0">
@@ -871,76 +771,16 @@ func pluginURL(campaignID, slug string) string {
 	}
 }
 
-// pluginDescription returns a short description for each addon.
-func pluginDescription(slug string) string {
-	switch slug {
-	case "calendar":
-		return "Track in-world dates, events, seasons, and eras."
-	case "maps":
-		return "Upload maps, place markers, and link entities to locations."
-	case "timeline":
-		return "Visualize events on interactive timelines with connections."
-	case "sessions":
-		return "Plan game sessions, track attendance, and manage RSVPs."
-	case "notes":
-		return "Personal and shared notes attached to entities."
-	case "attributes":
-		return "Custom fields and stats for entity pages."
-	case "sync-api":
-		return "REST API and Foundry VTT synchronization."
-	default:
-		return "Campaign extension."
-	}
-}
-
-// PluginHubPage renders the unified features page where owners can toggle
-// features on/off and all members can see enabled features with quick access links.
-templ PluginHubPage(cc *CampaignContext, addons []PluginHubAddon, isOwner bool, csrfToken string) {
-	@layouts.App(cc.Campaign.Name + " - Features") {
-		<div class="max-w-3xl mx-auto">
-			<div class="flex items-center justify-between mb-6">
-				<div>
-					<h1 class="text-2xl font-bold text-fg">Features</h1>
-					if isOwner {
-						<p class="text-sm text-fg-muted mt-1">Enable or disable features for this campaign.</p>
-					} else {
-						<p class="text-sm text-fg-muted mt-1">Quick access to all campaign features.</p>
-					}
-				</div>
-				<a href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/edit", cc.Campaign.ID)) } class="btn-secondary text-sm">
-					Back to Settings
-				</a>
-			</div>
-
-			<div
-				id="plugin-hub-list"
-				hx-get={ fmt.Sprintf("/campaigns/%s/plugins/fragment", cc.Campaign.ID) }
-				hx-trigger="plugin-hub-refresh from:body"
-				hx-swap="innerHTML"
-			>
-				@PluginHubListContent(cc, addons, isOwner, csrfToken)
-			</div>
-
-			// Info panel for owners.
-			if isOwner {
-				<div class="card p-6 mt-6">
-					<div class="flex items-start gap-4">
-						<span class="w-10 h-10 rounded-lg bg-accent/10 flex items-center justify-center shrink-0">
-							<i class="fa-solid fa-circle-info text-accent"></i>
-						</span>
-						<div>
-							<h3 class="text-sm font-semibold text-fg mb-1">About Features</h3>
-							<p class="text-sm text-fg-secondary leading-relaxed">
-								Features add optional capabilities to your campaign like calendars, maps, and timelines.
-								Toggle them on or off at any time — disabling does not delete your data.
-							</p>
-						</div>
-					</div>
-				</div>
-			}
-		</div>
-	}
-}
+// pluginDescription and PluginHubPage were removed here (ADR-056 dead-code
+// sweep). Neither had a caller anywhere in the tree (`@PluginHubPage` /
+// `PluginHubPage(` matched zero .templ/.go files, verified before deleting):
+// PluginHub (handler.go) now just redirects to /extensions, and the one
+// per-addon description this file still renders (pluginHubCard, below) reads
+// PluginHubAddon.Description — sourced from the addons service's single
+// builtinAddons copy — instead of a second hand-maintained switch statement.
+// PluginHubListContent/pluginHubCard themselves are NOT dead: PluginHubFragment
+// (handler.go) still calls PluginHubListContent and is wired to a live route
+// (GET /campaigns/:id/plugins/fragment, routes.go) — kept as-is.
 
 // PluginHubListContent renders the addon list (for HTMX partial swaps after toggling).
 templ PluginHubListContent(cc *CampaignContext, addons []PluginHubAddon, isOwner bool, csrfToken string) {
@@ -1013,7 +853,7 @@ templ pluginHubCard(cc *CampaignContext, addon PluginHubAddon, isOwner bool, csr
 			} else {
 				<div class="font-semibold text-fg">{ addon.Name }</div>
 			}
-			<p class="text-xs text-fg-muted mt-0.5">{ pluginDescription(addon.Slug) }</p>
+			<p class="text-xs text-fg-muted mt-0.5">{ addon.Description }</p>
 		</div>
 		// Toggle button for owners; "Coming Soon" badge for uninstalled addons.
 		if isOwner {

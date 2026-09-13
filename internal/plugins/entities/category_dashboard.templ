@@ -238,7 +238,7 @@ templ defaultCategoryDashboard(cc *campaigns.CampaignContext, et *EntityType, en
 									<th class="text-left px-4 py-2.5 text-xs font-semibold text-fg-secondary uppercase tracking-wider hidden sm:table-cell">Type</th>
 									<th class="text-left px-4 py-2.5 text-xs font-semibold text-fg-secondary uppercase tracking-wider hidden md:table-cell">Tags</th>
 									<th class="text-left px-4 py-2.5 text-xs font-semibold text-fg-secondary uppercase tracking-wider hidden lg:table-cell">Updated</th>
-									if cc.MemberRole >= campaigns.RoleScribe {
+									if visibilityGlanceVisible(cc) {
 										<th class="text-center px-4 py-2.5 text-xs font-semibold text-fg-secondary uppercase tracking-wider w-16">
 											<i class="fa-solid fa-lock text-[10px]" title="Visibility"></i>
 										</th>
@@ -379,17 +379,9 @@ templ EntityTableRow(entity *Entity, cc *campaigns.CampaignContext) {
 				{ relativeTime(entity.UpdatedAt) }
 			</span>
 		</td>
-		if cc.MemberRole >= campaigns.RoleScribe {
+		if visibilityGlanceVisible(cc) {
 			<td class="px-4 py-2.5 text-center">
-				if entity.Visibility == VisibilityCustom {
-					<span title="Custom permissions" style="color: #0d9488;">
-						<i class="fa-solid fa-shield-halved text-[10px]"></i>
-					</span>
-				} else if entity.IsPrivate {
-					<span class="text-amber-500 dark:text-amber-400" title="Private (DM only)">
-						<i class="fa-solid fa-lock text-[10px]"></i>
-					</span>
-				}
+				@visibilityGlance(cc, entity, nil)
 			</td>
 		}
 	</tr>
@@ -485,11 +477,7 @@ templ entityTreeLevel(cc *campaigns.CampaignContext, nodes []EntityTreeNode, dep
 							<span class="text-xs text-fg-muted hidden sm:inline">{ *node.Entity.TypeLabel }</span>
 						}
 
-						if node.Entity.Visibility == VisibilityCustom {
-							<i class="fa-solid fa-shield-halved text-[10px] ml-auto shrink-0" title="Custom permissions" style="color: #0d9488;"></i>
-						} else if node.Entity.IsPrivate {
-							<i class="fa-solid fa-lock text-[10px] text-fg-muted ml-auto shrink-0" title="Private"></i>
-						}
+						@visibilityGlance(cc, &node.Entity, nil)
 
 						if len(node.Children) > 0 {
 							<span class="text-[10px] text-fg-muted ml-auto">{ fmt.Sprintf("%d", len(node.Children)) }</span>

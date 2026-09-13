@@ -561,7 +561,7 @@
         // silence.
         self.answered = true; self.showAnsweredBanner();
       }
-      else { r.json().then(function (j) { status.textContent = (j && j.error) || 'Save failed.'; }).catch(function () { status.textContent = 'Save failed.'; }); }
+      else { r.json().then(function (j) { status.textContent = (j && (j.message || j.error)) || 'Save failed.'; }).catch(function () { status.textContent = 'Save failed.'; }); }
     }).catch(function () { btn.disabled = false; status.textContent = 'Save failed.'; });
   };
 
@@ -1070,7 +1070,7 @@
       method: 'POST',
       body: { title: title, tz: this.tz, options: this.selectedSlots }
     }).then(function (r) {
-      return r.ok ? r.json() : r.json().then(function (j) { throw new Error((j && j.error) || 'Failed'); });
+      return r.ok ? r.json() : r.json().then(function (j) { throw new Error((j && (j.message || j.error)) || 'Failed'); });
     }).then(function (res) {
       self.selectedSlots = [];
       self.building = false;
@@ -1294,7 +1294,7 @@
         var editor = $('[data-exc-editor]', self.root); if (editor) editor.innerHTML = '';
         self.loadExceptions();
       } else {
-        r.json().then(function (j) { if (st) st.textContent = (j && j.error) || 'Save failed.'; }).catch(function () { if (st) st.textContent = 'Save failed.'; });
+        r.json().then(function (j) { if (st) st.textContent = (j && (j.message || j.error)) || 'Save failed.'; }).catch(function () { if (st) st.textContent = 'Save failed.'; });
       }
     }).catch(function () { if (btn) btn.disabled = false; if (st) st.textContent = 'Save failed.'; });
   };
@@ -1418,7 +1418,7 @@
             body: { onDate: d, tz: self.tz, blocks: [{ startMinute: 0, endMinute: 1440, state: 'unavailable' }] }
           }).then(function (r) {
             if (!r.ok) {
-              r.json().then(function (j) { afterWrites((j && j.error) || 'Save failed.'); })
+              r.json().then(function (j) { afterWrites((j && (j.message || j.error)) || 'Save failed.'); })
                 .catch(function () { afterWrites('Save failed.'); });
               return;
             }

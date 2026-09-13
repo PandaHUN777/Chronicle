@@ -10,7 +10,7 @@ import (
 // per-user exception count.
 
 func TestAddMyException_DateBound(t *testing.T) {
-	svc := NewSessionService(&mockSessionRepo{}, nil)
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
 	farFuture := time.Now().UTC().AddDate(0, 0, exceptionDateWindowDays+30).Format("2006-01-02")
 	err := svc.AddMyException(context.Background(), "c1", "u1", AddExceptionRequest{
 		OnDate: farFuture, StartMinute: 60, EndMinute: 120, State: AvailUnavailable, TZ: "UTC",
@@ -24,7 +24,7 @@ func TestAddMyException_PerUserCap(t *testing.T) {
 	repo := &mockSessionRepo{countUserExceptionsFn: func(_ context.Context, _, _ string) (int, error) {
 		return maxExceptionsPerUser, nil // already at the ceiling
 	}}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	err := svc.AddMyException(context.Background(), "c1", "u1", AddExceptionRequest{
 		OnDate: time.Now().UTC().Format("2006-01-02"), StartMinute: 60, EndMinute: 120, State: AvailAvailable, TZ: "UTC",
 	})
@@ -45,7 +45,7 @@ func TestReplaceMyDayExceptions_ForwardsComposedDay(t *testing.T) {
 			return nil
 		},
 	}
-	svc := NewSessionService(repo, nil)
+	svc := NewSessionService(repo, nil, nil)
 	// A one-hour busy mark (19–20) composed as the rest of the evening staying
 	// available (18–19, 20–23) — the whole day is re-sent, not just the hole.
 	err := svc.ReplaceMyDayExceptions(context.Background(), "c1", "u1", ReplaceDayExceptionsRequest{
@@ -65,7 +65,7 @@ func TestReplaceMyDayExceptions_ForwardsComposedDay(t *testing.T) {
 }
 
 func TestReplaceMyDayExceptions_PerDayBlockCap(t *testing.T) {
-	svc := NewSessionService(&mockSessionRepo{}, nil)
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
 	blocks := make([]ExceptionBlockDTO, maxExceptionBlocksPerDay+1)
 	for i := range blocks {
 		blocks[i] = ExceptionBlockDTO{StartMinute: 0, EndMinute: 30, State: AvailAvailable}

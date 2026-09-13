@@ -699,7 +699,7 @@ templ MapEditorBody(cc *campaigns.CampaignContext, data MapViewData, mapContaine
 				var imgH = parseInt(document.getElementById('ms-image-height').value) || 0;
 
 				var body = { name: name, image_width: imgW, image_height: imgH };
-				if (desc) body.description = desc;
+				body.description = desc || null;  // absent = preserve; null = clear (partial-update contract)
 				if (imgID) body.image_id = imgID;
 
 				// Background color tri-state: omit the field entirely if

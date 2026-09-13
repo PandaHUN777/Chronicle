@@ -18,17 +18,17 @@ const (
 
 // Map sync messages.
 const (
-	MsgMapUpdated       MessageType = "map.updated"
-	MsgDrawingCreated   MessageType = "drawing.created"
-	MsgDrawingUpdated   MessageType = "drawing.updated"
-	MsgDrawingDeleted   MessageType = "drawing.deleted"
-	MsgTokenCreated     MessageType = "token.created"
-	MsgTokenMoved       MessageType = "token.moved"
-	MsgTokenUpdated     MessageType = "token.updated"
-	MsgTokenDeleted     MessageType = "token.deleted"
-	MsgMarkerCreated    MessageType = "marker.created"
-	MsgMarkerUpdated    MessageType = "marker.updated"
-	MsgMarkerDeleted    MessageType = "marker.deleted"
+	MsgMapUpdated     MessageType = "map.updated"
+	MsgDrawingCreated MessageType = "drawing.created"
+	MsgDrawingUpdated MessageType = "drawing.updated"
+	MsgDrawingDeleted MessageType = "drawing.deleted"
+	MsgTokenCreated   MessageType = "token.created"
+	MsgTokenMoved     MessageType = "token.moved"
+	MsgTokenUpdated   MessageType = "token.updated"
+	MsgTokenDeleted   MessageType = "token.deleted"
+	MsgMarkerCreated  MessageType = "marker.created"
+	MsgMarkerUpdated  MessageType = "marker.updated"
+	MsgMarkerDeleted  MessageType = "marker.deleted"
 	// Fog and layer messages split into per-lifecycle types so clients
 	// can discriminate create / update / delete without re-fetching the
 	// full sub-resource list. The original MsgFogUpdated / MsgLayerUpdated
@@ -102,47 +102,47 @@ const (
 
 // validMessageTypes is the set of known message types, used for validation.
 var validMessageTypes = map[MessageType]struct{}{
-	MsgEntityCreated:        {},
-	MsgEntityUpdated:        {},
-	MsgEntityDeleted:        {},
-	MsgMapUpdated:           {},
-	MsgDrawingCreated:       {},
-	MsgDrawingUpdated:       {},
-	MsgDrawingDeleted:       {},
-	MsgTokenCreated:         {},
-	MsgTokenMoved:           {},
-	MsgTokenUpdated:         {},
-	MsgTokenDeleted:         {},
-	MsgMarkerCreated:        {},
-	MsgMarkerUpdated:        {},
-	MsgMarkerDeleted:        {},
-	MsgFogCreated:   {},
-	MsgFogUpdated:   {},
-	MsgFogDeleted:   {},
-	MsgLayerCreated: {},
-	MsgLayerUpdated: {},
-	MsgLayerDeleted: {},
-	MsgCalendarEventCreated: {},
-	MsgCalendarEventUpdated: {},
-	MsgCalendarEventDeleted: {},
+	MsgEntityCreated:            {},
+	MsgEntityUpdated:            {},
+	MsgEntityDeleted:            {},
+	MsgMapUpdated:               {},
+	MsgDrawingCreated:           {},
+	MsgDrawingUpdated:           {},
+	MsgDrawingDeleted:           {},
+	MsgTokenCreated:             {},
+	MsgTokenMoved:               {},
+	MsgTokenUpdated:             {},
+	MsgTokenDeleted:             {},
+	MsgMarkerCreated:            {},
+	MsgMarkerUpdated:            {},
+	MsgMarkerDeleted:            {},
+	MsgFogCreated:               {},
+	MsgFogUpdated:               {},
+	MsgFogDeleted:               {},
+	MsgLayerCreated:             {},
+	MsgLayerUpdated:             {},
+	MsgLayerDeleted:             {},
+	MsgCalendarEventCreated:     {},
+	MsgCalendarEventUpdated:     {},
+	MsgCalendarEventDeleted:     {},
 	MsgCalendarDateAdvanced:     {},
 	MsgCalendarSeasonChanged:    {},
 	MsgCalendarMoonPhaseChanged: {},
 	MsgCalendarWeatherChanged:   {},
 	MsgCalendarStructureUpdated: {},
 	MsgCalendarEraChanged:       {},
-	MsgEntityTypeCreated:    {},
-	MsgEntityTypeUpdated:    {},
-	MsgEntityTypeDeleted:    {},
-	MsgNoteCreated:          {},
-	MsgNoteUpdated:          {},
-	MsgNoteDeleted:          {},
-	MsgEntityNoteCreated:    {},
-	MsgEntityNoteUpdated:    {},
-	MsgEntityNoteDeleted:    {},
-	MsgSyncStatus:           {},
-	MsgSyncError:            {},
-	MsgSyncConflict:         {},
+	MsgEntityTypeCreated:        {},
+	MsgEntityTypeUpdated:        {},
+	MsgEntityTypeDeleted:        {},
+	MsgNoteCreated:              {},
+	MsgNoteUpdated:              {},
+	MsgNoteDeleted:              {},
+	MsgEntityNoteCreated:        {},
+	MsgEntityNoteUpdated:        {},
+	MsgEntityNoteDeleted:        {},
+	MsgSyncStatus:               {},
+	MsgSyncError:                {},
+	MsgSyncConflict:             {},
 }
 
 // IsValidMessageType reports whether the given message type is known.
@@ -154,10 +154,10 @@ func IsValidMessageType(t MessageType) bool {
 // Message is the envelope for all WebSocket communication.
 // Clients and servers exchange these JSON messages over the WS connection.
 type Message struct {
-	Type       MessageType    `json:"type"`
-	CampaignID string         `json:"campaignId"`
-	ResourceID string         `json:"resourceId,omitempty"` // ID of the affected resource.
-	SenderID   string         `json:"senderId,omitempty"`   // Connection ID of sender (for echo suppression).
+	Type       MessageType     `json:"type"`
+	CampaignID string          `json:"campaignId"`
+	ResourceID string          `json:"resourceId,omitempty"` // ID of the affected resource.
+	SenderID   string          `json:"senderId,omitempty"`   // Connection ID of sender (for echo suppression).
 	Payload    json.RawMessage `json:"payload,omitempty"`    // Type-specific data.
 
 	// RequiresDM marks a message that must only be delivered to clients
@@ -169,6 +169,25 @@ type Message struct {
 	// see hub.go. JSON-omitted by default so existing payloads are
 	// unaffected for non-sensitive events.
 	RequiresDM bool `json:"requiresDm,omitempty"`
+
+	// AllowedUsers and DeniedUsers narrow a message's audience beyond the
+	// binary RequiresDM gate: the per-user visibility_rules a map marker
+	// or drawing can carry (S1, ADR-055 rule 3 applied to this channel).
+	// A "specific" visibility marker isn't dm_only — RequiresDM is false
+	// for it — but it must still only reach the users its rules admit.
+	//
+	// Populated by the emitter that holds the source row (see routes.go's
+	// mapEventPublisherAdapter, which parses maps.Marker/Drawing's
+	// VisibilityRules), consumed only by the hub's broadcast loop
+	// (hub.go), which drops the message per-recipient the same way it
+	// does for RequiresDM. `json:"-"`: this is server-side audience
+	// metadata, never client-facing payload — echoing back exactly which
+	// user IDs are denied would itself be evidence that hidden content
+	// exists, which is the thing rule 3 forbids. A recipient outside the
+	// audience gets nothing for this event: no message, not a redacted
+	// stub.
+	AllowedUsers []string `json:"-"`
+	DeniedUsers  []string `json:"-"`
 }
 
 // Encode serializes a Message to JSON bytes.

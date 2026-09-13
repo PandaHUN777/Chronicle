@@ -63,16 +63,16 @@ type CalendarEra struct {
 // CalendarEventRef is a lightweight reference to a calendar event used in the
 // event picker when linking events to a timeline.
 type CalendarEventRef struct {
-	ID          string  `json:"id"`
-	Name        string  `json:"name"`
-	Year        int     `json:"year"`
-	Month       int     `json:"month"`
-	Day         int     `json:"day"`
-	Category    *string `json:"category,omitempty"`
-	Visibility  string  `json:"visibility"`
-	EntityID    *string `json:"entity_id,omitempty"`
-	EntityName  string  `json:"entity_name,omitempty"`
-	EntityIcon  string  `json:"entity_icon,omitempty"`
+	ID         string  `json:"id"`
+	Name       string  `json:"name"`
+	Year       int     `json:"year"`
+	Month      int     `json:"month"`
+	Day        int     `json:"day"`
+	Category   *string `json:"category,omitempty"`
+	Visibility string  `json:"visibility"`
+	EntityID   *string `json:"entity_id,omitempty"`
+	EntityName string  `json:"entity_name,omitempty"`
+	EntityIcon string  `json:"entity_icon,omitempty"`
 }
 
 // TimelineService defines business logic for the timeline plugin.
@@ -80,6 +80,17 @@ type TimelineService interface {
 	// Timeline CRUD.
 	CreateTimeline(ctx context.Context, campaignID string, input CreateTimelineInput) (*Timeline, error)
 	GetTimeline(ctx context.Context, timelineID string) (*Timeline, error)
+	// GetTimelineForViewer is GetTimeline's viewer-aware sibling: it returns
+	// NotFound (never the timeline) unless the timeline both belongs to
+	// campaignID (the existing cross-campaign IDOR guard) AND is visible to
+	// v under the SAME role + per-user rules ListTimelines applies
+	// (timelineVisibleToViewer — one predicate, not a second copy; ADR-058).
+	// Use this, not GetTimeline, on any route a viewer weaker than Owner can
+	// reach (2026-09-12 audit finding 4: Show, TimelineDataAPI and
+	// EmbedTimeline used GetTimeline via requireTimelineInCampaign alone,
+	// which checks campaign scope only, so a public campaign served a
+	// dm_only timeline in full to a viewer with no account).
+	GetTimelineForViewer(ctx context.Context, timelineID, campaignID string, v permissions.Viewer) (*Timeline, error)
 	// ListTimelines / ListTimelinesForCalendar / ListTimelineEvents take a
 	// permissions.Viewer rather than (role, userID): "no authenticated user" and
 	// "trusted system caller" used to share the empty-string user id, so an
@@ -120,8 +131,12 @@ type TimelineService interface {
 	DeleteConnection(ctx context.Context, timelineID string, connectionID int) error
 	ListConnections(ctx context.Context, timelineID string) ([]EventConnection, error)
 
-	// Search.
-	SearchTimelines(ctx context.Context, campaignID, query string, role int) ([]map[string]string, error)
+	// Search. Takes userID alongside role (matching entities' own
+	// Search(role, userID, ...) convention) so the per-user visibility layer
+	// below can build the same permissions.Viewer ListTimelines builds — see
+	// SearchTimelines' doc comment for why role alone used to be enough to
+	// leak a restricted timeline's NAME (2026-09-12 audit finding 4 follow-up).
+	SearchTimelines(ctx context.Context, campaignID, query string, role int, userID string) ([]map[string]string, error)
 
 	// Calendar lookup.
 	ListCalendars(ctx context.Context, campaignID string) ([]CalendarRef, error)
@@ -224,6 +239,32 @@ func (s *timelineService) GetTimeline(ctx context.Context, timelineID string) (*
 	return t, nil
 }
 
+// GetTimelineForViewer returns a timeline only if it belongs to campaignID
+// and v may see it. Both failure modes — wrong campaign, and right campaign
+// but hidden from this viewer — return the SAME NotFound: a Forbidden would
+// tell an anonymous prober that a dm_only (or per-user-restricted) timeline
+// exists at this id merely by asking, which is the existence-oracle problem
+// ADR-055 rule 3 forbids in a body leak and forbids here too.
+//
+// This is GetTimeline plus the campaign-scope check plus the visibility
+// check ListTimelines already applies via filterTimelinesByUser/
+// timelineVisibleToViewer — reusing that one predicate rather than
+// re-deriving it here is the fix for 2026-09-12 audit finding 4: Show,
+// TimelineDataAPI and EmbedTimeline used to reach the timeline through
+// requireTimelineInCampaign (campaign scope only) with no visibility check
+// at all, so a public campaign served a dm_only timeline in full to a viewer
+// with no account.
+func (s *timelineService) GetTimelineForViewer(ctx context.Context, timelineID, campaignID string, v permissions.Viewer) (*Timeline, error) {
+	t, err := s.repo.GetByID(ctx, timelineID)
+	if err != nil {
+		return nil, fmt.Errorf("get timeline: %w", err)
+	}
+	if t == nil || t.GetCampaignID() != campaignID || !timelineVisibleToViewer(*t, v) {
+		return nil, apperror.NewNotFound("timeline not found")
+	}
+	return t, nil
+}
+
 // ListTimelines returns all timelines for a campaign, filtered by role-based
 // visibility and per-user visibility rules.
 func (s *timelineService) ListTimelines(ctx context.Context, campaignID string, v permissions.Viewer) ([]Timeline, error) {
@@ -247,16 +288,34 @@ func (s *timelineService) ListTimelines(ctx context.Context, campaignID string, 
 // mutated and must not be read again — the calendar's filterEventsByUser
 // contract, verbatim.
 func filterTimelinesByUser(timelines []Timeline, v permissions.Viewer) []Timeline {
-	if v.SkipsPerUserRules() {
-		return timelines
-	}
 	filtered := timelines[:0]
 	for _, t := range timelines {
-		if canUserView(t.Visibility, t.VisibilityRules, v.Role(), v.UserID()) {
+		if timelineVisibleToViewer(t, v) {
 			filtered = append(filtered, t)
 		}
 	}
 	return filtered
+}
+
+// timelineVisibleToViewer is the ONE predicate behind every timeline
+// visibility decision in this package: filterTimelinesByUser's per-row
+// filter (List/ListTimelinesForCalendar/SearchTimelines) and
+// GetTimelineForViewer's single-item lookup (Show/TimelineDataAPI/
+// EmbedTimeline) both call it, so those paths cannot drift out of step the
+// way List and Show did before the 2026-09-12 audit (finding 4) — see
+// ADR-058, and internal/app/map_audience_parity_test.go for the parity-test
+// precedent this mirrors rather than re-derives.
+//
+// Owners/co-DMs and declared SYSTEM callers bypass the per-user layer
+// entirely (SkipsPerUserRules). Everyone else — including an ANONYMOUS
+// viewer, whose empty user id must never be read as the system caller's
+// trust (C-AUTHZ-EMPTY-USERID / ADR-049) — goes through canUserView's role +
+// allow/deny-list checks.
+func timelineVisibleToViewer(t Timeline, v permissions.Viewer) bool {
+	if v.SkipsPerUserRules() {
+		return true
+	}
+	return canUserView(t.Visibility, t.VisibilityRules, v.Role(), v.UserID())
 }
 
 // ListTimelinesForCalendar returns the timelines bound to a calendar,
@@ -282,36 +341,48 @@ func (s *timelineService) UpdateTimeline(ctx context.Context, timelineID string,
 		return apperror.NewNotFound("timeline not found")
 	}
 
-	if input.Name == "" {
+	// Load-merge-write (sweep R4 / ADR-054 #2). `t` is the row as stored, so
+	// every merge below defaults to the stored value: only a key the caller
+	// actually sent can change anything. Name is the one exception, matching
+	// pre-existing behavior: it stays REQUIRED on every call (fails loudly
+	// with 400 when blank) rather than falling back to the stored value —
+	// see the input's doc comment.
+	name := input.Name
+	if name == "" {
 		return apperror.NewValidation("timeline name is required")
 	}
-	if len(input.Name) > 255 {
+	if len(name) > 255 {
 		return apperror.NewValidation("timeline name must be 255 characters or less")
 	}
-	if input.Visibility != "everyone" && input.Visibility != "dm_only" {
+	visibility := input.Visibility.Val(t.Visibility)
+	if visibility != "everyone" && visibility != "dm_only" {
 		return apperror.NewValidation("visibility must be 'everyone' or 'dm_only'")
 	}
-	if !IsValidZoom(input.ZoomDefault) {
+	zoom := input.ZoomDefault.Val(t.ZoomDefault)
+	if !IsValidZoom(zoom) {
 		return apperror.NewValidation("invalid zoom default level")
 	}
-	if input.Icon != "" && !iconPattern.MatchString(input.Icon) {
+	icon := input.Icon.Val(t.Icon)
+	if icon != "" && !iconPattern.MatchString(icon) {
 		return apperror.NewValidation("icon must be a valid FontAwesome class name")
 	}
-	if input.Color != "" && !colorPattern.MatchString(input.Color) {
+	color := input.Color.Val(t.Color)
+	if color != "" && !colorPattern.MatchString(color) {
 		return apperror.NewValidation("color must be a valid hex color")
 	}
-	if err := validateVisibilityRules(input.VisibilityRules); err != nil {
+	visRules := input.VisibilityRules.Ptr(t.VisibilityRules)
+	if err := validateVisibilityRules(visRules); err != nil {
 		return err
 	}
 
-	t.Name = input.Name
-	t.Description = input.Description
-	t.DescriptionHTML = input.DescriptionHTML
-	t.Color = input.Color
-	t.Icon = input.Icon
-	t.Visibility = input.Visibility
-	t.VisibilityRules = input.VisibilityRules
-	t.ZoomDefault = input.ZoomDefault
+	t.Name = name
+	t.Description = input.Description.Ptr(t.Description)
+	t.DescriptionHTML = input.DescriptionHTML.Ptr(t.DescriptionHTML)
+	t.Color = color
+	t.Icon = icon
+	t.Visibility = visibility
+	t.VisibilityRules = visRules
+	t.ZoomDefault = zoom
 
 	if err := s.repo.Update(ctx, t); err != nil {
 		return fmt.Errorf("update timeline: %w", err)
@@ -361,10 +432,10 @@ func (s *timelineService) LinkEvent(ctx context.Context, timelineID, eventID str
 	}
 
 	link := &EventLink{
-		TimelineID:   timelineID,
-		EventID:      eventID,
-		DisplayOrder: count,
-		Label:        input.Label,
+		TimelineID:    timelineID,
+		EventID:       eventID,
+		DisplayOrder:  count,
+		Label:         input.Label,
 		ColorOverride: input.ColorOverride,
 	}
 
@@ -782,11 +853,23 @@ func (s *timelineService) RemoveGroupMember(ctx context.Context, timelineID stri
 
 // SearchTimelines returns timelines matching a query as map results for the @mention system.
 // Results are formatted to match the entity search JSON format used by editor_mention.js.
-func (s *timelineService) SearchTimelines(ctx context.Context, campaignID, query string, role int) ([]map[string]string, error) {
+//
+// repo.Search only narrows by the SQL-expressible half of visibility
+// (`t.visibility = 'everyone'` unless the role can see dm_only — the same
+// fragment List's SQL applies, documented on timelineRepo.List). It cannot
+// express the per-user visibility_rules allow/deny list, which is why List
+// runs its results through filterTimelinesByUser afterward — Search used to
+// skip that second step entirely, so a timeline restricted to specific users
+// could still be NAMED to a viewer the allow-list excludes, anonymous
+// included (2026-09-12 audit finding 4 follow-up). Applying the identical
+// filterTimelinesByUser/timelineVisibleToViewer call List already uses, not
+// a second copy of the predicate, is the fix (ADR-058).
+func (s *timelineService) SearchTimelines(ctx context.Context, campaignID, query string, role int, userID string) ([]map[string]string, error) {
 	timelines, err := s.repo.Search(ctx, campaignID, query, role)
 	if err != nil {
 		return nil, fmt.Errorf("search timelines: %w", err)
 	}
+	timelines = filterTimelinesByUser(timelines, permissions.RequestViewer(role, userID))
 
 	results := make([]map[string]string, 0, len(timelines))
 	for _, t := range timelines {
