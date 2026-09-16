@@ -7,6 +7,19 @@
 
 ## Booked 2026-09-12 from the operator's answers (read before the sections below)
 
+- **BOOKED 2026-09-16 under ADR-059 (Chronicle stays separate from Grimoire).**
+  Two features to reimplement, in this order, after the leak fixes: **OIDC
+  login** (Chronicle has none; it is both a standalone gap and the seam that
+  makes Chronicle and a side-by-side grimoire feel like one suite — a real
+  build slice, not a config flag: auth plugin, session mapping, user
+  provisioning) and **guest invite codes** (code-only accounts scoped to one
+  campaign, no password, convertible to a full user, mergeable; today
+  Chronicle's "guest" means only "not logged in"). Also worth a slice each,
+  lower: a per-user revocable `.ics` session feed; a **player-safe export**
+  (`campaigns/export.go` is Owner-only and serialises visibility fields
+  without filtering by viewer); LegendKeeper import. Ranked list and the
+  reasons in ADR-059.
+
 - **RULED 2026-09-13 by the operator: YES, a co-DM may BUY, not just see.**
   Asked directly ("should a co-DM also be able to make purchases on a player's
   behalf?"), answered yes. This is a deliberate widening and it crosses a line
