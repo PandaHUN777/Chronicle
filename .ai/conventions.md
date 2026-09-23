@@ -546,6 +546,32 @@ work — coordinator updates the dispatch + audit citations.
 | Sanitize-on-write invariant | `internal/sanitize/invariant_test.go` + `internal/sanitize/sanitize_invariant_snapshot.txt` | **FAIL** (snapshot + invariant) | T-B1 + security-audit §3 G-C4: every `internal/plugins/*/service.go` (+ widgets) that declares HTML-typed inputs MUST call `sanitize.HTML` somewhere in the file. The snapshot pins the per-file inventory of HTML signals + sanitize-call counts; the invariant test fails outright if any file declares HTML inputs with zero sanitize calls. |
 | Decision-citations | `tools/check-decision-citations.sh` | **WARN** (always exit 0) | T-O3 + meta-audit Phase 2: every `cordinator/decisions/*.md` is referenced from at least one piece of code, dispatch, report, or other decision |
 
+### Pre-merge rules that no guard checks
+
+Each of these came from a production incident. Check them by hand in review.
+
+1. **Fragment consumer trace.** A PR that adds an `hx-get` fragment endpoint
+   lists every consumer (each templ file or fetch call that embeds it). A PR
+   that deletes one shows every consumer was moved to something else. Once, a
+   fragment endpoint was replaced while `campaigns/settings.templ` still
+   pointed at the old URL, and owners couldn't load their settings page.
+2. **On-disk artifact trace.** A PR that changes how a URL is served checks that
+   files already on disk (extracted zips, cached files, generated manifests)
+   carry the new URL too. Rewriting the Foundry manifest at serve time wasn't
+   enough, because Foundry reads the installed `module.json` from disk, so
+   update checks kept going back to GitHub.
+3. **Click handlers inside HTMX fragments** use the inline-IIFE `onclick`
+   pattern (Go-side builders like `foundry_vtt/onclick_handlers.go`), never
+   `templ script` helpers or delegated `document.addEventListener`. A templ
+   script is emitted as a sibling `<script>` tag, and browsers don't reliably
+   run swapped-in scripts before the button can be clicked: production threw
+   `__templ_X is not defined` across four PRs. `onclick_handlers_test.go`
+   enforces this for `foundry_vtt` only.
+
+(The fourth rule from the same incidents, keeping `foundry_vtt/errors.go`, its
+`.ai.md` catalog table and `error-catalog.json` in step, is enforced by
+`foundry_vtt/errors_test.go`.)
+
 ### Extending the wire-contract snapshot
 
 When a PR intentionally adds, removes, or changes Echo routes:
