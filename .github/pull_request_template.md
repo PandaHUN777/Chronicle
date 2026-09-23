@@ -1,4 +1,4 @@
-**Cites:** <e.g., 2026-05-21-core-tenets §T-B2, §T-O2; reports/chronicle/2026-05-21-c-hygiene-audit.md §0.5 D3>
+**Fixes:** #<issue> (one line per issue; "none" for a trivial change)
 **Security implication:** <one line; can be "none — pure refactor / CSS / docs">
 **Consumer-verified:** <file:line citation if this PR specifies a wire surface; "n/a" otherwise>
 **Mockup:** <path/to/mockups/file.html if UI-touching; "n/a" otherwise>
@@ -9,7 +9,7 @@
 
 ## Why
 
-<Cite the tenet, audit finding, or decision that motivated this work. Link to the binding doc.>
+<Link the issue. Cite an ADR or a tenet if one decided the approach.>
 
 ## Test plan
 

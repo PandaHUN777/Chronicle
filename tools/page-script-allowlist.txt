@@ -22,7 +22,7 @@
 #   layouts.SetPluginBodyScripts) lands, and it is the place a page-side script
 #   should MOVE to rather than a place to add one.
 #
-# The sweep of everything below is booked as C-HTMX-SCRIPT-SWEEP in .ai/todo.md.
+# The sweep of everything below is tracked in issue #616 (C-HTMX-SCRIPT-SWEEP).
 # Each line is a surface that may be silently dead on boosted navigation today;
 # whether it actually is depends on whether the file renders inside
 # #main-content and whether its module re-inits on htmx:afterSettle. Neither is

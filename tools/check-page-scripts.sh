@@ -29,7 +29,7 @@
 # tools/page-script-allowlist.txt are all broken — whether a given one is
 # depends on where its templ renders and whether its module re-inits on
 # htmx:afterSettle. It claims only that the count may never grow. The sweep of
-# the survivors is booked as C-HTMX-SCRIPT-SWEEP in .ai/todo.md.
+# the survivors is tracked in issue #616 (C-HTMX-SCRIPT-SWEEP).
 #
 # WHOLE-TREE, NOT DIFF-SCOPED, and deliberately so. The sibling guards
 # (check-plugin-isolation.sh, check-v2-motion-discipline.sh) scope to the PR diff
@@ -298,5 +298,5 @@ echo "the registry mounts on every page."
 echo
 echo "If you are FIXING a survivor rather than adding one, lower or delete its"
 echo "line in ${ALLOWLIST} — that is the ratchet turning, and it is welcome."
-echo "The remaining survivors are booked as C-HTMX-SCRIPT-SWEEP in .ai/todo.md."
+echo "The remaining survivors are tracked in issue #616 (C-HTMX-SCRIPT-SWEEP)."
 exit 1

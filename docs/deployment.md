@@ -244,6 +244,31 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 # or: make docker-all-local
 ```
 
+### One-way migrations: the calendar clean slate
+
+Three plugin migrations, shipped with the calendar rebuild (PR #595), delete
+the old calendar's data: `calendar/019_calv5_clean_slate`,
+`timeline/002_calv5_clear_calendar_links` and
+`sessions/006_calv5_clear_availability`. **Their down files are deliberately
+empty.** Once they have run, that data comes back only from a backup.
+
+Before the first upgrade that includes them:
+
+1. Take a backup yourself (`make backup`), even though the next step also takes one.
+2. Set `BACKUP_REQUIRED=1`. The pre-migration snapshot then becomes mandatory.
+   Pending plugin migrations trigger it too, not only core ones.
+3. Deploy only a build at or after commit `1bda7d6`. An earlier build
+   (`bfcaf24`) had a version of `019` that dropped tables other plugins still
+   point at. A database that ever booted that build has recorded version 19 and
+   will never run the corrected text.
+4. Watch the boot log for `019`, `002` and `006`, then confirm the version with
+   step 5 above.
+
+Rolling back to an older image afterwards still boots (ADR-045, §7), but the
+calendar data stays gone. To get it back, restore the
+`chronicle_pre_migrate_db_<timestamp>.sql.gz` snapshot taken on that boot
+(§9).
+
 ### Which image is actually running?
 
 Ask the process first — it is the only thing that can testify about itself:

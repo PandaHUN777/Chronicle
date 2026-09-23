@@ -7,6 +7,12 @@
 <!-- Update: After every migration is written or applied.                     -->
 <!-- ====================================================================== -->
 
+> **Incomplete and partly out of date.** 38 of the 87 live tables are missing,
+> and some calendar tables described here were emptied or dropped by
+> `calendar/019_calv5_clean_slate`. The migrations (`db/migrations/` and each
+> plugin's `migrations/`) are the source of truth. Rebuilding this file is
+> tracked in #742.
+
 ## Entity Relationship Overview
 
 ```

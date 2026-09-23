@@ -1,87 +1,75 @@
 # AI Documentation Index
 
-<!-- ====================================================================== -->
-<!-- Category: Semi-static                                                    -->
-<!-- Purpose: Map of all AI documentation files. An AI reads this to know     -->
-<!--          which file to consult for a given question.                     -->
-<!-- Update: When a doc file is added, removed, or its purpose changes.       -->
-<!-- ====================================================================== -->
+Context for AI sessions working on Chronicle. Start at the root `CLAUDE.md`;
+this page maps the rest.
 
-This directory contains all context files for AI coding assistants working on Chronicle. These files exist so any AI session can pick up work without re-reading every source file in the project.
+**Open work is not in these files.** It lives in GitHub Issues (see "Where
+things live" in `CLAUDE.md`). The files here describe how the system works now,
+in the present tense. Edit one when the behavior it describes changes, and
+never append dated entries or "recent work".
 
 ## How to use these files
 
-1. **Every session:** Read `cordinator/decisions/2026-05-21-core-tenets.md` first (the binding tenets). Then `status.md` (this repo, thin index) for current cross-cutting state.
-2. **When working on a plugin:** Read `internal/plugins/<name>/.ai.md` for that plugin's docs. Every plugin owns its own `.ai.md` per the convention in `cordinator/reports/chronicle/2026-05-21-c-hygiene-audit.md §0.5 D2=(c)` + `2026-05-23-c-plugin-isolation-audit.md §2.3`.
-3. **When coding:** Read `conventions.md` for patterns with code examples.
-4. **When planning:** Read `todo.md` for the prioritized backlog.
-5. **When making design choices:** Read `decisions.md` (this repo) and `cordinator/decisions/` (cross-repo binding decisions).
-6. **When looking for session deliverables:** Read `cordinator/reports/chronicle/` — per the dispatch-workflow convention (`cordinator/decisions/2026-05-19-dispatch-workflow.md`), one report per dispatch lives there.
+1. **Every session:** start from the issue for your task. Issues labelled
+   `needs-operator` are waiting on the human.
+2. **When working on a plugin or widget:** read its `.ai.md` (index below).
+3. **When coding:** read `conventions.md` for patterns with code examples.
+4. **When making or questioning a design choice:** read `decisions.md`. Older
+   cross-repo rulings live in the private Cordinator repo's `decisions/`, which
+   code comments still cite; Cordinator is otherwise a frozen archive.
 
-## File inventory
+## Reference files
 
-| File | Category | Purpose | Read when... |
-|------|----------|---------|--------------|
-| `status.md` | Dynamic | Thin index: cross-cutting project state + index of per-plugin `.ai.md` files | Every session start |
-| `todo.md` | Dynamic | Prioritized task backlog with completion markers | Planning work |
-| `architecture.md` | Semi-static | System design, three-tier extension model, request flow, dependency graph | Designing new features |
-| `conventions.md` | Semi-static | Code patterns with concrete Go/Templ/SQL examples + CI guards + cross-plugin import discipline | Writing any code |
-| `decisions.md` | Semi-static | Architecture Decision Records (ADRs) with rationale; complements `cordinator/decisions/` | Making or questioning design choices |
-| `tech-stack.md` | Static | Technology versions, configs, "why this tech" notes | Setting up or debugging infrastructure |
-| `data-model.md` | Semi-static | Database schema, tables, columns, indexes, relations | Writing queries or migrations |
-| `api-routes.md` | Semi-static | Complete route table with handler mappings | Adding or modifying endpoints |
-| `glossary.md` | Static | TTRPG and Chronicle-specific terminology | Understanding domain concepts |
-| `troubleshooting.md` | Semi-static | Known gotchas and their solutions | Debugging non-obvious issues |
-| `roadmap.md` | Semi-static | Competitive analysis, feature brainstorm, priority phases | Planning features |
-| `audit.md` | Dynamic | Feature parity audit (March 2026) | Fixing quality issues |
-| `phases.md` | Dynamic | Phase & sprint plan with execution order | Planning work |
-| `obsidian-notes-plan.md` | Semi-static | Obsidian-style notes feature plan | Working on notes features |
-| `plugin-development.md` | Semi-static | WASM plugin development guide | Building WASM extensions |
-| `design-content-extensions.md` | Semi-static | Content-extension WASM design | WASM runtime work |
-| `competitive-gap-analysis.md` | Semi-static | Feature gaps vs competitors | Planning feature parity |
-| `security-hardening-plan.md` | Semi-static | Security roadmap | Security review work |
-| `designs/wasm-plugin-system.md` | Semi-static | WASM runtime extensibility design | Deep WASM work |
-| `security-audit-2026-06-19-pc-claiming.md` | Static | Player Character Claiming security review | Reviewing PC-claim auth/visibility |
+| File | What it covers |
+|------|----------------|
+| `architecture.md` | System design, the three-tier extension model, request flow, dependency graph |
+| `conventions.md` | Code patterns with Go/Templ/SQL examples, CI guards, security rules, cross-plugin import discipline |
+| `decisions.md` | Architecture Decision Records. Append-only; code cites ADR numbers, so never renumber |
+| `tech-stack.md` | Technology versions, configs, and why each was chosen |
+| `data-model.md` | Schema reference. **Incomplete** (#742); the migrations are the source of truth |
+| `api-routes.md` | Route table. **Incomplete** (#742); `internal/wire/routes_snapshot.txt` is the source of truth |
+| `glossary.md` | TTRPG and Chronicle terminology |
+| `troubleshooting.md` | Non-obvious problems and their fixes, including the test-environment ones |
+| `plugin-development.md` | Building WASM extensions |
+| `designs/` | Designs. `2026-09-12-build-order.md` and `2026-09-12-header-and-nav.md` are approved and unbuilt (#739); the rest are finished or superseded |
 
-## Category definitions
+`status.md` and `todo.md` are pointers to the issues now. `audit.md`,
+`competitive-gap-analysis.md`, `design-content-extensions.md`,
+`obsidian-notes-plan.md`, `phases.md`, `roadmap.md`,
+`security-audit-2026-06-19-pc-claiming.md`, `security-hardening-plan.md` and
+`archive/` are history, due to be moved out of this tree (#742). Don't treat
+them as current.
 
-- **Static:** Rarely changes. Reference material established once.
-- **Semi-static:** Changes when architecture evolves, new patterns are set, or new systems are added. Maybe once per sprint.
-- **Dynamic:** Changes every session. Status and backlog tracking.
+## Per-plugin and per-widget docs
 
-## Where else documentation lives
+Every directory below has an `.ai.md` describing its purpose, files, routes,
+business rules and footguns.
 
-The `.ai/` tree is AI-process-facing (this index, status, conventions, decisions). Other documentation homes:
-
-- **`cordinator/decisions/`** — cross-repo binding decisions (tenets, dispatch workflow, decision-routing). Every AI session reads these on bootstrap.
-- **`cordinator/reports/chronicle/`** — per-dispatch status reports + audit reports. Canonical home for session deliverables.
-- **`cordinator/dispatches/chronicle/`** — current and historical dispatch specs.
-- **`docs/`** — operator-facing deployment + system docs (deployment.md, api/, bestiary/, system-package-rendering.md, system-plugin-marketplace.md).
-- **`internal/plugins/<X>/.ai.md`** — per-plugin context (purpose, key files, routes, footguns, recent work). Each plugin owns its own `.ai.md`; 24 plugins covered.
-- **`internal/widgets/<X>/.ai.md`** — per-widget context. 9 of 10 widgets covered (one still lacks its `.ai.md` — see backlog).
-- **`internal/systems/.ai.md`** — the systems-plugin docs. Systems themselves are no longer in-repo per-system dirs; a game-system content pack is an external package installed via Admin > Packages, so there is one systems-infra `.ai.md`, not one per system.
-- **`tools/`** — CI guard scripts (plugin-isolation, templ-drift, decision-citations, wire-contract test).
-- **Root `README.md`** — human-facing project overview.
-- **Root `CLAUDE.md`** — the AI bootstrap entrypoint (this file is one level deeper; `CLAUDE.md` points here).
-
-## Archive
-
-`.ai/archive/` holds historical docs that have served their purpose:
-
-- `status-2026-04-25-pre-shrink.md` — the 1198-line chronological session log that lived at `.ai/status.md` until 2026-05-23 (Chunk E moved it here; new `status.md` is a thin index per `cordinator/reports/chronicle/2026-05-21-c-hygiene-audit.md §0.5 D2=(c)`)
-- `phase-d-plan.md` — Phase D sprint plan (Phase D shipped)
-- `security-audit-2026-03-06.md` — the original security audit (superseded by `cordinator/reports/chronicle/2026-05-22-c-security-audit.md`)
-- `plan.md` — Sprint V-2 (backlinks panel + entity aliases) implementation plan (work shipped)
-- `plan-drawsteel-2026-03.md` — Draw Steel system module implementation plan (work shipped; moved here from a stray, unindexed repo-root `plan.md` by C-DOC-DRIFT-REFRESH-R2 — its path references predate the systems-are-external-packages architecture and are historical only)
-- `todo-completed-2026-06-10.md` — completed-todo archive (moved 2026-06-10)
+- **Plugins** (`internal/plugins/<name>/`): addons, admin, ai_workspace (and
+  ai_workspace/aiexport), armory, audit, auth, backup, bestiary, campaigns,
+  designlab, entities, foundry_vtt, maps, media, npcs, packages, restore,
+  sessions, settings, smtp, syncapi, timeline, widgetbindings. The calendar
+  plugin has none: it holds only a domain layer and migrations until V5 (#741).
+- **Widgets** (`internal/widgets/<name>/`): attributes, editor, entity_notes,
+  mentions, notes, posts, relations, tags, title.
+- **Infrastructure:** `internal/database/`, `internal/extensions/`,
+  `internal/systems/` (game systems are external packages installed through
+  Admin → Packages, so there is one systems-infrastructure doc, not one per
+  system), `internal/websocket/`.
+- **Front-end scripts** (`static/js/`): `boot`, `sidebar_tag_filter`,
+  `sidebar_tree`, and under `widgets/`: `dynamic_surface`, `entity_tooltip`,
+  `image_upload`, `layout_editor`, `template_editor`, `timeline_viz`.
+  (`widgets/dashboard_editor.ai.md` describes a retired script; #742.)
+- **Examples:** `extensions/example-wasm-go/`, `extensions/example-wasm-rust/`.
 
 ## Templates
 
-The `templates/` subdirectory contains templates for creating new documentation:
+- `templates/module-ai.md.tmpl`: start a new plugin or widget `.ai.md` from this.
+- `templates/decision-record.md.tmpl`: the ADR format.
 
-- `module-ai.md.tmpl` — Copy this when creating a new system's `.ai.md` file
-- `decision-record.md.tmpl` — Copy this format when adding a new ADR entry
+## Other documentation
 
-## Extension-level documentation
-
-Each plugin (`internal/plugins/<name>/`) and widget (`internal/widgets/<name>/`) contains an `.ai.md` file describing its purpose, internal structure, dependencies, routes, business rules, and recent work (systems are external packages — see above, not an in-repo per-system tier). Per the plugin-isolation audit, this reached uniform coverage in NW-2.2 Chunk E (2026-05-25, then 22/22 + 9/9). Current: **24/24 plugins**, **9/10 widgets** (`calendar_v2` still lacks its `.ai.md`).
+- `docs/`: operator-facing docs (deployment and upgrades, the restore drill,
+  admin diagnostics, the OpenAPI spec, package authoring).
+- `tools/`: the CI guard scripts.
+- Root `README.md`: the project overview for humans.

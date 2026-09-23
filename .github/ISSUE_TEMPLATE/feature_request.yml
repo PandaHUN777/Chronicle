@@ -1,0 +1,16 @@
+name: Idea or feature request
+description: Something Chronicle could do, or do better.
+type: Feature
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The situation at your table or in your world that Chronicle doesn't handle well today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would help?
+      description: Your idea for it, if you have one. Rough is fine.
