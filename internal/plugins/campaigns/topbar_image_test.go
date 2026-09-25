@@ -63,19 +63,35 @@ func TestTopbarImageSection_States(t *testing.T) {
 	})
 
 	t.Run("image set → thumbnail + hx-delete remove", func(t *testing.T) {
+		// The fixture is the shape the upload path ACTUALLY stores:
+		// MediaUploader.UploadBackdrop returns MediaFile.Filename, which is
+		// filepath.Join("2006/01", uuid+ext) — a value containing slashes.
+		// The old fixture here was "bg.png", which has none, so this test
+		// passed for months against data shaped unlike anything production
+		// produces, while the real thing 404'd. A test that runs on
+		// unrealistic fixtures is not coverage.
+		const stored = "2026/09/b7c17bb1-6563-462c-8b49-5b2e8bd57108.png"
 		var sb strings.Builder
-		if err := TopbarImageSection("camp-1", "bg.png", "tok").Render(context.Background(), &sb); err != nil {
+		if err := TopbarImageSection("camp-1", stored, "tok").Render(context.Background(), &sb); err != nil {
 			t.Fatalf("render: %v", err)
 		}
 		html := sb.String()
-		if !strings.Contains(html, `/media/bg.png`) {
-			t.Error("set state must render the current image thumbnail")
+
+		// /media/:id matches ONE path segment. A src carrying the stored
+		// value verbatim cannot be routed by Echo and answers 404.
+		if strings.Contains(html, "/media/"+stored) {
+			t.Errorf("src renders the raw stored path %q under /media/, which Echo's single-segment /media/:id route cannot match — this is a 404", stored)
+		}
+		if !strings.Contains(html, `/media/b7c17bb1-6563-462c-8b49-5b2e8bd57108`) {
+			t.Error("set state must render the image through MediaURL, which reduces the stored path to the media id")
 		}
 		if !strings.Contains(html, `hx-delete="/campaigns/camp-1/topbar-image"`) {
 			t.Error("set state must offer an hx-delete remove")
 		}
-		if !strings.Contains(html, `data-topbar-image-path="bg.png"`) {
-			t.Error("set state must carry the image path in data-topbar-image-path for JS state sync")
+		// The data- attribute keeps the raw stored value: JS round-trips it
+		// back to the server, which stores paths, not ids.
+		if !strings.Contains(html, `data-topbar-image-path="`+stored+`"`) {
+			t.Error("set state must carry the stored path in data-topbar-image-path for JS state sync")
 		}
 	})
 }
@@ -83,11 +99,15 @@ func TestTopbarImageSection_States(t *testing.T) {
 // TestAppearanceTab_TopbarImageReadsBack proves a saved topbar image renders
 // back into the form (the sweep's read-back check, item (c)).
 func TestAppearanceTab_TopbarImageReadsBack(t *testing.T) {
-	html := renderAppearanceTab(t, `{"topbar_style":{"mode":"image","image_path":"saved.png"}}`)
-	if !strings.Contains(html, `/media/saved.png`) {
-		t.Error("a saved topbar image must read back into the Image panel thumbnail")
+	const stored = "2026/09/b7c17bb1-6563-462c-8b49-5b2e8bd57108.png"
+	html := renderAppearanceTab(t, `{"topbar_style":{"mode":"image","image_path":"`+stored+`"}}`)
+	if !strings.Contains(html, `/media/b7c17bb1-6563-462c-8b49-5b2e8bd57108`) {
+		t.Error("a saved topbar image must read back into the Image panel thumbnail, through MediaURL")
 	}
-	if !strings.Contains(html, `data-topbar-image-path="saved.png"`) {
+	if strings.Contains(html, "/media/"+stored) {
+		t.Errorf("read-back renders the raw stored path %q — a 404 under /media/:id", stored)
+	}
+	if !strings.Contains(html, `data-topbar-image-path="`+stored+`"`) {
 		t.Error("the saved image path must round-trip into data-topbar-image-path")
 	}
 }

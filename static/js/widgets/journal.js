@@ -23,6 +23,20 @@ Chronicle.register('journal', {
     var currentUserId = config.userId || '';
     var AUTOSAVE_DELAY = 1500; // ms
 
+    // mediaIdFromPath mirrors layouts.normalizeMediaID (Go). Attachments are
+    // stored as MediaFile.Filename — "2026/09/<uuid>.mp3" — but /media/:id
+    // matches a SINGLE path segment, so handing the stored value to Echo
+    // verbatim is an unroutable 404, not an access error. The uploader uses
+    // the same uuid for the row id and the on-disk basename, so stripping the
+    // date directories and the extension recovers the id exactly.
+    function mediaIdFromPath(p) {
+      if (!p) return '';
+      if (p.indexOf('/') === -1) return p;
+      var base = p.slice(p.lastIndexOf('/') + 1);
+      var dot = base.lastIndexOf('.');
+      return dot > 0 ? base.slice(0, dot) : base;
+    }
+
     // --- State ---
 
     var state = {
@@ -745,7 +759,7 @@ Chronicle.register('journal', {
         var audio = document.createElement('audio');
         audio.controls = true;
         audio.className = 'flex-1 h-8';
-        audio.src = '/media/' + att.filePath;
+        audio.src = '/media/' + mediaIdFromPath(att.filePath);
         playerRow.appendChild(audio);
 
         var nameSpan = document.createElement('span');

@@ -16,7 +16,7 @@ templ BackdropUploadSection(campaignID string, backdropPath *string, csrfToken s
 			// Show current backdrop with remove button.
 			<div class="relative rounded-lg overflow-hidden border border-edge">
 				<img
-					src={ "/media/" + *backdropPath }
+					src={ layouts.MediaURL(ctx, *backdropPath) }
 					alt="Campaign backdrop"
 					class="w-full h-32 object-cover"
 				/>
@@ -99,7 +99,7 @@ templ TopbarImageSection(campaignID string, imagePath string, csrfToken string) 
 			// Show current image with replace/remove controls.
 			<div class="relative rounded-lg overflow-hidden border border-edge">
 				<img
-					src={ "/media/" + imagePath }
+					src={ layouts.MediaURL(ctx, imagePath) }
 					alt="Topbar background"
 					class="w-full h-16 object-cover"
 				/>
