@@ -899,17 +899,16 @@ func (a *mapEventPublisherAdapter) PublishTokenEvent(eventType string, campaignI
 }
 
 // PublishTokenPositionEvent broadcasts a token position update via WebSocket.
-// The fast-drag path doesn't carry the source token, so it can't apply the
-// token's visibility the way PublishTokenEvent does.
-// TODO(keyxmakerx/Cordinator#168): carry the token's visibility on this path.
-func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID string, x, y float64) {
+// Gated on isHidden exactly like PublishTokenEvent, so a GM-only token's live
+// drag position never reaches a non-GM client.
+func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID string, x, y float64, isHidden bool) {
 	if campaignID == "" {
 		return
 	}
-	a.bus.Publish(ws.NewMessage(ws.MsgTokenMoved, campaignID, tokenID, map[string]float64{
+	a.publishWithAudience(ws.MsgTokenMoved, campaignID, tokenID, map[string]float64{
 		"x": x,
 		"y": y,
-	}))
+	}, isHidden, nil)
 }
 
 // PublishLayerEvent broadcasts a map layer event via WebSocket. Layers

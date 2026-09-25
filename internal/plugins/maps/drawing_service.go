@@ -79,7 +79,10 @@ type DrawingService interface {
 type MapEventPublisher interface {
 	PublishDrawingEvent(eventType string, campaignID string, drawing *Drawing)
 	PublishTokenEvent(eventType string, campaignID string, token *Token)
-	PublishTokenPositionEvent(campaignID, tokenID string, x, y float64)
+	// PublishTokenPositionEvent carries isHidden so the fast-drag path gates
+	// hidden tokens the same way PublishTokenEvent does — a GM-only token's
+	// live position must not reach non-GM clients while it's being dragged.
+	PublishTokenPositionEvent(campaignID, tokenID string, x, y float64, isHidden bool)
 	PublishLayerEvent(eventType string, campaignID string, layer *Layer)
 	PublishFogEvent(eventType string, campaignID, mapID string, region *FogRegion)
 	PublishMarkerEvent(eventType string, campaignID string, marker *Marker)
@@ -88,12 +91,12 @@ type MapEventPublisher interface {
 // NoopMapEventPublisher is a no-op implementation for tests.
 type NoopMapEventPublisher struct{}
 
-func (NoopMapEventPublisher) PublishDrawingEvent(string, string, *Drawing)               {}
-func (NoopMapEventPublisher) PublishTokenEvent(string, string, *Token)                   {}
-func (NoopMapEventPublisher) PublishTokenPositionEvent(string, string, float64, float64) {}
-func (NoopMapEventPublisher) PublishLayerEvent(string, string, *Layer)                   {}
-func (NoopMapEventPublisher) PublishFogEvent(string, string, string, *FogRegion)         {}
-func (NoopMapEventPublisher) PublishMarkerEvent(string, string, *Marker)                 {}
+func (NoopMapEventPublisher) PublishDrawingEvent(string, string, *Drawing)                     {}
+func (NoopMapEventPublisher) PublishTokenEvent(string, string, *Token)                         {}
+func (NoopMapEventPublisher) PublishTokenPositionEvent(string, string, float64, float64, bool) {}
+func (NoopMapEventPublisher) PublishLayerEvent(string, string, *Layer)                         {}
+func (NoopMapEventPublisher) PublishFogEvent(string, string, string, *FogRegion)               {}
+func (NoopMapEventPublisher) PublishMarkerEvent(string, string, *Marker)                       {}
 
 // drawingService implements DrawingService.
 type drawingService struct {
@@ -395,7 +398,7 @@ func (s *drawingService) UpdateTokenPosition(ctx context.Context, id, mapID stri
 	}
 	// Reuse the token loaded above (position update doesn't change its map) to
 	// resolve the campaign for the event.
-	s.events.PublishTokenPositionEvent(s.campaignForMap(ctx, t.MapID), id, input.X, input.Y)
+	s.events.PublishTokenPositionEvent(s.campaignForMap(ctx, t.MapID), id, input.X, input.Y, t.IsHidden)
 	return nil
 }
 
