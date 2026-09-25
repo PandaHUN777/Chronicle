@@ -1,32 +1,18 @@
-// impact_tree_registration.test.mjs — the "Impact Overview" diagram on the
-// custom-system upload preview must actually render.
+// impact_tree_registration.test.mjs — pins that the "Impact Overview" widget
+// on the custom-system upload preview mounts via `Chronicle.register`, which
+// is the only registration API boot.js offers.
 //
-// C-WIDGET-REGISTERWIDGET, the item stage 9 booked rather than guessed at.
-// static/js/widgets/impact_tree.js registered itself with
-// `Chronicle.registerWidget('impact_tree', mount)` — an API boot.js has never
-// had (`.ai/todo.md` lists it as an unchecked Sprint Q-1 future item; boot.js
-// exposes `Chronicle.register`, `mountWidgets`, `mountWidget`, `destroyWidget`).
-// The call sat behind `if (window.Chronicle && Chronicle.registerWidget)`, so
-// the module loaded and self-disabled, falling through to a DOMContentLoaded
-// scan that is the WRONG lifecycle for this mount: the preview fragment is
-// delivered by an htmx swap (custom_system.templ posts to
-// /campaigns/:id/systems/preview with hx-target="#custom-system-section"), long
-// after DOMContentLoaded has been and gone. Net effect on a live upload: an
-// "Impact Overview" heading with a sitemap icon over a permanently blank div.
+// The preview fragment is delivered by an htmx swap (custom_system.templ
+// posts to /campaigns/:id/systems/preview with
+// hx-target="#custom-system-section"), well after DOMContentLoaded has fired.
+// So the test boots with an EMPTY container (defer scripts run,
+// DOMContentLoaded fires), then attaches the fragment and dispatches
+// htmx:afterSettle with detail.target — the only path boot.js offers for
+// swapped-in content — so a registration that only works via a
+// DOMContentLoaded scan would fail here.
 //
-// WHY THE TEST IS SHAPED LIKE THIS. Firing DOMContentLoaded with the mount
-// already in the document would pass with OR without the fix, because the old
-// fallback would catch it — the bug is invisible to that ordering. So the test
-// reproduces the real delivery: boot with an EMPTY container (defer scripts run,
-// DOMContentLoaded fires), and only THEN attach the fragment and dispatch
-// htmx:afterSettle with detail.target, which is the single path boot.js offers
-// for swapped-in content. Only a real `Chronicle.register` entry is reachable
-// from there.
-//
-// The second half of the defect — the file was in no <script src> anywhere, so
-// the browser never fetched it — is pinned by tools/check-widget-mounts.sh now
-// that `impact_tree` is out of tools/widget-mount-allowlist.txt: drop the
-// base.templ tag and the guard reports DEAD.
+// That the widget's script tag is actually present in base.templ is pinned
+// separately by tools/check-widget-mounts.sh.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -141,8 +127,8 @@ class El {
 
 /**
  * Evaluate boot.js and impact_tree.js in one context over a shared document,
- * exactly as two `defer` tags on base.templ do (boot.js is line 70, every
- * widget follows it, and defer preserves document order).
+ * exactly as two `defer` tags on base.templ do (boot.js first, then each
+ * widget, in document order).
  *
  * @returns {{container: El, afterSettle: Function, Chronicle: Object,
  *            errors: string[], warnings: string[]}}
@@ -251,9 +237,9 @@ test('impact_tree registers through the API boot.js actually exposes', () => {
   assert.equal(typeof app.Chronicle.register, 'function');
   // The regression itself: the widget aimed at a name that has never existed.
   assert.equal(app.Chronicle.registerWidget, undefined,
-    'boot.js exposes no registerWidget — .ai/todo.md still lists it as an ' +
-    'unchecked Sprint Q-1 item. If that changes, this widget is not the place ' +
-    'to find out.');
+    'boot.js exposes no registerWidget; widgets register through ' +
+    'Chronicle.register. If that changes, this widget is not the place to ' +
+    'find out.');
   assert.ok(app.Chronicle.mountWidget, 'boot.js mount API is present');
 });
 
