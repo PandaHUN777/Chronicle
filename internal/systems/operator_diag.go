@@ -191,15 +191,13 @@ func diagnosticCatalog() []Diagnostic {
 		{
 			Name:  "campaigns.list",
 			Title: "List campaigns (id, name, slug)",
-			Desc:  "All campaigns with their ids — the entry point for the entity.* and campaign.*/calendar.* diagnostics, which all need a campaign id. Run this first if you don't know the id.",
+			Desc:  "All campaigns with their ids — the entry point for the entity.* and campaign.* diagnostics, which all need a campaign id. Run this first if you don't know the id.",
 			Run:   renderCampaignList,
 		},
 		// The campaign family, placed after the discovery entry that supplies
 		// their argument. They answer a different question from everything
 		// above: host.* says WHICH CODE IS RUNNING, these say WHY THIS
 		// CAMPAIGN LOOKS LIKE THIS. Defined in operator_diag_campaign.go.
-		calendarRenderDiagnostic(),
-		calendarConfigDiagnostic(),
 		campaignSurfacesDiagnostic(),
 		campaignConfigDiagnostic(),
 		{

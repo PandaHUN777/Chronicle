@@ -2620,8 +2620,7 @@ func (a *App) RegisterRoutes() {
 	systems.SetCampaignDiagProvider(campaignDiagAdapter{
 		campaigns: campaignService,
 		addons:    addonService,
-		// CALV5-PLACEHOLDER: `calendars: calendarService,` was here.
-		entities: entityService,
+		entities:  entityService,
 		routes: func() []systems.RouteFact {
 			live := e.Routes()
 			out := make([]systems.RouteFact, 0, len(live))

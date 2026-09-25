@@ -79,7 +79,7 @@ func hostDeployCheckDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "host.deploy-check",
 		Title:   "Did my deploy land? — build identity, bellwether assets, marker search, package state",
-		Desc:    "THE one thing to run after a deploy: build identity, the fingerprint + mtime + served `?v=` of the assets that move on almost every build, the installed-vs-loaded package summary, and an optional marker search across the static root, the embedded plugin assets and the executable. **A marker hit proves the byte SHIPPED and nothing about whether it RENDERS** — for \"is it on my page?\" run `calendar.render`.",
+		Desc:    "THE one thing to run after a deploy: build identity, the fingerprint + mtime + served `?v=` of the assets that move on almost every build, the installed-vs-loaded package summary, and an optional marker search across the static root, the embedded plugin assets and the executable. **A marker hit proves the byte SHIPPED and nothing about whether it RENDERS** — for \"is it on my page?\" run `campaign.config` or `campaign.surfaces`.",
 		ArgHint: "[<marker[,marker2]>]",
 		Run:     renderHostDeployCheck,
 	}
@@ -232,7 +232,7 @@ func writeMarkerSection(b *strings.Builder, src deployCheckSources, arg string) 
 	// A marker hit reading as "the feature works" is the same mistake as
 	// trusting a label as evidence, so the refusal is printed here, where
 	// somebody is looking at a ✓, rather than only in the Desc.
-	b.WriteString("\n**A HIT PROVES THE BYTE SHIPPED. IT PROVES NOTHING ABOUT WHETHER IT RENDERS.** A marker can be present in the build and still reach no user: it can sit behind a role floor, inside a collapsed disclosure, in a layer the viewer turned off, under a CSS rule that hides it at their width, on a Block the producer did not seat, or behind a campaign addon that is switched off. Every one of those has happened here. Do NOT answer \"is this feature on my page?\" from this section — run **`calendar.render <campaignId>:<userId>`** for a calendar surface, or **`campaign.config`** for an addon or a placed block. This section answers only \"did the deploy land\".\n")
+	b.WriteString("\n**A HIT PROVES THE BYTE SHIPPED. IT PROVES NOTHING ABOUT WHETHER IT RENDERS.** A marker can be present in the build and still reach no user: it can sit behind a role floor, inside a collapsed disclosure, in a layer the viewer turned off, under a CSS rule that hides it at their width, on a Block the producer did not seat, or behind a campaign addon that is switched off. Every one of those has happened here. Do NOT answer \"is this feature on my page?\" from this section — run **`campaign.config`** for an addon or a placed block, or **`campaign.surfaces`** for which route serves a URL. This section answers only \"did the deploy land\".\n")
 	// The all-absent conclusion is only sound when all three scopes were
 	// actually READ. Asserting it over an unscanned scope is precisely the
 	// absence-of-evidence error the rest of this file is built to refuse.

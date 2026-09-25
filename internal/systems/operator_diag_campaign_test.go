@@ -6,10 +6,10 @@ import (
 	"testing"
 )
 
-// operator_diag_campaign_test.go covers the four campaign diagnostics.
+// operator_diag_campaign_test.go covers the two campaign diagnostics.
 //
 // The DEGRADED paths get as much attention as the happy ones, deliberately.
-// These four exist because the catalog could previously answer a campaign
+// These exist because the catalog could previously answer a campaign
 // question only by implication, and the failure they are built to prevent is a
 // confident wrong answer — which is exactly what a diagnostic produces when an
 // unread table renders as an empty one.
@@ -18,22 +18,12 @@ import (
 // the test sets, including errors, so every degraded branch is reachable
 // without a database.
 type fakeCampaignProvider struct {
-	cal     CampaignCalendarFacts
-	calErr  error
 	surf    CampaignSurfaceFacts
 	surfErr error
 	conf    CampaignConfigFacts
 	confErr error
-
-	// lastUserID records what the diagnostic passed through, so the arg parsing
-	// is asserted at the seam rather than inferred from the rendered text.
-	lastUserID string
 }
 
-func (f *fakeCampaignProvider) CalendarFacts(_ context.Context, _, userID string) (CampaignCalendarFacts, error) {
-	f.lastUserID = userID
-	return f.cal, f.calErr
-}
 func (f *fakeCampaignProvider) SurfaceFacts(context.Context, string) (CampaignSurfaceFacts, error) {
 	return f.surf, f.surfErr
 }
@@ -53,8 +43,8 @@ func withCampaignProvider(t *testing.T, p CampaignDiagProvider, fn func()) {
 }
 
 // campaignDiagNames is the set this file covers, used by the loop tests so a
-// fifth diagnostic added later inherits them.
-var campaignDiagNames = []string{"calendar.render", "calendar.config", "campaign.surfaces", "campaign.config"}
+// third diagnostic added later inherits them.
+var campaignDiagNames = []string{"campaign.surfaces", "campaign.config"}
 
 func boolPtr(b bool) *bool { return &b }
 
@@ -62,8 +52,8 @@ func boolPtr(b bool) *bool { return &b }
 
 // TestCampaignDiagnostics_UnwiredProviderSaysSo is the requirement stated in
 // the file header of operator_diag_wiring_test.go: an unwired provider must
-// announce itself. All four print a shared sentence that names the state AND
-// denies the misreading, because "no calendars" and "nobody was asked" are one
+// announce itself. Both print a shared sentence that names the state AND
+// denies the misreading, because "no data" and "nobody was asked" are one
 // careless render apart.
 func TestCampaignDiagnostics_UnwiredProviderSaysSo(t *testing.T) {
 	withCampaignProvider(t, nil, func() {
@@ -129,368 +119,23 @@ func TestCampaignDiagnostics_UnknownCampaignIsNotAnEmptyAnswer(t *testing.T) {
 	})
 }
 
-// ── calendar.render ─────────────────────────────────────────────────────────
-
-// twoCalendarCampaign has one in-world calendar (the campaign default) and
-// one real-world calendar beside it. The real-world one takes the second
-// seat and gets NO sky.
-func twoCalendarCampaign() CampaignCalendarFacts {
-	return CampaignCalendarFacts{
-		Found: true, CampaignID: "c1", CampaignName: "Test",
-		AddonEnabled: boolPtr(true), SpineInstalled: true,
-		ListVia: "ListCalendars — the OWNER branch (no viewer supplied)",
-		All: []DiagCalendar{
-			{ID: "in", Name: "Harptos", Mode: "fantasy", IsDefault: true, Months: 12, MoonsRendered: 2, MoonRowsStored: 2, MoonNames: []string{"Selune", "Tears"}},
-			{ID: "rw", Name: "Earth", Mode: "reallife", Months: 12, MoonsRendered: 1, MoonRowsStored: 0, MoonNames: []string{"Moon"}, SynthesizedMoon: true},
-		},
-	}
-}
-
-// asViewer attaches a Player viewer to a campaign fixture, honouring the
-// provider contract that Visible is non-nil once a viewer is named.
-func asViewer(f CampaignCalendarFacts) CampaignCalendarFacts {
-	f.Viewer = ViewerFacts{Supplied: true, Found: true, UserID: "u1", MemberRole: 1, Role: 1}
-	f.ListVia = "ListVisibleCalendars(role=1) — the non-owner branch"
-	f.Visible = append([]DiagCalendar{}, f.All...)
-	return f
-}
-
-func TestCalendarRender_RealWorldBlockGetsNoSkyAndSaysWhy(t *testing.T) {
-	f := twoCalendarCampaign()
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-
-		for _, want := range []string{
-			"PRIMARY — **Harptos**",
-			"campaign default AND in-world",
-			"REAL-WORLD — **Earth**",
-			"SkyOn: **false**, ShelfHidden: **true**",
-			"no sky band at all",
-			"Adding a moon to it changes nothing visible here",
-		} {
-			if !strings.Contains(got, want) {
-				t.Errorf("missing %q in:\n%s", want, got)
-			}
-		}
-		// The Almanac gate is (!ShelfHidden || SkyOn): the real-world seat fails
-		// BOTH halves, so its register is not built even though it has a moon.
-		if !strings.Contains(got, "Almanac register built: **true**") {
-			t.Error("the Primary (shelf shown, 2 moons) must build its Almanac")
-		}
-		if !strings.Contains(got, "Almanac register built: **false**") {
-			t.Error("the real-world Block (shelf hidden, no sky) must NOT build its Almanac, even with a moon")
-		}
-		if !strings.Contains(got, "the calendar HAS moons and the register was still not built") {
-			t.Error("an unbuilt register on a calendar that HAS moons must be explained, not merely reported")
-		}
-	})
-}
-
-// TestCalendarRender_SoleRealWorldCalendarIsPromoted pins that with no
-// in-world calendar, benchClassify promotes the real-world one to PRIMARY,
-// which DOES get a sky — flipping the remedy from "adding data will not
-// help" to "adding one moon fixes it", so the trace must distinguish them.
-func TestCalendarRender_SoleRealWorldCalendarIsPromoted(t *testing.T) {
-	f := CampaignCalendarFacts{
-		Found: true, CampaignID: "c1", CampaignName: "Test",
-		AddonEnabled: boolPtr(true), SpineInstalled: true,
-		All: []DiagCalendar{
-			{ID: "rw", Name: "Earth", Mode: "reallife", IsDefault: true, Months: 12, MoonsRendered: 1, MoonNames: []string{"Moon"}, SynthesizedMoon: true},
-		},
-	}
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if !strings.Contains(got, "PRIMARY — **Earth**") {
-			t.Errorf("a sole real-world calendar must take the PRIMARY seat:\n%s", got)
-		}
-		if !strings.Contains(got, "NOTHING BUT REAL-WORLD CALENDARS") {
-			t.Errorf("the clause must name WHY it was promoted:\n%s", got)
-		}
-		if !strings.Contains(got, "SkyOn: **true**") {
-			t.Errorf("the promoted Primary carries the sky:\n%s", got)
-		}
-		if strings.Contains(got, "REAL-WORLD — ") {
-			t.Errorf("with one calendar there is no second seat:\n%s", got)
-		}
-		if !strings.Contains(got, "has **no database row**") {
-			t.Errorf("the synthesized Moon must be named as having no row:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarRender_SectionProvenance covers the distinction [BR2-4] turns on:
-// nil (never chosen → all four closed) is NOT the same as an empty stored list
-// (chose to close nothing → all four open).
-func TestCalendarRender_SectionProvenance(t *testing.T) {
-	tests := []struct {
-		name        string
-		stored      []string
-		neverChosen bool
-		wantState   string
-		wantWhy     string
-	}{
-		{"never chosen", nil, true, "`rsvp` — **CLOSED**", "NO STORED ROW"},
-		{"closed nothing", []string{}, false, "`rsvp` — **OPEN**", "a stored row"},
-		{"closed rsvp only", []string{"rsvp"}, false, "`rsvp` — **CLOSED**", "a stored row"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			f := asViewer(twoCalendarCampaign())
-			f.SectionsStored, f.SectionsNeverChosen = tc.stored, tc.neverChosen
-			withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-				got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1:u1")
-				if !strings.Contains(got, tc.wantState) {
-					t.Errorf("want %q in:\n%s", tc.wantState, got)
-				}
-				if !strings.Contains(got, tc.wantWhy) {
-					t.Errorf("want provenance %q in:\n%s", tc.wantWhy, got)
-				}
-			})
-		})
-	}
-}
-
-// TestCalendarRender_ClosedRsvpNamesBothCauses pins that the RSVP report says
-// two things at once: the panel IS there and collapsed, AND the schedule
-// integration does not exist at any disclosure state — saying only the first
-// would send a reader to click a chevron that answers nothing.
-func TestCalendarRender_ClosedRsvpNamesBothCauses(t *testing.T) {
-	f := asViewer(twoCalendarCampaign())
-	f.SectionsNeverChosen = true
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1:u1")
-		for _, want := range []string{
-			"only link to `/schedule` in the entire product",
-			"zero RSVP markup by design",
-			"Opening the chevron does not merge them",
-		} {
-			if !strings.Contains(got, want) {
-				t.Errorf("missing %q in:\n%s", want, got)
-			}
-		}
-	})
-}
-
-// TestCalendarRender_AddonDisabledStopsTheTrace: a disabled addon removes every
-// calendar route at the middleware, so everything below it would be a
-// description of a page nobody can open.
-func TestCalendarRender_AddonDisabledStopsTheTrace(t *testing.T) {
-	f := twoCalendarCampaign()
-	f.AddonEnabled = boolPtr(false)
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if !strings.Contains(got, "DISABLED for this campaign") {
-			t.Errorf("a disabled addon must be stated:\n%s", got)
-		}
-		if strings.Contains(got, "PRIMARY — ") {
-			t.Errorf("the trace must STOP: describing seats on an unreachable page is a wrong answer:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarRender_UnknownAddonStateIsNotFalse: a failed addon read must not
-// be reported as "disabled". It is the difference between "your feature is off"
-// and "we could not tell".
-func TestCalendarRender_UnknownAddonStateIsNotFalse(t *testing.T) {
-	f := twoCalendarCampaign()
-	f.AddonEnabled, f.AddonNote = nil, "addons table unreachable"
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if !strings.Contains(got, "calendar addon: **UNKNOWN**") || !strings.Contains(got, "addons table unreachable") {
-			t.Errorf("an unreadable addon state must render as UNKNOWN with its reason:\n%s", got)
-		}
-		if strings.Contains(got, "DISABLED for this campaign") {
-			t.Errorf("unknown must never render as disabled:\n%s", got)
-		}
-		// The trace continues: not knowing the gate is no reason to withhold
-		// everything behind it.
-		if !strings.Contains(got, "PRIMARY — ") {
-			t.Errorf("an unknown gate should not suppress the rest of the trace:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarRender_SpineNotInstalledExplainsTheEmptyPage: a degraded plugin
-// renders every calendar as a row, which looks exactly like a campaign with no
-// calendars.
-func TestCalendarRender_SpineNotInstalledExplainsTheEmptyPage(t *testing.T) {
-	f := twoCalendarCampaign()
-	f.SpineInstalled = false
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if !strings.Contains(got, "Block spine: **NOT INSTALLED**") {
-			t.Errorf("a nil spine must be stated:\n%s", got)
-		}
-		if !strings.Contains(got, "FALLS BACK TO A ROW") {
-			t.Errorf("the consequence must be stated on the seat itself:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarRender_NoUserIdSaysWhichPathItTraced: the owner path is not what a
-// player sees, and a trace that silently used it would answer the wrong
-// question with total confidence.
-func TestCalendarRender_NoUserIdSaysWhichPathItTraced(t *testing.T) {
-	p := &fakeCampaignProvider{cal: twoCalendarCampaign()}
-	withCampaignProvider(t, p, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if p.lastUserID != "" {
-			t.Errorf("no user id was supplied; the provider got %q", p.lastUserID)
-		}
-		if !strings.Contains(got, "No user id supplied") || !strings.Contains(got, "OWNER path") {
-			t.Errorf("the traced path must be named:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarRender_ArgSplitPassesTheUserThrough asserts the parsing at the
-// seam rather than through the rendered text.
-func TestCalendarRender_ArgSplitPassesTheUserThrough(t *testing.T) {
-	p := &fakeCampaignProvider{cal: twoCalendarCampaign()}
-	withCampaignProvider(t, p, func() {
-		_, _ = RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1:user-42")
-		if p.lastUserID != "user-42" {
-			t.Errorf("want user-42 passed to the provider, got %q", p.lastUserID)
-		}
-	})
-}
-
-// TestCalendarRender_SaysItIsAMirror. The mirror warning is one of the two
-// things keeping the re-derived rules honest (the other is the source pin), and
-// it is the one the reader sees.
-func TestCalendarRender_SaysItIsAMirror(t *testing.T) {
-	withCampaignProvider(t, &fakeCampaignProvider{cal: twoCalendarCampaign()}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.render", "c1")
-		if !strings.Contains(got, "RE-DERIVES the producer's rules") {
-			t.Errorf("the trace must declare itself a mirror:\n%s", got)
-		}
-		if !strings.Contains(got, "trust the page") {
-			t.Errorf("the trace must say which side wins on a disagreement:\n%s", got)
-		}
-	})
-}
-
-// ── calendar.config ─────────────────────────────────────────────────────────
-
-// TestCalendarConfig_StoredAndRenderedMoonsAreSeparate is the whole point of
-// rank 2: a GM told "1 moon" needs to know whether there is a row they can
-// edit. Since the real-Moon fallback landed, "rendered" and "stored" disagree
-// on exactly the calendar they are asking about.
-func TestCalendarConfig_StoredAndRenderedMoonsAreSeparate(t *testing.T) {
-	f := twoCalendarCampaign()
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1")
-		if !strings.Contains(got, "**moons: 0 stored row(s), 1 rendered**") {
-			t.Errorf("the two counts must both appear when they differ:\n%s", got)
-		}
-		if !strings.Contains(got, "There is nothing to edit in Settings → Moons") {
-			t.Errorf("the synthesized body must say it is not editable:\n%s", got)
-		}
-		if !strings.Contains(got, "**moons: 2 stored row(s)**") {
-			t.Errorf("agreeing counts print once:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarConfig_InWorldZeroMoonsNamesTheCause: an in-world calendar with no
-// moons is not a bug, it is seedDefaults declining to invent a sky. Saying so
-// stops a reader "fixing" the seeder.
-func TestCalendarConfig_InWorldZeroMoonsNamesTheCause(t *testing.T) {
-	f := CampaignCalendarFacts{
-		Found: true, CampaignID: "c1", CampaignName: "Test", AddonEnabled: boolPtr(true), SpineInstalled: true,
-		All: []DiagCalendar{{ID: "in", Name: "Harptos", Mode: "fantasy", IsDefault: true, Months: 12}},
-	}
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1")
-		if !strings.Contains(got, "never calls `SetMoons`") {
-			t.Errorf("the cause must be named:\n%s", got)
-		}
-		if !strings.Contains(got, "Settings → Moons (Owner only)") {
-			t.Errorf("the remedy must be named, with its role floor:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarConfig_UnreadableStoredCountIsNeverZero. Zero rows IS the finding
-// this diagnostic reports, so a failed read that rendered as zero would be the
-// most damaging possible lie in this file.
-func TestCalendarConfig_UnreadableStoredCountIsNeverZero(t *testing.T) {
-	f := twoCalendarCampaign()
-	f.All[1].StoredCountNote = "the stored-row read failed: connection refused"
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1")
-		if !strings.Contains(got, "stored count UNKNOWN") || !strings.Contains(got, "connection refused") {
-			t.Errorf("a failed read must render as UNKNOWN with its reason:\n%s", got)
-		}
-		if strings.Contains(got, "moons: 0 stored row(s)") {
-			t.Errorf("a failed read must NOT render as zero rows:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarConfig_ZeroMonthsIsFlagged: without months nothing can resolve a
-// date, and the fallback Moon has nowhere to anchor.
-func TestCalendarConfig_ZeroMonthsIsFlagged(t *testing.T) {
-	f := CampaignCalendarFacts{
-		Found: true, CampaignID: "c1", CampaignName: "T", AddonEnabled: boolPtr(true), SpineInstalled: true,
-		All: []DiagCalendar{{ID: "x", Name: "Broken", Mode: "reallife"}},
-	}
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1")
-		if !strings.Contains(got, "**zero months**") {
-			t.Errorf("a month-less calendar must be flagged:\n%s", got)
-		}
-	})
-}
-
-// TestCalendarConfig_FiltersToOneCalendar covers the optional `:calId` tail,
-// including the case where it names nothing.
-func TestCalendarConfig_FiltersToOneCalendar(t *testing.T) {
-	withCampaignProvider(t, &fakeCampaignProvider{cal: twoCalendarCampaign()}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1:rw")
-		if strings.Contains(got, "### Harptos") {
-			t.Errorf("the filter must exclude the other calendar:\n%s", got)
-		}
-		if !strings.Contains(got, "### Earth") {
-			t.Errorf("the named calendar must be shown:\n%s", got)
-		}
-		miss, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1:nope")
-		if !strings.Contains(miss, "No calendar `nope`") {
-			t.Errorf("an unknown calendar id must say so:\n%s", miss)
-		}
-	})
-}
-
-// TestCalendarConfig_NoCalendarsIsAStatedState, not an empty section.
-func TestCalendarConfig_NoCalendarsIsAStatedState(t *testing.T) {
-	f := CampaignCalendarFacts{Found: true, CampaignID: "c1", CampaignName: "T", AddonEnabled: boolPtr(true)}
-	withCampaignProvider(t, &fakeCampaignProvider{cal: f}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "calendar.config", "c1")
-		if !strings.Contains(got, "NO calendars") {
-			t.Errorf("zero calendars must be stated:\n%s", got)
-		}
-	})
-}
-
 // ── campaign.surfaces ───────────────────────────────────────────────────────
 
-// calHandler spells a handler name the way Echo records a method value.
-func calHandler(name string) string {
-	return "github.com/keyxmakerx/chronicle/internal/plugins/calendar.(*Handler)." + name + "-fm"
-}
+// rebuildNoticeHandler stands in for the one anonymous closure every live
+// calendar route shares (calendarRebuildNotice in internal/app/routes.go).
+// It is never compared against — calendarSurfaceMap declares Handler: "" for
+// all three rows precisely so a real closure name is never pinned — only
+// displayed, so any distinctive string does.
+const rebuildNoticeHandler = "github.com/keyxmakerx/chronicle/internal/app.RegisterRoutes.func1"
 
-// liveCalendarRoutes is a stand-in route table: every declared row, plus the
-// two frozen-shell routes that campaign.surfaces DISCOVERS by handler instead
-// of declaring by path.
+// liveCalendarRoutes is a stand-in route table: exactly the declared rows,
+// each given the one handler they really share.
 func liveCalendarRoutes() []RouteFact {
 	var out []RouteFact
 	for _, row := range calendarSurfaceMap() {
-		out = append(out, RouteFact{Method: "GET", Path: row.Path, Handler: calHandler(row.Handler)})
+		out = append(out, RouteFact{Method: "GET", Path: row.Path, Handler: rebuildNoticeHandler})
 	}
-	return append(out,
-		RouteFact{Method: "GET", Path: "/campaigns/:id/calendar/" + "v2", Handler: calHandler("ShowV2")},
-		RouteFact{Method: "GET", Path: "/campaigns/:id/calendar/" + "v2/:calId/settings/:resource", Handler: calHandler("ShowV2SubresourceSettings")},
-	)
+	return out
 }
 
 func surfaceFactsWith(routes []RouteFact) CampaignSurfaceFacts {
@@ -515,7 +160,7 @@ func TestCampaignSurfaces_MatchesTheLiveTable(t *testing.T) {
 		}
 		for _, want := range []string{
 			"**CURRENT** `/campaigns/:id/apps/calendar`",
-			"**LEGACY-REDIRECT** `/campaigns/:id/calendar`",
+			"**CURRENT** `/campaigns/:id/calendar`",
 			"/campaigns/c1/apps/calendar",
 		} {
 			if !strings.Contains(got, want) {
@@ -528,42 +173,19 @@ func TestCampaignSurfaces_MatchesTheLiveTable(t *testing.T) {
 	})
 }
 
-// TestCampaignSurfaces_FrozenShellIsDiscoveredNotDeclared pins that the V2
-// shell (unreachable except by URL, per TestSunset_NoLiveDoorRemains) is
-// classified by the HANDLER the router reports rather than a declared path,
-// so the row disappears on its own if the route is ever removed.
-func TestCampaignSurfaces_FrozenShellIsDiscoveredNotDeclared(t *testing.T) {
-	// No declared row may carry the shell's path: that is what the sunset guard
-	// forbids, and stating it here means a later edit that re-adds one fails in
-	// THIS package too, with the reason attached.
-	shellPrefix := "/calendar/" + "v2"
-	for _, row := range calendarSurfaceMap() {
-		if strings.Contains(row.Path, shellPrefix) {
-			t.Errorf("%s is declared by path; the frozen shell must be discovered by handler ([VS-2])", row.Path)
-		}
+// TestCampaignSurfaces_HandlerSurfacesIsEmpty pins that the discovery map is
+// empty rather than missing: the V2 shell it used to cover was deleted
+// outright with the pre-V5 plugin, not merely made unreachable, so there is
+// nothing left to discover by handler. A future addition belongs here, keyed
+// on a stable handler name — see the function's own comment.
+func TestCampaignSurfaces_HandlerSurfacesIsEmpty(t *testing.T) {
+	if got := handlerSurfaces(); len(got) != 0 {
+		t.Errorf("want no handler-keyed surfaces, got %v", got)
 	}
-	if len(handlerSurfaces()) == 0 {
-		t.Fatal("no handler-keyed surfaces — the discovery half would be silently empty")
-	}
-
 	withCampaignProvider(t, &fakeCampaignProvider{surf: surfaceFactsWith(liveCalendarRoutes())}, func() {
 		got, _ := RunDiagnostic(diagnosticCatalog(), "campaign.surfaces", "c1")
-		if !strings.Contains(got, "DISCOVERED from the live table") {
-			t.Errorf("the discovered section must appear:\n%s", got)
-		}
-		if !strings.Contains(got, "**LEGACY-PRESERVED** `/campaigns/:id"+shellPrefix+"`") {
-			t.Errorf("the shell must be printed with its live path and its status:\n%s", got)
-		}
-		if !strings.Contains(got, "NO LIVE LINK REACHES THIS") {
-			t.Errorf("the shell's row must say why it is still registered:\n%s", got)
-		}
-	})
-
-	// And when the route is gone, so is the row — with no edit here.
-	withCampaignProvider(t, &fakeCampaignProvider{surf: surfaceFactsWith(nil)}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "campaign.surfaces", "c1")
 		if strings.Contains(got, "DISCOVERED from the live table") {
-			t.Errorf("with no routes there is nothing to discover:\n%s", got)
+			t.Errorf("with an empty discovery map there is nothing to discover:\n%s", got)
 		}
 	})
 }
@@ -580,21 +202,6 @@ func TestCampaignSurfaces_MissingRouteIsLoud(t *testing.T) {
 		}
 		if !strings.Contains(got, "do not conclude the surface exists") {
 			t.Errorf("the flag must tell the reader what NOT to conclude:\n%s", got)
-		}
-	})
-}
-
-// TestCampaignSurfaces_HandlerDisagreementPrefersTheLiveTable.
-func TestCampaignSurfaces_HandlerDisagreementPrefersTheLiveTable(t *testing.T) {
-	routes := liveCalendarRoutes()
-	routes[0].Handler = "github.com/keyxmakerx/chronicle/internal/plugins/calendar.(*Handler).SomethingElse-fm"
-	withCampaignProvider(t, &fakeCampaignProvider{surf: surfaceFactsWith(routes)}, func() {
-		got, _ := RunDiagnostic(diagnosticCatalog(), "campaign.surfaces", "c1")
-		if !strings.Contains(got, "Trust the live handler") {
-			t.Errorf("a handler disagreement must be flagged and resolved in favour of the binary:\n%s", got)
-		}
-		if !strings.Contains(got, "SomethingElse") {
-			t.Errorf("the live handler must be named:\n%s", got)
 		}
 	})
 }
@@ -627,21 +234,30 @@ func TestCampaignSurfaces_UnreadableTableIsNotAnAbsence(t *testing.T) {
 	})
 }
 
-// TestCampaignSurfaces_DisabledAddonMakesEveryRouteUnreachable.
-func TestCampaignSurfaces_DisabledAddonMakesEveryRouteUnreachable(t *testing.T) {
+// TestCampaignSurfaces_DisabledAddonIsStatedButNotGating. Before the rebuild
+// a disabled addon made every route below unreachable; the three remaining
+// routes no longer gate on it (CALV5-PLACEHOLDER in writeSurfaceGate), so the
+// state is still reported but must not be read as a reachability verdict.
+func TestCampaignSurfaces_DisabledAddonIsStatedButNotGating(t *testing.T) {
 	f := surfaceFactsWith(liveCalendarRoutes())
 	f.CalendarAddonEnabled = boolPtr(false)
 	withCampaignProvider(t, &fakeCampaignProvider{surf: f}, func() {
 		got, _ := RunDiagnostic(diagnosticCatalog(), "campaign.surfaces", "c1")
-		if !strings.Contains(got, "A registered route is not a reachable one") {
-			t.Errorf("the addon gate must be stated above the table:\n%s", got)
+		if !strings.Contains(got, "calendar addon: **disabled**") {
+			t.Errorf("the addon state must be stated:\n%s", got)
+		}
+		if !strings.Contains(got, "Not currently load-bearing") {
+			t.Errorf("disabled must not be read as a reachability gate:\n%s", got)
+		}
+		if !strings.Contains(got, "**CURRENT** `/campaigns/:id/apps/calendar`") {
+			t.Errorf("the route table must still print despite the disabled addon:\n%s", got)
 		}
 	})
 }
 
 // TestCampaignSurfaces_HandAuthoredSidebarLinkIsShown. A `type:"link"` item can
-// point at a retired surface, which is one of the two ways the V2 shell is still
-// reachable.
+// point at any URL, including a retired surface that no longer resolves to
+// anything — the diagnostic must print it regardless.
 func TestCampaignSurfaces_HandAuthoredSidebarLinkIsShown(t *testing.T) {
 	f := surfaceFactsWith(liveCalendarRoutes())
 	f.SidebarItems = []SidebarItemFact{
@@ -659,8 +275,8 @@ func TestCampaignSurfaces_HandAuthoredSidebarLinkIsShown(t *testing.T) {
 // ── campaign.config ─────────────────────────────────────────────────────────
 
 // TestCampaignConfig_PlacedSkyboxIsNamedAndDistinguished. This is the whole
-// reason rank 4 exists — and the answer has to disambiguate the two things
-// called "skybox", because the operator uses one word for both.
+// reason campaign.config exists — and the answer has to disambiguate the two
+// things called "skybox", because the operator uses one word for both.
 func TestCampaignConfig_PlacedSkyboxIsNamedAndDistinguished(t *testing.T) {
 	f := CampaignConfigFacts{
 		Found: true, CampaignID: "c1", CampaignName: "T",
@@ -737,8 +353,8 @@ func TestCampaignConfig_DisabledAddonIsMarked(t *testing.T) {
 		if !strings.Contains(got, "✓ enabled `notes`") {
 			t.Errorf("an enabled addon must be marked:\n%s", got)
 		}
-		if !strings.Contains(got, "removes every calendar route at the middleware") {
-			t.Errorf("the consequence of a disabled calendar addon must be stated:\n%s", got)
+		if !strings.Contains(got, "no longer removes the calendar routes") {
+			t.Errorf("the current (not-gating) consequence of a disabled calendar addon must be stated:\n%s", got)
 		}
 	})
 }
@@ -755,110 +371,6 @@ func TestCampaignConfig_UnreadableAddonListIsNotAnEmptyOne(t *testing.T) {
 			t.Errorf("a failed read must not render as 'no addons enabled':\n%s", got)
 		}
 	})
-}
-
-// ── the mirrored rules, as pure functions ───────────────────────────────────
-
-// TestMirrorBenchClassify covers the classification table directly. The source
-// pin proves the producer's rule has not moved; this proves the copy is right.
-func TestMirrorBenchClassify(t *testing.T) {
-	fantasy := func(id string, def bool) DiagCalendar {
-		return DiagCalendar{ID: id, Mode: "fantasy", IsDefault: def}
-	}
-	real := func(id string, def bool) DiagCalendar {
-		return DiagCalendar{ID: id, Mode: "reallife", IsDefault: def}
-	}
-	tests := []struct {
-		name          string
-		cals          []DiagCalendar
-		active        string
-		wantPrimary   string
-		wantRealWorld string
-		wantClause    string
-	}{
-		{"default in-world wins", []DiagCalendar{real("r", false), fantasy("f", true)}, "", "f", "r", "campaign default AND in-world"},
-		{"active in-world when no default", []DiagCalendar{fantasy("a", false), fantasy("b", false)}, "b", "b", "", "ACTIVE calendar"},
-		{"first in-world otherwise", []DiagCalendar{real("r", false), fantasy("a", false), fantasy("b", false)}, "", "a", "r", "first in-world calendar"},
-		{"real-world-only campaign promotes the default", []DiagCalendar{real("r1", false), real("r2", true)}, "", "r2", "r1", "NOTHING BUT REAL-WORLD"},
-		{"single real-world calendar has no second seat", []DiagCalendar{real("r", false)}, "", "r", "", "first calendar in the list"},
-		{"an active REAL-WORLD calendar does not win the primary seat", []DiagCalendar{fantasy("f", false), real("r", false)}, "r", "f", "r", "first in-world calendar"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			seats := mirrorBenchClassify(tc.cals, tc.active)
-			if len(seats) == 0 {
-				t.Fatal("no seats")
-			}
-			if seats[0].Seat != seatPrimary || seats[0].Cal.ID != tc.wantPrimary {
-				t.Errorf("primary: want %s, got %s (%s)", tc.wantPrimary, seats[0].Cal.ID, seats[0].Seat)
-			}
-			if !strings.Contains(seats[0].Clause, tc.wantClause) {
-				t.Errorf("clause: want it to mention %q, got %q", tc.wantClause, seats[0].Clause)
-			}
-			gotRW := ""
-			for _, s := range seats {
-				if s.Seat == seatRealWorld {
-					gotRW = s.Cal.ID
-				}
-			}
-			if gotRW != tc.wantRealWorld {
-				t.Errorf("real-world seat: want %q, got %q", tc.wantRealWorld, gotRW)
-			}
-			if len(seats) != len(tc.cals) {
-				t.Errorf("every calendar must get a seat: %d calendars, %d seats", len(tc.cals), len(seats))
-			}
-		})
-	}
-	if seats := mirrorBenchClassify(nil, ""); seats != nil {
-		t.Errorf("no calendars must produce no seats, got %v", seats)
-	}
-}
-
-// TestMirrorSeatRenderAndAlmanacGate pins the [SKY-1] seat and the gate it
-// feeds, including the case that surprises people: the real-world Block does not
-// build an Almanac EVEN WITH moons.
-func TestMirrorSeatRenderAndAlmanacGate(t *testing.T) {
-	skyOn, shelfHidden := mirrorSeatRender(seatPrimary)
-	if !skyOn || shelfHidden {
-		t.Errorf("PRIMARY: want sky on, shelf shown; got sky=%t shelfHidden=%t", skyOn, shelfHidden)
-	}
-	if !mirrorAlmanacBuilt(skyOn, shelfHidden, 1) {
-		t.Error("PRIMARY with a moon must build the Almanac")
-	}
-	if mirrorAlmanacBuilt(skyOn, shelfHidden, 0) {
-		t.Error("no moons means no register, on any seat")
-	}
-
-	skyOn, shelfHidden = mirrorSeatRender(seatRealWorld)
-	if skyOn || !shelfHidden {
-		t.Errorf("REAL-WORLD: want no sky, shelf hidden; got sky=%t shelfHidden=%t", skyOn, shelfHidden)
-	}
-	if mirrorAlmanacBuilt(skyOn, shelfHidden, 3) {
-		t.Error("REAL-WORLD fails both halves of the gate, so three moons still build no register — this is [SKY-1] plus [SKY-7], not a bug")
-	}
-}
-
-// TestMirrorResolveBenchSections covers the three-way nil / empty / list split.
-func TestMirrorResolveBenchSections(t *testing.T) {
-	all := mirrorResolveBenchSections(nil, true)
-	for _, k := range benchSectionKeysMirror {
-		if !all[k] {
-			t.Errorf("never-chosen must close %q ([BR2-4])", k)
-		}
-	}
-	none := mirrorResolveBenchSections([]string{}, false)
-	for _, k := range benchSectionKeysMirror {
-		if none[k] {
-			t.Errorf("an empty stored list means closed NOTHING; %q should be open", k)
-		}
-	}
-	some := mirrorResolveBenchSections([]string{"rsvp", "bogus"}, false)
-	if !some["rsvp"] || some["rows"] {
-		t.Errorf("stored [rsvp] should close rsvp only, got %v", some)
-	}
-	if some["bogus"] {
-		t.Error("an unknown stored key must resolve to nothing and take nothing down with it")
-	}
 }
 
 // ── catalog placement ───────────────────────────────────────────────────────
@@ -882,8 +394,8 @@ func TestCampaignDiagnosticsAreInTheCatalogInRankOrder(t *testing.T) {
 			t.Errorf("%s (rank %d) must precede %s (rank %d) in the catalog", prev, i, cur, i+1)
 		}
 	}
-	if idx["campaigns.list"] > idx["calendar.render"] {
-		t.Error("campaigns.list supplies the argument these four need and must come first")
+	if idx["campaigns.list"] > idx["campaign.surfaces"] {
+		t.Error("campaigns.list supplies the argument these two need and must come first")
 	}
 }
 
@@ -899,24 +411,17 @@ func TestCampaignDiagnosticsAreCampaignScopedForTheBatchWorkspace(t *testing.T) 
 		if CampaignSlotIsAmbiguous(name, "real-id") {
 			t.Errorf("%s: a real campaign id must not be reported ambiguous", name)
 		}
-	}
-	// The optional tail must survive substitution, and its absence must not
-	// leave a dangling colon behind.
-	if got := WithCampaign("calendar.render", "<campaignId>:u1", "c1"); got != "c1:u1" {
-		t.Errorf("substitution must keep the user id: got %q", got)
-	}
-	if got := WithCampaign("calendar.render", "<campaignId>", "c1"); got != "c1" {
-		t.Errorf("a bare campaign id is a complete argument here: got %q", got)
-	}
-	if got := WithCampaign("campaign.config", "<campaignId>", "c1"); got != "c1" {
-		t.Errorf("campaign.config takes the campaign and nothing else: got %q", got)
+		if got := WithCampaign(name, "<campaignId>", "c1"); got != "c1" {
+			t.Errorf("%s takes the campaign and nothing else: got %q", name, got)
+		}
 	}
 }
 
-// TestDeployCheckPointsAtTheRenderTrace pins that host.deploy-check's Desc
-// refuses a marker-hit-means-it-renders reading and points to calendar.render
-// instead: a marker in the build proves it shipped, never that it renders.
-func TestDeployCheckPointsAtTheRenderTrace(t *testing.T) {
+// TestDeployCheckPointsAtCampaignDiagnostics pins that host.deploy-check's
+// Desc refuses a marker-hit-means-it-renders reading and points to the
+// campaign diagnostics instead: a marker in the build proves it shipped,
+// never that it renders.
+func TestDeployCheckPointsAtCampaignDiagnostics(t *testing.T) {
 	var desc string
 	for _, d := range diagnosticCatalog() {
 		if d.Name == "host.deploy-check" {
@@ -929,15 +434,15 @@ func TestDeployCheckPointsAtTheRenderTrace(t *testing.T) {
 	if !strings.Contains(desc, "nothing about whether it RENDERS") {
 		t.Errorf("the Desc must refuse the render reading:\n%s", desc)
 	}
-	if !strings.Contains(desc, "calendar.render") {
-		t.Errorf("the Desc must name the diagnostic that DOES answer it:\n%s", desc)
+	if !strings.Contains(desc, "campaign.config") || !strings.Contains(desc, "campaign.surfaces") {
+		t.Errorf("the Desc must name the diagnostics that DO answer it:\n%s", desc)
 	}
 
 	out := renderHostDeployCheckFrom(deployCheckSources{}, "some-marker")
 	if !strings.Contains(out, "IT PROVES NOTHING ABOUT WHETHER IT RENDERS") {
 		t.Errorf("the marker section itself must carry the caveat, where somebody is looking at a tick:\n%s", out)
 	}
-	if !strings.Contains(out, "calendar.render") || !strings.Contains(out, "campaign.config") {
+	if !strings.Contains(out, "campaign.config") || !strings.Contains(out, "campaign.surfaces") {
 		t.Errorf("the marker section must name the diagnostics that answer the render question:\n%s", out)
 	}
 }

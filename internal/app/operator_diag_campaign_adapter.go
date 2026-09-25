@@ -16,24 +16,22 @@ import (
 
 // operator_diag_campaign_adapter.go injects the PER-CAMPAIGN read window into
 // the operator diagnostics: the checks that answer "why does MY campaign look
-// like this?" (`calendar.render`, `calendar.config`, `campaign.surfaces`,
-// `campaign.config`).
+// like this?" (`campaign.surfaces`, `campaign.config`).
 //
 // It lives here, not in internal/systems, because that package must not
-// import the calendar / campaigns / addons / entities plugins; the app layer
-// implements the interface and wires it at startup.
+// import the campaigns / addons / entities plugins; the app layer implements
+// the interface and wires it at startup.
 //
 // READ-ONLY BY CONSTRUCTION: every call below is a Get/List/Is, reachable only
 // from the admin-gated diagnostics route.
 //
 // EVERY READ DEGRADES INDIVIDUALLY: a failure lands in a Note the renderer
-// prints, never in a zero value, so "no moons" and "nobody could read the
-// moons table" never render the same.
+// prints, never in a zero value, so "no blocks" and "nobody could read the
+// layout" never render the same.
 type campaignDiagAdapter struct {
 	campaigns campaigns.CampaignService
 	addons    addons.AddonService
-	// CALV5-PLACEHOLDER: `calendars calendar.CalendarService` was here.
-	entities entities.EntityService
+	entities  entities.EntityService
 
 	// routes returns the LIVE Echo route table, supplied as a closure so this
 	// file never imports Echo (CLAUDE.md: no Echo types outside handler files).
@@ -46,66 +44,15 @@ type campaignDiagAdapter struct {
 	sidebarCalendarPath string
 }
 
-// calendarAddonSlug is the addon every calendar route gates on
-// (addons.RequireAddon(addonSvc, …)); disabling it makes the feature answer as
-// if it did not exist. Kept as an alias of the plugin's own identifier, never
-// a re-typed literal — tools/check-plugin-isolation.sh (T-B2) enforces this.
+// calendarAddonSlug is the addon the campaign-page calendar routes used to
+// gate on. Kept as an alias of the plugin's own identifier, never a re-typed
+// literal — tools/check-plugin-isolation.sh (T-B2) enforces this. Still read
+// by SurfaceFacts below to report the addon's state; CALV5-PLACEHOLDER: it is
+// no longer load-bearing for those routes (see the note SurfaceFacts writes)
+// until V5 restores the gate.
 const calendarAddonSlug = calendar.PluginSlug
 
-// ── calendar.render + calendar.config ───────────────────────────────────────
-
-// CalendarFacts reads the calendar state behind one campaign's Bench, for one
-// viewer (userID may be empty, which traces the owner path).
-func (a campaignDiagAdapter) CalendarFacts(ctx context.Context, campaignID, userID string) (systems.CampaignCalendarFacts, error) {
-	out := systems.CampaignCalendarFacts{CampaignID: campaignID}
-	camp, err := a.campaigns.GetByID(ctx, campaignID)
-	if err != nil {
-		if apperror.SafeCode(err) == 404 {
-			return out, nil // Found stays false — the renderer says "no such campaign"
-		}
-		return out, err
-	}
-	out.Found = true
-	out.CampaignName = camp.Name
-	_ = userID
-
-	// The addon row is still readable and still gates the (absent) routes, so
-	// it is still worth reporting — a disabled addon and a rebuilt plugin are
-	// different answers to "why is there no calendar".
-	a.fillCalendarAddon(ctx, campaignID, &out)
-
-	// CALV5-PLACEHOLDER: V5 must rebuild the calendar hydration this method
-	// read (spine, calendar lists, moon counts, active/default pointers,
-	// viewer's stored layout) against its own producer.
-	//
-	// Reported as a Note rather than a zero-valued struct: "no moons" and
-	// "nobody could read the moons table" must never render the same.
-	out.Notes = append(out.Notes,
-		"The calendar plugin is being rebuilt (V5). Its tables are dropped and its "+
-			"render path does not exist, so there is nothing to trace: no spine, no "+
-			"calendars, no active/default pointers, no stored sections or layers. "+
-			"This is expected during the rebuild — it is not a degraded plugin.")
-	return out, nil
-}
-
-func (a campaignDiagAdapter) fillCalendarAddon(ctx context.Context, campaignID string, out *systems.CampaignCalendarFacts) {
-	if a.addons == nil {
-		out.AddonNote = "the addons service is not wired into this adapter"
-		return
-	}
-	enabled, err := a.addons.IsEnabledForCampaign(ctx, campaignID, calendarAddonSlug)
-	if err != nil {
-		out.AddonNote = err.Error()
-		return
-	}
-	out.AddonEnabled = &enabled
-}
-
-// CALV5-PLACEHOLDER: viewer-role and calendar-hydration diagnostics
-// (fillViewer / fillCalendarLists / hydrateForDiag / fillStoredMoonCount /
-// fillViewerPrefs) stood here. V5 must rebuild them to read membership role
-// and DM-grantee visibility role separately, and to hydrate calendars through
-// its own producer rather than a generic service call.
+// ── campaign.surfaces ───────────────────────────────────────────────────────
 
 func (a campaignDiagAdapter) SurfaceFacts(ctx context.Context, campaignID string) (systems.CampaignSurfaceFacts, error) {
 	out := systems.CampaignSurfaceFacts{CampaignID: campaignID, SidebarCalendarPath: a.sidebarCalendarPath}
