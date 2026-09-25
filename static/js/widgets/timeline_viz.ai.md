@@ -69,5 +69,6 @@ entity, description. Edit/delete buttons for Scribe+ role.
 ## Dependencies
 
 - D3.js (loaded via vendored `d3.min.js` or CDN)
-- Timeline plugin provides data API
-- Calendar plugin provides era data (optional)
+- Timeline plugin provides the events data API
+- `data-eras-endpoint` (era bands) is optional and currently unwired: the
+  calendar plugin has no routes until the V5 rebuild (#741)

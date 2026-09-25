@@ -11,7 +11,6 @@ append to it. It is now a pointer. **Do not add to it.**
   - #741 Calendar V5 requirements (and the Foundry side it links to)
   - #739 the approved header and navigation build order
   - #733 the media renovation plan
-  - #742 documentation cleanup
   - #740 ideas nobody has planned yet
 - **Unfixed security weaknesses:** tracked privately in the Cordinator repo,
   never in public issues.

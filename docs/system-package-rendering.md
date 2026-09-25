@@ -187,7 +187,7 @@ experience, including your system's renderer.
   `fields_data`; per-campaign state lives in campaign settings.
   The renderer takes a slug and a context, no plugin config.
 - **Edit-in-place, dice integration, encounter / session state.**
-  These are larger product surfaces not part of CH4.
+  These are larger product surfaces this registry does not cover.
 
 ## Related extension points
 
@@ -210,7 +210,7 @@ The slug-keyed registry is for **system-specific page rendering**:
 collection of generic blocks." If that doesn't match your need,
 one of the lighter-weight extension points above probably does.
 
-## Declaring renderers in `manifest.json` (CH4.5)
+## Declaring renderers in `manifest.json`
 
 The Go-side `Register` call described above is the low-level path. If
 all you need is "render this entity type by mounting that widget,"
@@ -265,7 +265,7 @@ the renderer registry. Every entry must satisfy:
 
 ### Lifecycle and overrides
 
-CH4.5 uses the same V1 lifecycle as the Go-side path: registration
+The manifest path uses the same V1 lifecycle as the Go-side path: registration
 happens once, at boot, after `loadSystemsFromPackages` runs and
 before the registry global is published. Installing a new package
 or upgrading one requires a Chronicle restart for the new renderers

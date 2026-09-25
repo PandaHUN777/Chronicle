@@ -29,8 +29,8 @@ the target element.
 
 **Cause:** Handler not checking the `HX-Request` header.
 
-**Fix:** Add `isHTMX(c)` check in handler before rendering. See
-`.ai/conventions.md` for the pattern.
+**Fix:** Add a `middleware.IsHTMX(c)` check in the handler before rendering.
+See `.ai/conventions.md` for the pattern.
 
 ---
 
@@ -39,9 +39,11 @@ the target element.
 **Symptom:** `sql: Scan error on column 'created_at', converting driver.Value
 type []uint8 ("2026-01-15 10:30:00") to a time.Time`
 
-**Cause:** Missing `parseTime=true` in the MariaDB DSN.
+**Cause:** Missing `parseTime=true` in the MariaDB DSN. Chronicle sets this
+automatically when it builds the DSN from `DB_HOST`/`DB_USER`/etc — this only
+bites when `DATABASE_URL` is set directly, which is used as-is.
 
-**Fix:** Ensure DATABASE_URL includes `?parseTime=true`:
+**Fix:** Ensure `DATABASE_URL` includes `?parseTime=true`:
 ```
 user:pass@tcp(localhost:3306)/chronicle?parseTime=true
 ```
@@ -90,9 +92,9 @@ to switch should be an ADR.
 **Symptom:** `make docker-up` fails because there is no Docker daemon, and
 integration tests silently SKIP.
 
-**Cause:** Docker is not the only way to get MariaDB. The MariaDB 10.11 server
-binary (`mariadbd`) is often installed and runs directly. Two things make it
-look broken when it isn't:
+**Cause:** Docker is not the only way to get MariaDB. A MariaDB server binary
+(`mariadbd`) is often installed and runs directly. Two things make it look
+broken when it isn't:
 
 - `mariadbd` refuses to start as root unless given `--user=root`. The error
   ("Please consult the Knowledge Base to find out how to run mysqld as root!")
@@ -105,20 +107,6 @@ look broken when it isn't:
 server on port **13306**, never 3306, then `make test-int-local`. Integration
 tests SKIP rather than FAIL when no server answers, so a green run without a
 database proves nothing about them.
-
----
-
-## Browser probes pass locally but fail in CI (or the reverse)
-
-**Symptom:** a Browser Probes test fails in CI with nothing changed in the repo.
-
-**Cause:** it was driving a different Chromium. CI pins Playwright 1.56.1
-(Chromium 141.0.7390.37) and exports `CHROMIUM_BIN`. Every probe finder checks
-`CHROMIUM_BIN` before `PATH`, because the runner image ships its own
-`/usr/bin/chromium` and it changes without notice.
-
-**Fix:** run the probes against the pinned build. Set `CHROMIUM_BIN` locally
-to the same Chromium 141 build.
 
 ---
 

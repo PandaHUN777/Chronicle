@@ -29,8 +29,10 @@ Chronicle's update endpoints are PARTIAL: an absent field preserves, an explicit
 
 This is not theoretical. A `{name}`-only rename push once bound `is_private=false`
 and **published a hidden character to every player**. The same class cleared eight
-fields on a timeline rename and NULLed a Foundry pairing key. Five instances were
-found and fixed; **twenty other `Update*Input` structs were never audited.**
+fields on a timeline rename and NULLed a Foundry pairing key. The whole-tree
+inventory of `Update*Input` structs has since been audited and is pinned in
+`internal/patch/partial_update_contract_test.go` — every new one must be
+classified there when it's added.
 
 Do not "harden" a narrow body by echoing untouched fields back — the echo goes
 stale and re-arms the endpoint for the next writer.
@@ -47,7 +49,7 @@ browsers do not reliably execute on an innerHTML swap — this produced
 
 Chronicle serves a live campaign. Verify before you fix; run the repo's own
 checks before you push. `make verify` is the sequence: templ generate, build,
-vet, the eight `tools/` guards, `go test ./... -short`, then `make test-js`.
+vet, the seven `tools/` guards, `go test ./... -short`, then `make test-js`.
 The `templ` binary may need installing: `go install github.com/a-h/templ/cmd/templ@<the version in go.mod>`.
 
 Anything touching `db/migrations/` goes past the `migration-safety` agent first.

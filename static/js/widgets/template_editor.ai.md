@@ -195,10 +195,7 @@ Layout is loaded from `data-layout` attribute (server-rendered), not fetched via
 - Font Awesome — Block type and control icons
 - TailwindCSS — Utility classes
 
-## Known Limitations & Future Work
+## Known limitations
 
-- No live preview of how the template will look with real entity data
-- No undo/redo for layout changes
-- Tab configuration uses prompt() dialogs
-- No drag handle visual affordance on container sub-blocks
-- Container nesting is limited to one level (no containers inside containers)
+Container nesting is limited to one level (no containers inside containers).
+Tab configuration uses `prompt()` dialogs rather than a modal.

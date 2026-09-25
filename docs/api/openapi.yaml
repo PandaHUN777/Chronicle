@@ -315,10 +315,13 @@ paths:
       tags: [Calendar]
       summary: Get calendar
       operationId: getCalendar
-      description: Requires calendar addon to be enabled.
+      deprecated: true
+      description: Requires calendar addon to be enabled. Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Full calendar structure with months, weekdays, moons, seasons, eras
           content:
@@ -339,9 +342,13 @@ paths:
       tags: [Calendar]
       summary: Get current calendar date
       operationId: getCurrentDate
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Current in-game date/time
           content:
@@ -356,6 +363,8 @@ paths:
       tags: [Calendar]
       summary: Set current date
       operationId: setCurrentDate
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -365,6 +374,8 @@ paths:
             schema:
               $ref: "#/components/schemas/SetDateRequest"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Date set successfully
           content:
@@ -385,6 +396,8 @@ paths:
       tags: [Calendar]
       summary: List events
       operationId: listEvents
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
         - name: year
@@ -400,6 +413,8 @@ paths:
           schema:
             type: string
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Events list
           content:
@@ -423,6 +438,8 @@ paths:
       tags: [Calendar]
       summary: Create event
       operationId: createEvent
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -432,6 +449,8 @@ paths:
             schema:
               $ref: "#/components/schemas/CreateEventRequest"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "201":
           description: Created event
           content:
@@ -452,10 +471,14 @@ paths:
       tags: [Calendar]
       summary: Get event
       operationId: getEvent
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
         - $ref: "#/components/parameters/eventId"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Event details
           content:
@@ -470,6 +493,8 @@ paths:
       tags: [Calendar]
       summary: Update event
       operationId: updateEvent
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
         - $ref: "#/components/parameters/eventId"
@@ -480,6 +505,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateEventRequest"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Event updated
           content:
@@ -496,10 +523,14 @@ paths:
       tags: [Calendar]
       summary: Delete event
       operationId: deleteEvent
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
         - $ref: "#/components/parameters/eventId"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "204":
           description: Event deleted
         "404":
@@ -512,6 +543,8 @@ paths:
       tags: [Calendar]
       summary: Update calendar settings
       operationId: updateCalendarSettings
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -521,6 +554,8 @@ paths:
             schema:
               $ref: "#/components/schemas/UpdateCalendarSettingsRequest"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Settings updated
           content:
@@ -539,6 +574,8 @@ paths:
       tags: [Calendar]
       summary: Update months
       operationId: updateMonths
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -550,6 +587,8 @@ paths:
               items:
                 $ref: "#/components/schemas/MonthInput"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Months updated
           content:
@@ -568,6 +607,8 @@ paths:
       tags: [Calendar]
       summary: Update weekdays
       operationId: updateWeekdays
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -579,6 +620,8 @@ paths:
               items:
                 $ref: "#/components/schemas/WeekdayInput"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Weekdays updated
           content:
@@ -597,6 +640,8 @@ paths:
       tags: [Calendar]
       summary: Update moons
       operationId: updateMoons
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -608,6 +653,8 @@ paths:
               items:
                 $ref: "#/components/schemas/MoonInput"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Moons updated
           content:
@@ -626,6 +673,8 @@ paths:
       tags: [Calendar]
       summary: Update eras
       operationId: updateEras
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -637,6 +686,8 @@ paths:
               items:
                 $ref: "#/components/schemas/EraInput"
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Eras updated
           content:
@@ -655,6 +706,8 @@ paths:
       tags: [Calendar]
       summary: Advance date by days
       operationId: advanceDate
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -670,6 +723,8 @@ paths:
                   minimum: 1
                   maximum: 3650
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Date advanced
           content:
@@ -690,6 +745,8 @@ paths:
       tags: [Calendar]
       summary: Advance time by hours/minutes
       operationId: advanceTime
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -706,6 +763,8 @@ paths:
                   type: integer
                   minimum: 0
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Time advanced
           content:
@@ -726,6 +785,8 @@ paths:
       tags: [Calendar]
       summary: Export calendar JSON
       operationId: exportCalendar
+      deprecated: true
+      description: Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
         - name: events
@@ -735,6 +796,8 @@ paths:
             type: string
             enum: ["true", "false"]
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Calendar export data
           content:
@@ -751,7 +814,8 @@ paths:
       tags: [Calendar]
       summary: Import calendar
       operationId: importCalendar
-      description: Accepts Chronicle or Foundry SimpleCalendar JSON format (auto-detected).
+      deprecated: true
+      description: Accepts Chronicle or Foundry SimpleCalendar JSON format (auto-detected). Calendar is being rebuilt (#741); this endpoint always answers 503 until it lands.
       parameters:
         - $ref: "#/components/parameters/campaignId"
       requestBody:
@@ -761,6 +825,8 @@ paths:
             schema:
               type: object
       responses:
+        "503":
+          $ref: "#/components/responses/CalendarRebuilding"
         "200":
           description: Import result summary
           content:
@@ -1714,6 +1780,19 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    CalendarRebuilding:
+      description: The calendar is being rebuilt (#741). Every calendar route stays registered and answers this until the rebuild lands.
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: string
+                example: calendar_rebuilding
+              message:
+                type: string
+                example: "Chronicle's calendar is being rebuilt and is temporarily unavailable. Calendar sync is paused; maps, actors, items and notes are unaffected."
 
   schemas:
     Error:

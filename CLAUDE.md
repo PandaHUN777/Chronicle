@@ -64,7 +64,7 @@ See `.ai/architecture.md` for the full architecture document.
 - **Tests:** table-driven tests. Interfaces for all service/repo boundaries.
 - **Naming:** `snake_case.go` for files, `PascalCase` for exported Go types, `camelCase` for JSON.
 - **Migrations are APPEND-ONLY and SCHEMA-ONLY:** sequential numbered SQL files in `db/migrations/`. **Never edit, delete, or renumber a migration any live DB may have applied** — a CI guard (`tools/check-migration-immutability.sh`) enforces it; deleting an applied migration crash-loops boot (the 000030 incident, ADR-044/045). New DDL must be idempotent (`ADD COLUMN IF NOT EXISTS` / `CREATE TABLE IF NOT EXISTS` / `DROP ... IF EXISTS`). One-time **data** fixes do NOT go in migrations — use an idempotent reconciler (an `EnsureX`/`MergeX` service method or a `SetupProvider`). Core migrations may only reference core tables — plugin tables (e.g. `api_keys`, `maps`, `calendars`) live in `internal/plugins/<slug>/migrations/` and run *after* core, so a core migration referencing them crashes on a fresh DB. Span-the-layers data fixes must be split (core part in core, plugin part in the plugin). See `.ai/conventions.md` §"Migration Safety Rules".
-- **Comments:** every package, every exported type, every non-obvious block. WHY not WHAT.
+- **Comments:** every package, every exported type, every non-obvious block. WHY not WHAT, in a few lines. No history, task IDs, dates or `file:line` pointers in comments; those go in the PR. Deferred work is `TODO(#issue)`. See `.ai/conventions.md` §Comment Conventions.
 - **Database:** MariaDB. Use `database/sql` + `go-sql-driver/mysql`. No ORM.
 
 ## Where things live
@@ -164,7 +164,7 @@ the full index. Key files:
 | `.ai/architecture.md` | When designing new features or systems |
 | `.ai/conventions.md` | When writing any code -- patterns with examples |
 | `.ai/decisions.md` | When questioning a design choice -- ADRs with rationale |
-| `.ai/data-model.md` | When writing queries or migrations (incomplete, see #742: the migrations are the truth) |
+| `.ai/data-model.md` | When writing queries or migrations (the migrations are the source of truth) |
 
 Each plugin and widget has its own `.ai.md` in its directory (systems are external packages — see `.ai/README.md`).
 `.ai/status.md` and `.ai/todo.md` are pointers to the issues now; do not add to them.
