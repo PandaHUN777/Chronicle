@@ -61,6 +61,17 @@ type App struct {
 	// Used by the database explorer to re-run migrations on demand.
 	PluginSchemas []database.PluginSchema
 
+	// ShutdownCtx is canceled by ShutdownCancel when the server begins
+	// graceful shutdown (cmd/server/main.go's signal handler). Long-running
+	// startup background jobs (e.g. the media content-hash backfill) select
+	// on it instead of context.Background() so they stop instead of working
+	// against a closing DB connection (#711).
+	ShutdownCtx context.Context
+
+	// ShutdownCancel cancels ShutdownCtx. Called once, from the signal
+	// handler in cmd/server/main.go.
+	ShutdownCancel context.CancelFunc
+
 	// pkgService is the package manager service, used for Foundry module
 	// path resolution and system loading from external repos.
 	pkgService packages.PackageService
@@ -90,13 +101,17 @@ func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *databa
 		return nil, fmt.Errorf("trusted proxy configuration: %w", err)
 	}
 
+	shutdownCtx, shutdownCancel := context.WithCancel(context.Background())
+
 	app := &App{
-		Config:       cfg,
-		DB:           db,
-		Redis:        rdb,
-		Echo:         e,
-		PluginHealth:  pluginHealth,
-		PluginSchemas: pluginSchemas,
+		Config:         cfg,
+		DB:             db,
+		Redis:          rdb,
+		Echo:           e,
+		PluginHealth:   pluginHealth,
+		PluginSchemas:  pluginSchemas,
+		ShutdownCtx:    shutdownCtx,
+		ShutdownCancel: shutdownCancel,
 	}
 
 	// Register global middleware in order of execution.
