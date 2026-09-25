@@ -33,7 +33,7 @@ func TestHasExtensionDashboard_KnownSlugs(t *testing.T) {
 	}{
 		{"calendar", true},
 		{"maps", false},
-		{"timeline", false}, // not yet added
+		{"timeline", false}, // joins after C-TIMELINE-V2 lands
 		{"notes", false},
 		{"unknown-slug", false},
 		{"", false},
@@ -51,7 +51,7 @@ func TestHasExtensionEntitySetup_KnownSlugs(t *testing.T) {
 		want bool
 	}{
 		{"calendar", true},
-		{"timeline", false}, // calendar only, for now
+		{"timeline", false}, // Phase 4 calendar-only this wave
 		{"maps", false},     // maps has its own setup card outside this mechanism
 		{"", false},
 	}
