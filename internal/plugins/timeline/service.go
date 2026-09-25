@@ -903,6 +903,12 @@ func canUserView(baseVisibility string, visRulesJSON *string, role int, userID s
 		return true // Fail open for existing items — validated on write path.
 	}
 
+	// A non-empty DeniedUsers also excludes an anonymous viewer (ADR-049):
+	// a logged-out visitor can't be proven not to be the player it names.
+	if permissions.DeniesAnonymous(rules.DeniedUsers, userID) {
+		return false
+	}
+
 	// AllowedUsers whitelist takes precedence.
 	if len(rules.AllowedUsers) > 0 {
 		for _, uid := range rules.AllowedUsers {

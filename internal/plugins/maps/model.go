@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/keyxmakerx/chronicle/internal/patch"
+	"github.com/keyxmakerx/chronicle/internal/permissions"
 )
 
 // VisibilityRules defines per-user visibility overrides for map content.
@@ -44,9 +45,16 @@ func ParseVisibilityRules(raw *string) *VisibilityRules {
 // The default for a user named in NEITHER list depends on whether
 // AllowedUsers is in use: empty means "everyone except DeniedUsers"
 // (default-allow); non-empty is a strict allowlist (default-deny).
+//
+// A non-empty DeniedUsers also excludes an anonymous (empty) userID —
+// permissions.DeniesAnonymous, ADR-049 — since a logged-out visitor can't be
+// proven not to be the player the list names.
 func (v *VisibilityRules) Allows(userID string) bool {
 	if v == nil {
 		return true
+	}
+	if permissions.DeniesAnonymous(v.DeniedUsers, userID) {
+		return false
 	}
 	for _, id := range v.DeniedUsers {
 		if id == userID {

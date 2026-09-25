@@ -773,6 +773,8 @@ Full text: https://github.com/keyxmakerx/Chronicle/blob/dfc73c78/.ai/decisions.m
 - The timeline's create-or-pick picker and the campaign timeline export adapter pass `SystemViewer` explicitly, with unchanged shipped behavior.
 - `TimelineService` methods take a `permissions.Viewer` instead of `(role, userID)`; exported service methods build a `RequestViewer` at their boundary.
 
+**Amendment:** `SkipsPerUserRules` correctly sends an anonymous viewer through the same per-user check as everyone else — but every deny-list predicate that check reaches (maps' `VisibilityRules.Allows` and its SQL twins in `ListMarkers`/`ListDrawings`, the WebSocket hub's `Message.AudienceAllows`, timeline's `canUserView`) matched a `DeniedUsers` entry by literal userID equality, and an anonymous request's userID is always `""` — never equal to a real denied id — so a deny list alone did not exclude anonymous. A player denied an item could log out and see it. The invariant: **whenever an item carries a non-empty deny list, an anonymous viewer is denied by it too**, since an anonymous session can't be proven not to be the specific player named. `permissions.DeniesAnonymous(deniedUsers, userID)` states this once; all four predicates call it before testing membership.
+
 ---
 
 ## ADR-050: An immutable plugin migration is repaired by a reconciler, and a half-applied one resumes instead of replaying
