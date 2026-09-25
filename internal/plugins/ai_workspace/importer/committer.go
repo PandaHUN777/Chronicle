@@ -79,13 +79,17 @@ type RowDecision struct {
 	// per-row editing.
 	Subcategory string
 
-	// Visibility is the enum value. It maps to IsPrivate at commit time
-	// (private / dm_only → private; public → public) and to NOTHING
-	// ELSE — Entity.Visibility is a separate default/custom MODE
-	// switch this plugin never touches, so dm_only and private are
-	// indistinguishable once committed. On an UPDATE this value is
-	// only honored when the markdown carried an explicit `visibility:`
-	// key — see commitUpdate.
+	// Visibility is the enum value: "private" | "dm_only" | "public", or
+	// "" for no per-row/bulk override. It maps to IsPrivate at commit
+	// time (private / dm_only → private; public → public) and to
+	// NOTHING ELSE — Entity.Visibility is a separate default/custom
+	// MODE switch this plugin never touches, so dm_only and private are
+	// indistinguishable once committed. On a CREATE, "" defers to
+	// CommitInput.CampaignDefaultPrivate (issue #729) — the review
+	// screen's "Campaign default" option, or a row whose front matter
+	// carried no `visibility:` key. On an UPDATE this value is only
+	// honored when the markdown carried an explicit `visibility:` key
+	// — see commitUpdate.
 	Visibility string
 
 	// ConflictMode is "skip" | "rename" | "update". Honored only when
@@ -114,6 +118,15 @@ type CommitInput struct {
 	OwnerID   string
 	Pages     []ParsedPage
 	Decisions []RowDecision
+
+	// CampaignDefaultPrivate is the campaign's
+	// CampaignSettings.DefaultsToPrivate() value, resolved by the
+	// handler before calling Commit. A create row with no per-row/bulk
+	// visibility override (RowDecision.Visibility == "") follows this,
+	// matching every other entity-creation path
+	// (CampaignSettings.ResolveNewEntityPrivacy) instead of the
+	// importer's own hardcoded choice (#729).
+	CampaignDefaultPrivate bool
 }
 
 // RowOutcome is the per-row commit outcome. The result summary
@@ -192,7 +205,7 @@ func (c *Committer) Commit(ctx context.Context, campaignID string, in CommitInpu
 			dec = in.Decisions[i]
 		}
 		result.Rows[i] = c.commitRow(ctx, campaignID, in.OwnerID,
-			i, page, dec, typesBySlug, newTypeIDs, failedTypes)
+			i, page, dec, typesBySlug, newTypeIDs, failedTypes, in.CampaignDefaultPrivate)
 		switch result.Rows[i].Status {
 		case StatusCreated:
 			result.Created++
@@ -284,6 +297,7 @@ func (c *Committer) commitRow(
 	typesBySlug map[string]*entities.EntityType,
 	newTypeIDs map[string]int,
 	failedNewTypes []string,
+	campaignDefaultPrivate bool,
 ) RowOutcome {
 	out := RowOutcome{Index: idx, Name: dec.Name}
 	if out.Name == "" {
@@ -347,7 +361,18 @@ func (c *Committer) commitRow(
 	}
 
 	// Map visibility → IsPrivate (CreateEntityInput's only visibility flag).
-	isPrivate := dec.Visibility == "private" || dec.Visibility == "dm_only"
+	// "" (no per-row/bulk override) follows the campaign default, same as
+	// every other creation path's ResolveNewEntityPrivacy merge (#729) —
+	// this importer must not hardcode a choice the operator never made.
+	var isPrivate bool
+	switch dec.Visibility {
+	case "private", "dm_only":
+		isPrivate = true
+	case "public":
+		isPrivate = false
+	default:
+		isPrivate = campaignDefaultPrivate
+	}
 
 	// Resolve final name + conflict outcome.
 	finalName := out.Name

@@ -190,6 +190,61 @@ func TestCommit_StripsScriptFromBody(t *testing.T) {
 	}
 }
 
+// TestCommit_NoOverrideFollowsCampaignDefault is the #729 regression:
+// a row with no per-import visibility override (Visibility == "") must
+// follow the campaign's configured default rather than being silently
+// created public. CampaignDefaultPrivate is the resolved
+// CampaignSettings.DefaultsToPrivate() value the handler threads in.
+func TestCommit_NoOverrideFollowsCampaignDefault(t *testing.T) {
+	f := &fakeCreator{
+		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
+	}
+	c := NewCommitter(f)
+	res, err := c.Commit(context.Background(), "camp-1", CommitInput{
+		OwnerID:                "u-1",
+		Pages:                  []ParsedPage{page("Lyra Vance", "character", "# Lyra\n\nBody.")},
+		Decisions:              []RowDecision{decision(true, "Lyra Vance", "character", "", "rename")},
+		CampaignDefaultPrivate: true,
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if res.Created != 1 || res.Rows[0].Status != StatusCreated {
+		t.Fatalf("expected 1 created; got %+v", res)
+	}
+	if len(f.createCalls) != 1 {
+		t.Fatalf("expected 1 create call; got %d", len(f.createCalls))
+	}
+	if !f.createCalls[0].IsPrivate {
+		t.Errorf("expected the campaign's private-by-default setting to apply when no override was given, got IsPrivate=false")
+	}
+}
+
+// TestCommit_ExplicitOverrideWinsOverCampaignDefault: an explicit
+// per-row visibility choice always wins over the campaign default, in
+// both directions (public override under a private-default campaign).
+func TestCommit_ExplicitOverrideWinsOverCampaignDefault(t *testing.T) {
+	f := &fakeCreator{
+		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
+	}
+	c := NewCommitter(f)
+	res, err := c.Commit(context.Background(), "camp-1", CommitInput{
+		OwnerID:                "u-1",
+		Pages:                  []ParsedPage{page("Lyra Vance", "character", "# Lyra\n\nBody.")},
+		Decisions:              []RowDecision{decision(true, "Lyra Vance", "character", "public", "rename")},
+		CampaignDefaultPrivate: true,
+	})
+	if err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	if res.Created != 1 || res.Rows[0].Status != StatusCreated {
+		t.Fatalf("expected 1 created; got %+v", res)
+	}
+	if f.createCalls[0].IsPrivate {
+		t.Errorf("expected explicit public override to win over the campaign's private default, got IsPrivate=true")
+	}
+}
+
 // TestCommit_RenameOnConflict appends "(Imported)" + slug-dedup
 // loop. Mirrors entities.Clone's "(Copy)" pattern.
 func TestCommit_RenameOnConflict(t *testing.T) {

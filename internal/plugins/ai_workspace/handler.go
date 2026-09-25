@@ -198,9 +198,12 @@ func (h *Handler) ParseImport(c echo.Context) error {
 // POST /campaigns/:id/ai-workspace/import/commit
 //
 // Form fields: markdown_source, bulk_default_category,
-// bulk_default_visibility (private|dm_only|public), bulk_default_conflict
-// (rename|skip|overwrite), and per row page_N_include/name/category/
-// visibility/conflict.
+// bulk_default_visibility (private|dm_only|public|"" for campaign default),
+// bulk_default_conflict (rename|skip|overwrite), and per row
+// page_N_include/name/category/visibility/conflict. An empty visibility
+// (bulk or per-row) means no override was made, so new pages follow the
+// campaign's configured DefaultVisibility (#729) rather than a hardcoded
+// choice.
 //
 // Returns the import_result fragment.
 func (h *Handler) CommitImport(c echo.Context) error {
@@ -234,10 +237,12 @@ func (h *Handler) CommitImport(c echo.Context) error {
 	pages := importer.Parse(source)
 
 	bulkCategory := strings.TrimSpace(c.FormValue("bulk_default_category"))
+	// Empty means "no bulk override" — left for each row to resolve
+	// against its own front matter, and ultimately the campaign default
+	// (see Committer.commitRow). This used to default to "private",
+	// hardcoding a choice nobody made and fighting public-default
+	// campaigns (#729).
 	bulkVisibility := strings.TrimSpace(c.FormValue("bulk_default_visibility"))
-	if bulkVisibility == "" {
-		bulkVisibility = "private"
-	}
 	bulkConflict := strings.TrimSpace(c.FormValue("bulk_default_conflict"))
 	if bulkConflict == "" {
 		bulkConflict = "rename"
@@ -295,9 +300,10 @@ func (h *Handler) CommitImport(c echo.Context) error {
 
 	userID := auth.GetUserID(c)
 	result, err := h.importCommitter.Commit(c.Request().Context(), cc.Campaign.ID, importer.CommitInput{
-		OwnerID:   userID,
-		Pages:     pages,
-		Decisions: decisions,
+		OwnerID:                userID,
+		Pages:                  pages,
+		Decisions:              decisions,
+		CampaignDefaultPrivate: cc.Campaign.ParseSettings().DefaultsToPrivate(),
 	})
 	if err != nil {
 		slog.Error("ai-workspace: commit failed",
