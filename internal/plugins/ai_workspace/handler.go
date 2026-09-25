@@ -191,23 +191,16 @@ func (h *Handler) ParseImport(c echo.Context) error {
 	}))
 }
 
-// CommitImport runs the entity-creation pass after the operator
-// reviews the parsed pages and submits the form. Per-row autonomy:
-// one row's failure does not abort the rest. Owner-gated at the
-// route level (RequireRole(RoleOwner)).
+// CommitImport runs the entity-creation pass after the operator reviews the
+// parsed pages and submits the form. Per-row autonomy: one row's failure
+// does not abort the rest. Owner-gated at the route level.
 //
 // POST /campaigns/:id/ai-workspace/import/commit
 //
-// Form fields (URL-encoded form data; review screen's <form>):
-//   - markdown_source           hidden; original input markdown
-//   - bulk_default_category     "" or entity-type slug
-//   - bulk_default_visibility   "private" (default) | "dm_only" | "public"
-//   - bulk_default_conflict     "rename" (default) | "skip" | "overwrite"
-//   - page_N_include            "on" or absent
-//   - page_N_name               text
-//   - page_N_category           slug or "new:<slug>"
-//   - page_N_visibility         enum
-//   - page_N_conflict           enum (only for conflict rows)
+// Form fields: markdown_source, bulk_default_category,
+// bulk_default_visibility (private|dm_only|public), bulk_default_conflict
+// (rename|skip|overwrite), and per row page_N_include/name/category/
+// visibility/conflict.
 //
 // Returns the import_result fragment.
 func (h *Handler) CommitImport(c echo.Context) error {
@@ -380,27 +373,19 @@ func readImportBody(c echo.Context) (string, error) {
 	return b.String(), nil
 }
 
-// GeneratePrompt renders the "Copy AI Prompt" markdown for the
-// campaign owner and returns the modal fragment that displays it
-// with a Copy button. Owner-gated at the route level
-// (RequireRole(RoleOwner)). Reuses the same data-widget="ai-export"
-// JS hook the Export modal uses (one widget, two consumers).
+// GeneratePrompt renders the "Copy AI Prompt" markdown for the campaign
+// owner and returns the modal fragment with a Copy button. Owner-gated at
+// the route level. Reuses the data-widget="ai-export" JS hook the Export
+// modal uses.
 //
 // GET /campaigns/:id/ai-workspace/prompt/generate
 //
-// Query params (all optional; defaults shown):
-//   schema_types          ("on" → include entity-types section)
-//   schema_categories     ("on" → include categories-in-use section)
-//   schema_front_matter   ("on" → include front-matter example)
-//   content_mode          "none" (default) | "all" | comma-separated
-//                         category slugs
-//   privacy               "safe" (default) | "permitted" | "everything"
-//   gm_notes              "on" → include session GM notes in content
-//   instruction           operator's free-text textarea contents
+// Query params: schema_types/schema_categories/schema_front_matter ("on"),
+// content_mode ("none"|"all"|category slugs), privacy
+// ("safe"|"permitted"|"everything"), gm_notes ("on"), instruction (free text).
 //
-// Returns the prompt modal templ; a builder error surfaces in the
-// modal's error region rather than a top-level apperror so the
-// operator sees an in-modal failure they can correct.
+// A builder error surfaces in the modal's error region, not a top-level
+// apperror, so the operator sees an in-modal failure they can correct.
 func (h *Handler) GeneratePrompt(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {

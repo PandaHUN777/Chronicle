@@ -1,21 +1,13 @@
-// entity_vis_parity_test.go pins that the entities plugin's anon-reachable
-// data endpoints (GetEntry, GetFieldsAPI, PreviewAPI, GetAliasesAPI) gate on
-// the canonical CheckEntityAccess result, not the legacy
-// `entity.IsPrivate && role < RoleScribe` check, which ignores
-// visibility='custom' and would wrongly serve a default-public entity that
-// was flipped to custom visibility with restrictive grants.
+// entity_vis_parity_test.go pins that entities' anon-reachable data
+// endpoints (GetEntry, GetFieldsAPI, PreviewAPI, GetAliasesAPI) gate on
+// CheckEntityAccess, not the legacy `IsPrivate && role < RoleScribe` check —
+// which ignores visibility='custom' and would wrongly serve an entity
+// flipped to custom with restrictive grants.
 //
-// These tests drive real anonymous HTTP requests through the public-campaign
-// middleware chain (auth.OptionalAuth + campaigns.AllowPublicCampaignAccess +
-// campaigns.RequireViewAccess) into each endpoint, asserting: a
-// custom-restricted entity (CheckEntityAccess CanView=false) is never served
+// Drives real anonymous HTTP requests through the public-campaign
+// middleware chain, asserting: a custom-restricted entity is never served
 // to anon, a foreign-campaign entity ID is rejected (cross-campaign IDOR),
-// and a viewable entity is unchanged.
-//
-// The default Echo error handler is in effect, so a denied request surfaces
-// as a non-200 (the app's real handler maps NotFound to 404); the contract
-// asserted here is simply "never a 200 payload for a restricted/foreign
-// entity".
+// and a viewable entity is unchanged (never a 200 for restricted/foreign).
 package entities
 
 import (

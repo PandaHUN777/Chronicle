@@ -1,22 +1,14 @@
 /**
  * editor.js -- Chronicle Rich Text Editor Widget
  *
- * TipTap-based rich text editor for entity content. Mounts to elements
- * with data-widget="editor" and provides WYSIWYG editing with autosave.
+ * TipTap-based WYSIWYG editor with autosave, mounted on
+ * data-widget="editor". Config: data-endpoint (required),
+ * data-campaign-id (required for @mentions), data-editable
+ * (default false), data-autosave seconds (default 30, 0 disables).
  *
- * Configuration (via data-* attributes):
- *   data-endpoint    - API URL for loading/saving content (required)
- *   data-campaign-id - Campaign ID for @mention entity search (required for mentions)
- *   data-editable    - "true" to enable editing, "false" for read-only (default: false)
- *   data-autosave    - Autosave interval in seconds, 0 to disable (default: 30)
- *
- * Content is stored as ProseMirror JSON in the entity's `entry` column
- * and pre-rendered to HTML in `entry_html` for display performance.
- *
- * @mention support:
- *   When editor_mention.js is loaded and a campaign ID is available,
- *   typing @ in the editor triggers an entity search popup. Selecting
- *   an entity inserts a styled mention link.
+ * Content is stored as ProseMirror JSON in `entry` and pre-rendered to
+ * `entry_html` for display. When editor_mention.js is loaded and a
+ * campaign ID is set, typing @ triggers entity-mention search.
  */
 (function () {
   'use strict';

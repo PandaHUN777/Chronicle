@@ -20,20 +20,13 @@ import (
 // TestFreshDatabase_EveryPluginSchemaApplies replays the server's real schema
 // bootstrap — core migrations, then foundry_vtt.PreMigrationCheck, then
 // database.RunPluginMigrations over the real registeredPlugins() list —
-// against a database that has NEVER been migrated, and requires every plugin
-// to come up healthy. This is CI's only fresh-DB replay: it catches any
-// plugin migration that assumes a predecessor's schema, not just foundry_vtt.
+// against a never-migrated database, and requires every plugin to come up
+// healthy. This is CI's only fresh-DB replay: it catches a plugin migration
+// that assumes a predecessor's schema, not just foundry_vtt.
 //
-// Discovery + skip rules follow the house integration-test convention
-// (internal/plugins/entities/repository_integration_test.go):
-//   - Skipped under `-short`, so `make test-unit` / `make verify` never need a DB.
-//   - Server DSN from CHRONICLE_TEST_DB_DSN, else the DB_* env vars, else the
-//     dev default that matches the Makefile's DATABASE_URL.
-//   - If no server answers, SKIP rather than fail.
-//
-// Unlike the other integration tests it does NOT use the configured database:
-// it creates a uniquely-named scratch schema, migrates that from zero, and
-// drops it again, so running it never touches dev data.
+// Skipped under `-short`. DSN from CHRONICLE_TEST_DB_DSN, else DB_* env vars,
+// else the dev default; SKIP (not fail) if no server answers. Runs against a
+// uniquely-named scratch schema it creates and drops, never dev data.
 //
 // Run with: `make docker-up && make test-freshdb`.
 func TestFreshDatabase_EveryPluginSchemaApplies(t *testing.T) {

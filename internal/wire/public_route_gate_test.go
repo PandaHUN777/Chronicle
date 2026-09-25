@@ -1,34 +1,17 @@
 // Package wire — public-route gate sweep.
 //
-// This is a wire-level AST sweep: every route registered on a group built
-// with campaigns.AllowPublicCampaignAccess(...) must carry
-// campaigns.RequireViewAccess() and must NOT carry campaigns.RequireRole(...).
-// A public route that loses its view gate (or regains a role gate) fails
-// here. A per-route regression guard alone is not enough — it can miss most
-// of a large batch of routes while staying green.
+// Every route on a group built with campaigns.AllowPublicCampaignAccess(...)
+// must carry campaigns.RequireViewAccess() and must NOT carry
+// campaigns.RequireRole(...). An AST sweep (the runtime router needs a real
+// DB/Redis), keyed on the AllowPublicCampaignAccess argument rather than the
+// group variable name, so renames and new public groups are still caught;
+// group tracking is scoped per-FuncDecl for files with both a public and an
+// authenticated group.
 //
-// WHY an AST sweep and not the runtime router: same rationale as
-// wire_contract_test.go — constructing the full App needs a real DB/Redis. AST
-// extraction is sufficient because Chronicle registers every route with a literal
-// `<group>.METHOD("path", handler, middleware...)` call.
-//
-// Marker choice: the sweep keys on the AllowPublicCampaignAccess argument to
-// e.Group(...), NOT on the group variable name (`pub` today). That is drift-proof:
-// renaming the variable, or adding a new public group under a different name, is
-// still caught. Group tracking is scoped per-FuncDecl so a file that opens both an
-// authenticated `cg` group and a public `pub` group (or reuses the name `pub`
-// across two functions, as maps/routes.go does) is handled correctly.
-//
-// The sweep is also hardened against three evasions a naive per-route scan
-// would miss:
-//   - a RequireRole passed as GROUP-LEVEL middleware to e.Group(...) alongside
-//     AllowPublicCampaignAccess (applies to every route in the group, yet each
-//     route's own args look clean);
-//   - a RequireRole added to a public group via a later <group>.Use(...) call;
-//   - a route registered through a NON-Ident receiver rooted at a public group
-//     (e.g. a chained sub-group `pub.Group("/x").GET(...)`), whose view gate a
-//     static per-route scan would silently skip. Such a registration fails: its
-//     gate cannot be statically verified, so it must fail closed here.
+// Also catches: a RequireRole passed as group-level middleware alongside
+// AllowPublicCampaignAccess, one added later via <group>.Use(...), and a
+// route registered off a chained sub-group of a public group. Any route
+// whose gate can't be statically verified fails closed.
 package wire
 
 import (

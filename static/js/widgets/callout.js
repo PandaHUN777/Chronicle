@@ -1,26 +1,17 @@
 /*
  * callout.js — the player call-to-action banner.
  *
- * The banner itself is server-rendered and refreshed by an HTMX poll declared
- * on the host element (app.templ). This widget owns the two things the server
- * genuinely cannot do:
+ * The banner is server-rendered and HTMX-polled (app.templ). This widget
+ * only does what the server can't: (1) fill in the browser's real
+ * timezone and reveal the hidden accept button — the server must never
+ * guess a zone, so if the browser won't tell us the "Choose" link to
+ * /account is the whole offer; (2) client-side dismissal, scoped to the
+ * tab session (no prefs table exists) rather than permanent, since an
+ * unset timezone is wrong every day and a permanent dismiss would hide
+ * that forever.
  *
- *   1. THE BROWSER'S TIMEZONE. The server does not know it and must not guess
- *      one into the sentence, so the timezone banner ships with a hidden accept
- *      button and this fills in the real zone and reveals it. If the browser
- *      will not tell us, the button stays hidden and the "Choose" link to
- *      /account is the whole offer — an honest degrade, not a broken control.
- *
- *   2. DISMISSAL. There is no user-preferences table in this product, so
- *      dismissal is client-side and lasts for the tab session: an unset
- *      timezone is wrong every day, so a permanent dismissal would let a
- *      player silently keep reading UTC times forever. Per tab is long
- *      enough to stop it nagging and short enough that it comes back.
- *
- * ES5 style to match the rest of static/js. Registered via Chronicle.register
- * and auto-mounted by boot.js on [data-widget="callout"], which also re-mounts
- * it after every htmx settle since script tags in swapped fragments are
- * removed.
+ * Auto-mounted by boot.js on [data-widget="callout"]; re-mounted after
+ * every htmx settle since swapped-in script tags don't persist.
  */
 (function () {
   'use strict';

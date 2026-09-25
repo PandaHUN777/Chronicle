@@ -142,25 +142,19 @@ type CreateMapInput struct {
 //
 // PARTIAL update: absent preserves, explicit null clears, present replaces
 // (see .ai/conventions.md). ImageID, ImageWidth, ImageHeight and
-// Description use patch.Field[T] rather than a plain *T (a plain pointer
-// bound from JSON can't distinguish "key omitted" from "key sent null"): a
-// rename-only PUT must not unlink the map's image or wipe its description.
+// Description use patch.Field[T], not a plain *T, so a rename-only PUT
+// can't unlink the image or wipe the description.
 //
-// BackgroundColor is genuinely tri-state on its own terms: nil pointer =
-// leave unchanged; pointer-to-empty-string = clear the override (revert to
-// theme); any other CSS color string = set as the override. It stays a
-// plain *string (not patch.Field) because that sentinel, not an explicit
-// JSON null, is what the caller and service speak.
+// BackgroundColor stays a plain *string: nil = unchanged, pointer-to-empty
+// = clear the override, any other value = set it — that sentinel, not a
+// JSON null, is the contract the caller and service use.
 //
-// Name is deliberately left a plain string: UpdateMap validates the merged
-// name is non-empty and rejects the call with 400 when blank, so an absent
-// name fails loudly instead of silently overwriting.
+// Name is a plain string; UpdateMap 400s on a blank merged name so an
+// absent name fails loudly rather than overwriting silently.
 //
-// ExpectedUpdatedAt is the optional optimistic-concurrency token: when
-// non-nil, the service rejects with 409 Conflict if the row's UpdatedAt has
-// advanced past it. Omitting it falls back to last-writer-wins — see
-// internal/concurrency.Check. It is NOT a data field, so it stays a plain
-// pointer.
+// ExpectedUpdatedAt is the optional optimistic-concurrency token: non-nil
+// rejects with 409 if UpdatedAt has advanced past it (internal/concurrency.Check);
+// omitted falls back to last-writer-wins. Not a data field, so plain pointer.
 type UpdateMapInput struct {
 	Name              string
 	Description       patch.Field[string]

@@ -1,20 +1,13 @@
 /**
  * editor_slash.js -- TipTap Slash Command Menu
  *
- * Provides a "/" trigger menu in the TipTap editor for quick block insertion.
- * When the user types "/" at the start of a line or after whitespace, a floating
- * dropdown appears showing available block commands. Typing further filters the
- * list. Arrow keys navigate, Enter executes, Escape dismisses.
+ * Typing "/" at line start or after whitespace opens a floating dropdown
+ * of block commands (headings, lists, quote, table, rule, code block);
+ * typing filters, arrows navigate, Enter executes, Escape dismisses.
  *
- * Commands: Heading 1/2/3, Bullet List, Numbered List, Quote/Callout, Table,
- * Horizontal Rule, Code Block, Image (placeholder).
- *
- * Architecture:
- *   - Self-contained module that exports Chronicle.SlashCommands.
- *   - The editor.js widget detects Chronicle.SlashCommands and wires its
- *     lifecycle hooks (onCreate, onUpdate, onKeyDown, onDestroy) into the
- *     TipTap editor.
- *   - Follows the same pattern as editor_mention.js for consistency.
+ * Self-contained module exporting Chronicle.SlashCommands; editor.js
+ * detects it and wires its lifecycle hooks into the TipTap editor
+ * (same pattern as editor_mention.js).
  */
 (function () {
   'use strict';

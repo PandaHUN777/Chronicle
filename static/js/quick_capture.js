@@ -1,20 +1,10 @@
 /**
  * quick_capture.js -- Quick Capture Modal (Ctrl+Shift+N)
  *
- * Opens a lightweight modal for instant note creation within the current
- * campaign. Pressing Ctrl+Shift+N pops up a small form with a title
- * (pre-filled with a timestamp) and a text area. Submitting creates a
- * campaign-wide note via the existing notes API.
- *
- * Also provides Chronicle.openSessionJournal() for the topbar "Session
- * Journal" button, which creates or appends to today's dated journal note.
- *
- * Features:
- *   - Ctrl+Shift+N global shortcut
- *   - Title auto-filled with "Quick Note - YYYY-MM-DD HH:MM"
- *   - Creates note via POST /campaigns/:id/notes
- *   - After creation, shows success toast and optionally opens the notes panel
- *   - Session Journal: finds or creates "Session Journal - YYYY-MM-DD" note
+ * Ctrl+Shift+N opens a modal for instant note creation in the current
+ * campaign (title pre-filled "Quick Note - YYYY-MM-DD HH:MM"), posting to
+ * POST /campaigns/:id/notes. Chronicle.openSessionJournal() (topbar button)
+ * finds or creates today's "Session Journal - YYYY-MM-DD" note.
  */
 (function () {
   'use strict';

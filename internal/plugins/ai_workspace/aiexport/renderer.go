@@ -103,24 +103,17 @@ func substituteTokenCount(doc string, count int) string {
 // Entities
 // ----------------------------------------------------------------------------
 
-// RenderEntities renders the Entities section: groups by EntityType,
-// renders each entity's EntryHTML (via htmlToMarkdown), inlines tags and
-// relations. Bidirectional relations are listed on BOTH endpoints — AI-
-// consumer clarity wins over the mild duplication.
+// RenderEntities renders the Entities section: groups by EntityType, renders
+// each entity's EntryHTML via htmlToMarkdown, inlines tags and relations.
+// Bidirectional relations are listed on both endpoints (AI-consumer clarity
+// over the mild duplication).
 //
-// Inputs:
-//   - ents: already-filtered slice (caller applied PrivacyMode via the
-//     role argument when fetching).
-//   - types: every EntityType in the campaign (for the section headers).
-//   - tagsByEntity: batch-fetched map (entity ID → tags slice). Tags
-//     are rendered inline; missing key = no tags (not an error).
-//   - relByEntity: per-entity relations slice. Caller decides whether
-//     to populate (renderer skips gracefully when nil).
-//   - opts: privacy mode controls whether dm_only-tagged content
-//     renders (caller-side filter; renderer trusts inputs).
+//   - ents: already privacy-filtered by the caller.
+//   - tagsByEntity/relByEntity: batch-fetched; missing key = none, nil map
+//     skipped gracefully.
+//   - opts: privacy mode is enforced by the caller; renderer trusts inputs.
 //
-// Returns the markdown section as a string + the byte count for the
-// orchestrator's token estimate.
+// Returns the markdown section and its byte count for the token estimate.
 func RenderEntities(
 	ctx context.Context,
 	ents []entities.Entity,

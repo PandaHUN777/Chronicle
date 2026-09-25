@@ -8,27 +8,14 @@ import (
 	"testing"
 )
 
-// TestMultipartUploads_RequireAuth is a regression guard for "every
-// multipart upload must be authenticated".
-//
-// It walks the codebase for files containing `c.FormFile(` (the standard
-// Echo multipart entry point) and asserts each one's package wires its
-// routes through at least one of the recognized auth middlewares. This
-// catches the future-drift case where someone adds a new POST handler
-// that calls FormFile but forgets to gate the route.
-//
-// What this DOES NOT catch:
-//   - Wrong role enforcement (Player allowed where Owner is required) —
-//     handler-level checks aren't visible from a static scan; specific
-//     handler tests cover those cases.
-//   - A package that mounts SOME routes through auth and one rogue route
-//     without — this tests at the package level, not the route level.
-//     Mitigated by the convention that each package owns one routes.go
-//     and developers don't typically register routes from random files.
-//
-// The audit table below documents every multipart endpoint and the auth
-// chain it actually has. The package list itself comes from a live grep,
-// not the table, so a new or removed route still fails the test.
+// TestMultipartUploads_RequireAuth is a regression guard: every package with
+// a `c.FormFile(` call site (Echo's multipart entry point) must reference a
+// recognized auth middleware somewhere in its .go files, so a new upload
+// handler can't ship ungated. Package-level, not route-level — it won't
+// catch wrong role enforcement or one rogue unauthenticated route beside
+// gated ones in the same package; those need handler-level tests. The
+// package list comes from a live grep, not the table below, so a new or
+// removed route still fails the test.
 //
 // AUDITED MULTIPART ROUTES:
 //

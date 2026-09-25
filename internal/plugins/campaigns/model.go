@@ -204,20 +204,16 @@ type CampaignMember struct {
 // effective permissions. Injected into the Echo context by
 // RequireCampaignAccess middleware.
 //
-// Two permission concepts:
-//   - MemberRole: actual campaign_members role (for content visibility)
-//   - IsSiteAdmin: site-level admin flag (for admin actions via /admin routes)
+// MemberRole is the actual campaign_members role (content visibility);
+// IsSiteAdmin is the site-level admin flag (admin routes only) — an admin
+// who joined as Player sees Player-visible content, and one who hasn't
+// joined has MemberRole=RoleNone.
 //
-// An admin who joins as Player sees Player-visible content only.
-// An admin who hasn't joined has MemberRole=RoleNone (no content access).
-//
-// A viewer who is not a member of the campaign (logged-out public visitor,
-// or an authenticated non-member browsing a public campaign) gets
-// MemberRole=RoleNone — strictly BELOW RolePlayer, which therefore means
-// "an authenticated party member" and nothing weaker. IsMember/IsAnonymous
-// record WHY MemberRole is what it is, so the visibility-read path and the
-// glance badge can tell "the public" apart from "a Player" without
-// re-deriving it from the role int.
+// A non-member viewer (logged-out, or authenticated but not in the
+// campaign) also gets MemberRole=RoleNone — strictly below RolePlayer, so
+// RolePlayer always means "an authenticated party member". IsMember/
+// IsAnonymous record WHY MemberRole is RoleNone, so callers can tell "the
+// public" from "a Player" without re-deriving it from the role int.
 type CampaignContext struct {
 	Campaign    *Campaign
 	MemberRole  Role // Actual membership role, or RoleNone if not a member.
@@ -595,25 +591,21 @@ func (s CampaignSettings) DefaultsToPrivate() bool {
 		s.DefaultVisibility == DefaultVisibilityPrivate
 }
 
-// ResolveNewEntityPrivacy decides the is_private flag for a NEWLY created
-// entity, merging what the caller asked for over the campaign's
-// DefaultVisibility setting:
+// ResolveNewEntityPrivacy decides is_private for a newly created entity,
+// merging the caller's request over the campaign's DefaultVisibility:
 //
-//	requested ABSENT         -> the campaign default decides
-//	requested explicit FALSE -> public, even under a private default
-//	requested explicit TRUE  -> private
+//	absent         -> campaign default decides
+//	explicit false -> public, even under a private default
+//	explicit true  -> private
 //
-// The parameter is a patch.Field, not a bool, because a plain bool cannot
-// distinguish "omitted" from "sent false" — every caller that collapsed
-// them produced a public entity under a DM-only campaign default.
+// requested is patch.Field[bool], not a plain bool, because a bool can't
+// distinguish "omitted" from "sent false" — collapsing them made new
+// entities public under a DM-only default. This is the only
+// implementation; don't re-derive the rule inline.
 //
-// This is the ONLY implementation; a caller that re-derives it from
-// DefaultVisibility inline risks drifting from this rule.
-//
-// An explicit JSON null is treated as absent: create has no stored value to
-// clear, so falling through to the campaign default is the safe reading
-// (matches patch.Field.Val's rule that null on a NOT NULL column preserves
-// rather than zeroes).
+// An explicit JSON null is treated as absent (create has no stored value to
+// clear), matching patch.Field.Val's rule that null on a NOT NULL column
+// preserves rather than zeroes.
 func (s CampaignSettings) ResolveNewEntityPrivacy(requested patch.Field[bool]) bool {
 	if v, ok := requested.Get(); ok {
 		return v

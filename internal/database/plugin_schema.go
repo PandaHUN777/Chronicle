@@ -92,20 +92,13 @@ func RunPluginMigrations(db *sql.DB, plugins []PluginSchema) []PluginMigrationRe
 
 // MarkPluginMigrationApplied records `version` as already applied for `slug`
 // WITHOUT running its SQL, so the migration runner skips straight past it.
-//
-// For a migration whose SQL can never succeed against the database in front
-// of it — it encodes an upgrade step from a predecessor state this database
-// was never in (e.g. `foundry_vtt` migration 001 RENAMEs a table only the
-// deleted `foundry_modules` plugin created, so a fresh install's first
-// statement fails and every later migration for that plugin becomes
-// unreachable).
-//
-// Marking a migration applied is a DATA fix to the tracking table, not a
-// schema change, so it lives in a Go reconciler rather than a migration (see
-// CLAUDE.md → "Migration Safety Rules"). The caller owns the judgement that
-// the migration is genuinely inapplicable; a later idempotent migration must
-// still establish the schema the skipped one would have produced, or the
-// plugin ends up "healthy" with a missing table.
+// For use when a migration's SQL can never succeed against the database in
+// front of it (e.g. it encodes an upgrade step from a predecessor state this
+// database was never in). This is a DATA fix to the tracking table, not a
+// schema change, so it lives in a Go reconciler, not a migration (CLAUDE.md
+// → "Migration Safety Rules"). The caller owns the judgement that the
+// migration is genuinely inapplicable; a later idempotent migration must
+// still establish the schema the skipped one would have produced.
 //
 // Idempotent: INSERT IGNORE, and the tracking table is ensured first because
 // reconcilers run BEFORE RunPluginMigrations creates it.

@@ -5,31 +5,22 @@
 //   chronicle_pre_migrate_db_<TS>.sql.gz       (mysqldump, gzip-compressed)
 //   chronicle_pre_migrate_media_<TS>.tar.gz    (media tree, optional)
 //   chronicle_pre_migrate_redis_<TS>.rdb       (redis snapshot, optional)
-//   chronicle_pre_migrate_manifest_<TS>.txt    (sha256 + size for each artifact,
-//                                               plus chronicle_version and
-//                                               migration_version stamping)
+//   chronicle_pre_migrate_manifest_<TS>.txt    (sha256 + size per artifact,
+//                                               plus version stamping)
 //
 // The manifest format matches scripts/backup.sh so scripts/restore.sh can
-// roll forward or back from a pre-migration snapshot the same way it
-// handles operator-triggered backups. The only manifest difference is a
-// `chronicle_pre_migrate=1` line that lets the restore script warn that
-// the bundle came from an automatic boot-time capture.
+// roll forward or back the same way it handles operator-triggered backups;
+// a `chronicle_pre_migrate=1` line marks it as an automatic capture.
 //
-// Two control knobs:
+// Two control knobs: BackupDir empty disables the whole subsystem (required
+// for any artifact to be written); BackupRequired true makes any artifact
+// failure return an error that main() surfaces as a startup failure
+// (default false keeps best-effort, never-block-boot).
 //
-//   - BackupDir    — empty disables the whole subsystem (legacy behavior).
-//                    Required for any artifact to be written.
-//   - BackupRequired — when true, any artifact failure causes
-//                    PreMigrationBackup to return an error, which main()
-//                    surfaces as a startup failure. The default
-//                    (false) keeps the historical "best-effort, never
-//                    block boot" semantics.
-//
-// Verification: after each artifact is written we compute sha256 + size
-// in-process and refuse to finalize the manifest if any artifact is
-// zero-byte or sha256 fails. Output files are written with 0600
-// permissions (the dump contains all data) and atomic-renamed from a
-// .partial suffix so a half-written file never persists.
+// Each artifact's sha256 + size is verified in-process; the manifest is not
+// finalized if any artifact is zero-byte or fails checksum. Output files are
+// 0600 (the dump contains all data) and atomic-renamed from a .partial
+// suffix so a half-written file never persists.
 package database
 
 import (

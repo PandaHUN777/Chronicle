@@ -1147,31 +1147,26 @@ func tagFilterClause(tagSlugs []string) (string, []any) {
 	return clause, args
 }
 
-// visibilityFilter returns the WHERE clause fragment and args that enforce
-// entity visibility based on the viewer's role, user ID, and the entity's
-// visibility mode. Owners see everything — returns empty string.
+// visibilityFilter returns the WHERE clause fragment and args enforcing
+// entity visibility for the viewer's role/user ID. Owners see everything
+// (empty string).
 //
-// For non-owners, the filter handles two visibility modes plus an additive
-// tag-grant override:
-//   - "default": uses the legacy is_private flag (Scribe+ sees all, Player sees public only)
-//   - "custom": checks entity_permissions for explicit grants to the user, their
-//     role level, or the 'public' subject
-//   - tag grants (additive): an otherwise-hidden entity becomes visible if any
-//     tag it bears carries a tag_permissions grant matching the viewer
-//     (role/user/group/public). This branch can only WIDEN visibility, so it
-//     sits as a top-level OR.
+// For non-owners:
+//   - "default" mode: legacy is_private flag (Scribe+ sees all, Player
+//     sees public only).
+//   - "custom" mode: entity_permissions grants to the user, their role
+//     tier, or 'public'.
+//   - tag grants (additive, OR'd in): an otherwise-hidden entity becomes
+//     visible if a tag it bears carries a matching tag_permissions grant.
 //
-// Role-tier matching uses subject_id <= role, so a grant to RolePlayer (1) is
-// visible to Player and above but NOT to an anonymous/public viewer (role 0).
-// The 'public' subject matches every viewer including anonymous, giving owners
-// an explicit "reveal to everyone" target distinct from "Players".
+// Role-tier matching uses subject_id <= role, so a grant to RolePlayer (1)
+// excludes anonymous (role 0); 'public' matches every viewer including
+// anonymous.
 //
-// SECURITY-SENSITIVE. Was mirrored verbatim in the calendar plugin's
-// entity_ties_repository.go (rule 8 forbids importing another plugin's
-// repo, so the policy was replicated); that file was deleted with the
-// rest of the pre-V5 calendar plugin. CALV5-PLACEHOLDER: V5 must
-// re-mirror this policy wherever it re-ties calendar events to
-// entities, and add a cross-mirror sync test (#741).
+// SECURITY-SENSITIVE: previously mirrored in the (now-deleted) calendar
+// plugin per rule 8 (no cross-plugin repo imports).
+// CALV5-PLACEHOLDER: V5 must re-mirror this policy wherever it re-ties
+// calendar events to entities, and add a cross-mirror sync test (#741).
 func visibilityFilter(role int, userID string) (string, []any) {
 	if role >= permissions.RoleOwner {
 		return "", nil

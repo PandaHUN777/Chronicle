@@ -1,22 +1,12 @@
 /**
  * notes.js -- Floating Notes Panel Widget
  *
- * Quick-capture note-taking panel with two modes:
- *   - "Page" mode: auto-selected when on an entity page, shows notes for that page.
- *   - "All" mode: campaign-wide notes, always available.
- *
- * Features:
- *   - Quick capture: type and Enter to create instantly.
- *   - Shared notes: toggle sharing; other campaign members see shared notes.
- *   - Pessimistic edit locking: shared notes acquire a lock before editing,
- *     with 2-minute heartbeat to keep it alive (5-minute server expiry).
- *   - Version history: view and restore previous snapshots of a note.
- *   - Rich text display: renders entryHtml when present (server-sanitized).
+ * Quick-capture notes, "Page" mode (current entity) or "All" (campaign-wide).
+ * Shared notes use pessimistic locking (2-min heartbeat, 5-min server
+ * expiry) to avoid concurrent-edit clobbers, and keep version history.
+ * entryHtml is server-sanitized and rendered as-is.
  *
  * Mount: <div data-widget="notes" data-campaign-id="..." data-entity-id="...">
- *
- * The widget is fully self-contained: it creates its own DOM, fetches data
- * from the API, and manages state internally.
  */
 Chronicle.register('notes', {
   /**

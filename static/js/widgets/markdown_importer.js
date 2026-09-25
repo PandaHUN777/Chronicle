@@ -2,20 +2,13 @@
  * markdown_importer.js — drag/drop + multi-file upload widget for
  * AI Workspace > Import.
  *
- * Mount: data-widget="markdown-importer". Looks for the
- * data-importer-dropzone (drag target), data-importer-file-input
- * (visible <input type=file multiple>; keyboard-only fallback for
- * drag-drop), data-importer-file-list (visible preview), and
- * data-importer-file-announce (sr-only aria-live region).
+ * Mount: data-widget="markdown-importer", using child elements
+ * data-importer-dropzone, data-importer-file-input (keyboard fallback),
+ * data-importer-file-list, data-importer-file-announce (sr-only aria-live).
  *
- * The widget owns:
- *   - drag-active visual state on the drop zone (ring + tint)
- *   - drag-state aria-live announcements ("Drop to attach 3 files")
- *   - per-file preview list (visible) + count announcement (sr-only)
- *
- * It does NOT POST; the surrounding HTMX <form> handles submission
- * (the textarea + the file <input> are real form fields that HTMX
- * serializes).
+ * Owns only the drag/preview UI (drag-active state, file list, a11y
+ * announcements). Submission is the surrounding HTMX <form>'s job — the
+ * widget never POSTs.
  */
 (function () {
   'use strict';

@@ -139,23 +139,13 @@ type PostInstallHook interface {
 	PackageType() PackageType
 
 	// AfterInstall runs after extraction + validation but BEFORE the
-	// package row is committed to the DB (fail-loud contract: a hook
-	// failure must leave the catalog pointing at the old version, never
-	// at a directory the failure path just deleted).
-	//
-	// Parameters:
-	//   - pkg: the package row as loaded — pkg.InstalledVersion still
-	//     holds the PREVIOUS version at hook time; the new version is
-	//     the `version` parameter.
-	//   - version: the version string being installed.
-	//   - previousVersion: the version that was installed before this
-	//     call. Empty string on a first-ever install (no prior state) —
-	//     foundry_vtt's auto-pin hook uses this to know which version to
-	//     preserve for preserve-mode campaigns.
-	//   - destDir: the extracted package's on-disk directory.
-	//
-	// Returning an error fails the install (packages.InstallVersion
-	// removes destDir; the DB row is never written).
+	// package row is committed to the DB: a hook failure must leave the
+	// catalog pointing at the old version, never at a directory the
+	// failure path just deleted. pkg.InstalledVersion still holds the
+	// PREVIOUS version at hook time; previousVersion is "" on a
+	// first-ever install (foundry_vtt's auto-pin hook uses that to know
+	// what to preserve). Returning an error fails the install:
+	// InstallVersion removes destDir and never writes the DB row.
 	AfterInstall(ctx context.Context, pkg *Package, version, previousVersion, destDir string) error
 }
 

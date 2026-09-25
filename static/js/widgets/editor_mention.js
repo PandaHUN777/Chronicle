@@ -1,23 +1,13 @@
 /**
  * editor_mention.js -- Chronicle @Mention Extension for TipTap
  *
- * Provides inline @mention functionality for the rich text editor.
- * When users type `@` followed by text, a dropdown appears showing matching
- * entities from the campaign. Selecting an entity inserts a styled mention
- * node that renders as a link to the entity's page.
+ * Typing `@` opens a dropdown of matching campaign entities (via GET
+ * /campaigns/:id/entities/search?q=...); selecting one inserts a mention
+ * node rendered as an <a data-mention-id>. Degrades gracefully: API
+ * failures close the dropdown, deleted entities render as plain text.
  *
- * Architecture:
- *   - Self-contained module that exports a TipTap Node extension via
- *     window.Chronicle.MentionExtension.
- *   - Searches entities via GET /campaigns/:id/entities/search?q=... with
- *     Accept: application/json to receive JSON results.
- *   - Renders mention nodes as <a> links with data-mention-id attributes.
- *   - Gracefully degrades: API failures close the dropdown, deleted entities
- *     render as plain text.
- *
- * Integration:
- *   The editor.js widget reads Chronicle.MentionExtension and includes it
- *   in the TipTap extensions array when available.
+ * Self-contained module exporting window.Chronicle.MentionExtension,
+ * which editor.js includes in its TipTap extensions array when present.
  */
 (function () {
   'use strict';

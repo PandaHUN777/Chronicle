@@ -29,24 +29,19 @@ const predecessorTokenTable = "foundry_module_campaign_tokens"
 const migrationSlug = PluginHealthKey
 
 // ReconcileConsolidationState makes the foundry_vtt migration chain reachable
-// on every database. Migration 001's first statement renames
-// foundry_module_campaign_tokens to foundry_vtt_campaign_tokens; on a fresh
-// database that source table never existed, so the RENAME fails and the
-// migration runner (which stops on the first failed migration) can never
-// reach any later migration for this plugin. PreMigrationCheck does not catch
-// this: it only refuses when foundry_module_versions exists and has rows.
+// on every database. Migration 001 renames foundry_module_campaign_tokens to
+// foundry_vtt_campaign_tokens; on a fresh DB that source table never
+// existed, so the RENAME fails and the runner (which stops on first
+// failure) can never reach any later migration for this plugin.
 //
-// The rule: migration 001 is applicable iff its source table is present.
-// When absent, 001 is recorded as applied without running, and migration
-// 002 (idempotent DDL) establishes the post-consolidation shape instead:
+// Rule: 001 is applicable iff its source table is present. When absent, 001
+// is recorded as applied without running, and idempotent migration 002
+// creates the post-consolidation shape instead:
 //
 //	fresh install            source absent  → 001 skipped, 002 creates the table
 //	completed upgrade        source absent  → 001 already recorded, 002 no-ops
 //	upgrade crashed mid-001  source absent  → 001 skipped, 002 finishes the job
 //	pre-consolidation DB     source PRESENT → untouched; 001 runs for real
-//
-// The reconciler never skips a migration with real work to do: as long as
-// the predecessor table exists, 001 runs exactly as before.
 //
 // Called from cmd/server/main.go alongside PreMigrationCheck, before
 // database.RunPluginMigrations. Idempotent and cheap.

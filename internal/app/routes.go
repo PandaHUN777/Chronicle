@@ -569,11 +569,9 @@ func (a *wsCampaignRoleAdapter) IsUserDmGranted(ctx context.Context, campaignID,
 // bridge from the calendar's PublishCalendarEvent to the websocket bus.
 // Nothing publishes calendar events now.
 //
-// This adapter's failure mode is silent: a switch ending in `default: return`
-// means an emitter whose event type has no case here publishes into nothing,
-// with nothing reporting the drop. Rebuild it WITH a test that walks every
-// emitter's event type and asserts a case exists — a publisher without that
-// test is how this bug returns.
+// A switch ending in `default: return` fails silently: an emitter whose event
+// type has no case here publishes into nothing, unreported. Rebuild it with a
+// test that walks every emitter's event type and asserts a case exists.
 //
 // The mapping it carried, so V5 has the checklist rather than rediscovering it:
 //   "event.created"                            -> ws.MsgCalendarEventCreated
@@ -2337,21 +2335,17 @@ func (a *App) RegisterRoutes() {
 	// page's Templ context by the LayoutInjector below.
 	//
 	// ORDER IS LOAD-BEARING: base.templ emits these in slice order with
-	// `defer`, which executes in document order — any script reading global
+	// `defer`, which executes in document order — a script reading global
 	// state another sets up must come after it.
 	//
-	// Scripts belong in this registry, not a `<script src>` tag inside a
-	// page body, because the App layout renders page bodies inside
-	// `<main id="main-content">`, which htmx boosted navigation
-	// (`hx-select="#main-content" hx-swap="innerHTML"`) replaces via
-	// makeFragment — and with `htmx.config.allowScriptTags = false`,
-	// makeFragment DELETES every `<script>` in the swapped fragment. A
-	// script tag inside the body wires on a direct load and silently does
-	// nothing when the page is reached via the sidebar. This registry emits
-	// after `{children...}`, outside the swapped region, so both paths
-	// deliver the same scripts. Each script re-inits on
-	// htmx:afterSettle/htmx:load and no-ops when its mount is absent, so
-	// they can be mounted unconditionally.
+	// These belong in this registry, not a `<script src>` tag inside a page
+	// body: htmx boosted navigation swaps `#main-content` via makeFragment,
+	// and with `htmx.config.allowScriptTags = false` that DELETES any
+	// `<script>` in the swapped fragment, so a body-embedded tag would work
+	// on direct load but silently no-op when reached via the sidebar. This
+	// registry emits after `{children...}`, outside the swapped region, so
+	// both paths deliver the same scripts; each re-inits on
+	// htmx:afterSettle/htmx:load and no-ops when its mount is absent.
 	//
 	// CALV5-PLACEHOLDER: V5 must restore five calendar scripts loaded on
 	// every page from here — calendar_widget.js, cal_visibility.js,

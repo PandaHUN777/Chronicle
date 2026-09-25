@@ -12,29 +12,20 @@ import (
 	"github.com/a-h/templ"
 )
 
-// SettingsTab is the declarative description of one tab on the
-// campaign Settings page.
+// SettingsTab is the declarative description of one tab on the campaign
+// Settings page.
 //
-//   - ID is the stable slug used in the URL query (`?tab=<id>`) and
-//     the Alpine.js `x-show="tab === '<id>'"` predicate. Must be
-//     URL-safe + stable across releases (operator bookmarks rely on it).
-//   - Label is the human-readable button text.
-//   - Icon is a FontAwesome class (e.g. "fa-solid fa-gear").
-//   - MinRole gates both the button and the content. A viewer whose
-//     role is below MinRole sees neither. Today's built-in gates:
-//     General / People / Integrations / Activity = RolePlayer (any
-//     member). New plugin-contributed tabs set MinRole to whatever
-//     discipline they need; the campaigns plugin is the single
-//     enforcement point.
-//   - SortOrder controls render order across the tab bar AND the
-//     content blocks. Lower renders first. Built-ins use multiples of
-//     10 (10..60) so plugins can insert between them; the AI Workspace
-//     plugin registers itself at SortOrder 55, between Integrations
-//     (40) and Activity (60).
-//   - Content is the rendered tab body. The handler captures all
-//     per-tab dependencies (csrfToken, members, addons, services, ...)
-//     in this closure at Settings-handler time, so CampaignSettingsPage
-//     itself stays signature-thin.
+//   - ID: stable slug used in the URL (`?tab=<id>`) and the Alpine.js
+//     x-show predicate; must stay URL-safe and stable (operator bookmarks
+//     rely on it).
+//   - Label/Icon: button text / FontAwesome class.
+//   - MinRole gates both the button and the content; a viewer below
+//     MinRole sees neither. Built-ins use RolePlayer; plugins set
+//     whatever discipline they need.
+//   - SortOrder controls render order (built-ins use multiples of 10) so
+//     plugins can insert between them.
+//   - Content is the rendered tab body; the handler captures per-tab
+//     dependencies in this closure at Settings-handler time.
 type SettingsTab struct {
 	ID        string
 	Label     string
@@ -158,24 +149,19 @@ func (h *Handler) visibleSettingsTabs(
 	return out
 }
 
-// sanitizeSettingsTab resolves a requested settings-tab ID (from the
-// `?tab=` query param) to a known-safe value. It returns the requested
-// ID only when it matches a tab actually visible to the current viewer;
-// any empty, unknown, or hostile value falls back to "general".
+// sanitizeSettingsTab resolves the `?tab=` query param to a known-safe
+// value: the requested ID only if it matches a tab visible to the current
+// viewer, else falls back to "general".
 //
-// This is a security boundary, not merely UX. CampaignSettingsPage
-// interpolates the returned value into an Alpine.js `x-data` expression
-// (settings.templ), and because the browser HTML-decodes an attribute
-// before Alpine evaluates it as JavaScript, an unvalidated request value
-// is a reflected-XSS vector. Constraining the result to a developer-
-// defined tab ID from `tabs` closes that vector at the source; the templ
-// sink additionally escapes it (defense in depth).
+// SECURITY: CampaignSettingsPage interpolates this into an Alpine.js
+// x-data expression, and since the browser HTML-decodes the attribute
+// before Alpine evaluates it as JS, an unvalidated value is reflected XSS.
+// Constraining the result to a developer-defined ID from `tabs` closes
+// this at the source (the templ sink also escapes, defense in depth).
 //
-// Matching against the already-role-filtered `tabs` slice (rather than a
-// static allowlist) also means a viewer cannot pre-select a tab their
-// role hides. "general" is a safe fallback: MinRole RolePlayer makes it
-// visible to every role, and Settings is owner-gated, so it is always
-// present in `tabs`.
+// Matching against the role-filtered `tabs` (not a static allowlist) also
+// stops a viewer selecting a tab their role hides. "general" is always
+// present (RolePlayer-visible, Settings is owner-gated).
 func sanitizeSettingsTab(requested string, tabs []SettingsTab) string {
 	for _, t := range tabs {
 		if t.ID == requested {

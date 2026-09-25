@@ -1,45 +1,25 @@
 #!/usr/bin/env bash
 # tools/check-page-scripts.sh
 #
-# PAGE-SIDE <script src> RATCHET.
+# PAGE-SIDE <script src> RATCHET: htmx.config.allowScriptTags=false
+# (static/js/boot.js) means htmx's makeFragment strips a page templ's
+# `<script src>` from the swapped DOM on hx-boosted sidebar nav
+# (app.templ links), even though it loads fine on a direct hit — a silent
+# per-route break.
 #
-# The App layout renders `{children...}` inside `<main id="main-content">`.
-# Every sidebar link in internal/templates/layouts/app.templ is
-# `hx-boost="true" hx-target="#main-content" hx-select="#main-content"
-# hx-swap="innerHTML"`, and static/js/boot.js sets
-# `htmx.config.allowScriptTags = false`. At that setting htmx's makeFragment
-# does not merely decline to execute script tags in the swapped fragment — it
-# removes them from the DOM before the swap. So a `<script src>` inside a
-# page templ is delivered on a direct page load and silently dropped when the
-# same page is reached through the sidebar.
+# Fix: register the script via internal/app/routes.go's pluginBodyScripts ->
+# layouts.SetPluginBodyScripts -> base.templ, which emits outside the swapped
+# region. Never flip allowScriptTags (security posture) or set
+# hx-boost="false" (hides the bug on one route, doesn't fix it).
 #
-# The fix is always the same: contribute the script to the plugin body-script
-# registry (internal/app/routes.go's `pluginBodyScripts` →
-# layouts.SetPluginBodyScripts → internal/templates/layouts/base.templ), which
-# emits after `{children...}` — outside the swapped region, and therefore
-# identical on both navigation paths. Do NOT flip allowScriptTags (a
-# deliberate security posture) and do NOT put hx-boost="false" on the link
-# (that hides the defect on one route and leaves it on every other).
+# Ratchet, not audit: whole-tree, not diff-scoped, against a written
+# baseline (tools/page-script-allowlist.txt) whose count may only shrink —
+# TODO(keyxmakerx/Chronicle#616) to sweep survivors into the registry; a
+# stale-high entry fails too, since it's slack a script could be put back
+# through. Self-test: --self-test-only.
 #
-# This guard is a RATCHET, not an audit: it does not claim the survivors in
-# tools/page-script-allowlist.txt are all broken, only that their count may
-# never grow. TODO(keyxmakerx/Chronicle#616): sweep the remaining survivors
-# into the body-script registry.
-#
-# Whole-tree, not diff-scoped, deliberately: unlike the sibling guards that
-# scope to the PR diff (unwritten baseline), this one has a written baseline,
-# so it can fail on a file not in the allowlist, a count above its allowlisted
-# number, AND a count below it — a stale-high entry is slack in the ratchet, a
-# hole a script can be put back through unnoticed.
-#
-# SELF-TEST: every run first executes the comparison core against fixtures in
-# a temp dir, so "OK" always means the rule can actually fire. Run just the
-# self-test with: --self-test-only
-#
-# Exit codes:
-#   0 — the tree matches the allowlist exactly
-#   1 — a new/grown page-side script, a stale allowlist entry, or slack
-#   2 — the guard's own self-test failed (the guard is broken, not the code)
+# Exit: 0 matches allowlist / 1 new/grown script, stale entry, or slack /
+# 2 self-test failed
 
 set -euo pipefail
 

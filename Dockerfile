@@ -32,32 +32,15 @@ FROM golang:1.27-alpine AS builder
 RUN go install github.com/a-h/templ/cmd/templ@v0.3.1001
 
 # Install git so the Go toolchain can stamp the source revision into the
-# binary. This is the whole fix for "the binary cannot say which commit built
-# it", and it needs no -ldflags: given `git` on PATH and a checkout to look at,
-# Go records vcs.revision / vcs.time / vcs.modified in the binary's BuildInfo
-# by itself, and internal/hostinfo reads them (GET /api/version and the
-# host.build admin diagnostic).
+# binary: with `git` on PATH and a checkout present, Go records vcs.revision /
+# vcs.time / vcs.modified in BuildInfo by itself (no -ldflags needed), and
+# internal/hostinfo reads them (GET /api/version, host.build admin diagnostic).
+# Without git, Go skips stamping silently — build still exits 0, but
+# Main.Version is just "(devel)".
 #
-# WHY it was missing: the golang alpine builder (1.24-alpine when this was
-# diagnosed, 1.27-alpine now — the property holds across both) carries only
-# ca-certificates — no git — and when the VCS tool is absent Go SKIPS STAMPING
-# SILENTLY. Measured:
-# build exits 0, the binary carries zero vcs.* settings, and Main.Version is the
-# literal "(devel)". So every Chronicle image ever shipped contained a binary
-# with no idea what it was, which is why the 2026-08-11 incident had to reason
-# from image labels instead — and reasoned wrong. `COPY . /src` already brings
-# .git along (there is no .dockerignore anywhere in the tree), so the checkout
-# is here; only the tool was missing.
-#
-# The safe.directory line is load-bearing, not boilerplate. Git refuses to
-# operate on a repository owned by another user, and `go build` escalates that
-# refusal into a HARD BUILD FAILURE rather than falling back to an unstamped
-# binary. Measured, on a foreign-owned checkout: `error obtaining VCS status:
-# exit status 128` and exit 1; with this exception configured, the same
-# checkout builds AND stamps. Installing git therefore converts a class of git
-# error from "no stamp" into "no image", and this line removes that class's
-# likeliest member. (Absence of .git stays harmless either way — also measured:
-# git installed but no repository present builds fine and reports "(devel)".)
+# safe.directory is load-bearing: git refuses to operate on a checkout owned
+# by another user, and `go build` turns that refusal into a hard build
+# failure rather than falling back to an unstamped binary.
 RUN apk add --no-cache git \
     && git config --global --add safe.directory /src
 

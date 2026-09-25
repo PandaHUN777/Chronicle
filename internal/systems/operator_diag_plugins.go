@@ -1,27 +1,20 @@
-// Package systems — operator_diag_plugins.go is the EXTENSION-TIER half of the
-// host diagnostics. host.build says which BINARY is running and
-// host.assets/host.embedded say which BYTES it serves; these two say which
-// PLUGINS that binary registered and which WIDGET assets it is serving.
+// Package systems — operator_diag_plugins.go is the EXTENSION-TIER half of
+// the host diagnostics: which PLUGINS the binary registered and which
+// WIDGET assets it serves (host.build/host.assets/host.embedded cover the
+// binary and its raw bytes).
 //
-// Two things about widget versioning have to be said out loud:
+// Widgets have no version number — nothing declares or stores one, and
+// there's no server-side widget registry, just a JS file that registers
+// itself with boot.js on mount — so the Desc reports a content fingerprint
+// plus build time rather than inventing a meaningless number. Their assets
+// also live in two unrelated places: `static/js/widgets/` on disk, and each
+// plugin's `js/` `//go:embed`-ed into the binary, so grepping the container
+// filesystem can miss an asset that is still served.
 //
-//   - **Widgets have no version number.** Nothing declares one, nothing stores
-//     one, and there is no server-side widget registry to consult: a widget is a
-//     JS file that registers itself with boot.js when the browser mounts a
-//     `data-widget` element. So the honest answer to "what version is this
-//     widget?" is a CONTENT FINGERPRINT plus a build time, and this file says
-//     so in the Desc rather than inventing a number that would mean nothing.
-//
-//   - **Widget assets live in two unrelated places.** `static/js/widgets/` is
-//     on disk; each plugin's `js/` is `//go:embed`-ed into the executable, so
-//     grepping the container filesystem for a plugin widget can return
-//     nothing while it is still served.
-//
-// And "is this plugin even loaded?" has a trap of its own: Chronicle has no
-// plugin LOADER. Every plugin is compiled in and its routes are registered
-// unconditionally. The two registries this file reads are opt-in METADATA, so
-// absence from them is not absence from the build — host.plugins states that
-// every time rather than letting a missing row read as a missing feature.
+// Chronicle has no plugin loader — every plugin compiles in and registers
+// routes unconditionally — so the two registries this file reads are
+// opt-in METADATA; host.plugins always says a missing row is not a missing
+// feature.
 package systems
 
 import (

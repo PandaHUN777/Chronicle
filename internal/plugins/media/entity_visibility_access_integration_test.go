@@ -1,25 +1,14 @@
-// entity_visibility_access_integration_test.go drives ADR-058's rule
-// against a REAL MariaDB, through the REAL production components on both
-// sides of the seam ADR-058 wires together, never a reimplementation of
-// either:
+// entity_visibility_access_integration_test.go drives ADR-058's rule against
+// a REAL MariaDB, through the REAL production components on both sides of
+// the seam it wires together — never a reimplementation: media's
+// FindReferences (whose UNION must include cover_image_path or a cover
+// image looks unreferenced) and entities' FilterViewableEntityIDs (the
+// visibility predicate sessions/relations/armory/npcs all call, reached via
+// the local dbEntityVisibility adapter), both exercised through the real
+// Handler.checkMediaAccess.
 //
-//   - media.NewMediaRepository(db).FindReferences, whose UNION must include
-//     cover_image_path or a cover image looks unreferenced and falls
-//     through to the unreferenced-media path.
-//   - entities.NewEntityRepository(db).FilterViewableEntityIDs, the
-//     canonical visibility predicate sessions/relations/armory/npcs all
-//     call, reached here through a local adapter (dbEntityVisibility) so
-//     media's EntityVisibilityFilter interface is satisfied without
-//     importing entities beyond its exported repository constructor.
-//
-// Both are reached by calling the REAL Handler.checkMediaAccess. Campaign
-// membership and the DM-grant signal are read directly with plain SQL here
-// (dbMemberChecker below), not through campaigns.CampaignService — that
-// service's own correctness is out of scope for this file.
-//
-// Skips (never fails) when no database answers: a throwaway schema per
-// test run, fully migrated, dropped on cleanup — never the shared dev
-// database (see entities/repository_integration_test.go).
+// Skips (never fails) when no database answers; uses a throwaway
+// fully-migrated schema per run, never the shared dev database.
 package media
 
 import (

@@ -1,35 +1,21 @@
 #!/usr/bin/env bash
 # tools/restore-drill.sh -- Prove a Chronicle backup actually restores.
 #
-# What it does, every run:
-#   1. Finds the newest backup (or a --file you name).
-#   2. Spins up a brand-new, disposable MariaDB container -- never the live
-#      `chronicle-db` service, never a host port, never anything the live
-#      compose stack can see.
-#   3. Loads the backup's DB dump into that throwaway container.
-#   4. Runs three checks: the migrations table is present and plausible,
-#      the core tables have rows, and one foreign-key relationship is intact.
-#   5. Prints one line: green "RESTORE DRILL: PASS" or red "FAIL: <why>".
-#   6. Always tears the throwaway container down, pass or fail.
+# Finds the newest backup (or --file), spins up a disposable MariaDB
+# container (never chronicle-db, never a host port, never a network the
+# live stack can see), loads the dump, and checks: migrations table
+# present, core tables have rows, one FK relationship intact. Always tears
+# the container down, pass or fail.
 #
-# This is a DRILL, not a real restore. It never touches scripts/backup.sh's
-# output beyond reading it, never touches the chronicle-db container/volume,
-# and never writes anything back into your live deployment. For an actual
-# disaster-recovery restore, see docs/RESTORE-DRILL.md's "restore FOR REAL"
-# section (that's scripts/restore.sh, a different, already-existing tool).
+# A DRILL, not a real restore: only reads scripts/backup.sh's output, never
+# touches the chronicle-db container/volume or the live deployment. For an
+# actual DR restore see docs/RESTORE-DRILL.md's "restore FOR REAL" section
+# (scripts/restore.sh).
 #
-# Happy path (run from the deployment directory, live stack up):
-#   ./tools/restore-drill.sh
+# Usage: ./tools/restore-drill.sh [--file <manifest or dump path>]
 #
-# Test against a specific backup (compose exec discovery, or a local file):
-#   ./tools/restore-drill.sh --file /app/data/backups/chronicle_manifest_<TS>.txt
-#   ./tools/restore-drill.sh --file /path/to/chronicle_db_<TS>.sql.gz
-#
-# Exit codes: 0 PASS / 1 FAIL (verification or restore failed) /
-#             2 precondition (docker missing, no backups found, bad --file).
-#
-# Security: never widens the live DB's attack surface -- no host port, no
-# shared network, no reused credentials.
+# Exit: 0 PASS / 1 FAIL (verification or restore failed) / 2 precondition
+# (docker missing, no backups found, bad --file).
 
 set -euo pipefail
 

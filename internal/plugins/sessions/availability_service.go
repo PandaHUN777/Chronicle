@@ -417,24 +417,21 @@ func (s *sessionService) CampaignMemberZones(ctx context.Context, campaignID str
 // editor — that already exists at /campaigns/:id/availability.
 const maxOfferedWindows = 8
 
-// AddMyAvailableWindows records TEMPORARY availability the member is offering
-// for specific real-world dates, WITHOUT touching their recurring weekly pattern.
+// AddMyAvailableWindows records TEMPORARY availability for specific dates,
+// WITHOUT touching the recurring weekly pattern.
 //
 // Exception rows fully replace the recurring pattern for a date (see
-// effectiveBlocks in availability_overlay.go), so writing the offered window
-// alone would erase the rest of that day. This composes the day first —
-// existing exceptions for that date if any, otherwise the recurring pattern
-// for that weekday — paints the offered window on top, and writes the merged
-// set, mirroring the compose-the-day rule the per-date editor uses
-// client-side, since this write arrives from an email link with no editor.
+// effectiveBlocks in availability_overlay.go), so it must compose the day
+// first — existing exceptions, else the recurring pattern for that weekday —
+// paint the offered window on top, and write the merged set (this write
+// arrives from an email link with no client-side editor to do that).
 //
 // The composed day is written in the zone its SOURCE ROWS were authored in,
-// never the offer's own zone: relabelling already-stored minutes into a
-// different zone would silently move a member's stated hours in real time.
-// Only the offer itself — fresh input, not stored data — gets converted.
+// never the offer's zone: relabelling stored minutes into another zone would
+// silently move a member's stated hours. Only the fresh offer gets converted.
 //
-// SELF-WRITE ONLY: userID is supplied by the caller from a session or a redeemed
-// token, and every read/write below is scoped to (campaign, user).
+// SELF-WRITE ONLY: userID comes from the caller's session or a redeemed
+// token; every read/write here is scoped to (campaign, user).
 func (s *sessionService) AddMyAvailableWindows(ctx context.Context, campaignID, userID, tz string, windows []AvailabilityWindowDTO) error {
 	if len(windows) == 0 {
 		return apperror.NewValidation("at least one time window is required")

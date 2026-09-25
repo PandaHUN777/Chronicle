@@ -1,47 +1,28 @@
 #!/usr/bin/env bash
 # tools/check-widget-mounts.sh
 #
-# DEAD WIDGET MOUNT RATCHET.
+# DEAD WIDGET MOUNT RATCHET: a widget is a `data-widget="name"` div plus a
+# JS module calling `Chronicle.register('name', …)`; boot.js binds them at
+# DOMContentLoaded and silently no-ops on an unregistered name. With no
+# lazy loader or bundler, a widget JS file absent from every `<script src>`
+# renders as a permanently empty div — no console error, no network error.
 #
-# A widget in Chronicle is a `data-widget="name"` div in a templ plus a JS
-# module that calls `Chronicle.register('name', …)`. static/js/boot.js binds
-# the two at DOMContentLoaded, and when it finds a mount whose name is not in
-# its registry it returns silently. There is no lazy loader and no bundler
-# for widget scripts, so a widget whose JS file is in no `<script src>`
-# anywhere renders as an empty div forever, with an empty console and no
-# network error.
+# Fix: add the script to base.templ's script list, or (plugin-owned) to
+# internal/app/routes.go's `pluginBodyScripts`. Never in a page templ — see
+# check-page-scripts.sh for why that breaks on hx-boosted nav.
 #
-# The fix is always one of two: add the file to the layout's script list
-# (internal/templates/layouts/base.templ), which emits outside the hx-boost
-# swapped region; or, for a plugin-owned script, contribute it to the plugin
-# body-script registry (internal/app/routes.go's `pluginBodyScripts`). Do NOT
-# put it in a page templ — see tools/check-page-scripts.sh for why that loads
-# on a typed URL and not through the sidebar.
+# Mount names translate kebab-case (DOM) to snake_case (disk):
+# `data-widget="tag-picker"` -> tag_picker.js. A `data-widget` set via a
+# templ expression, not a literal, is out of scope — extension widgets ship
+# their own scripts per campaign.
 #
-# A load path is a `<script src=` line naming `<file>.js` in any *.templ, or
-# any mention of it in internal/app/routes.go (the body-script registry).
-# Mount names are kebab-case in the DOM and snake_case on disk
-# (`data-widget="tag-picker"` → tag_picker.js), so the name is translated
-# before the lookup. A mount whose `data-widget` value is a templ expression
-# rather than a literal (blockExtWidget's `data-widget={ widgetSlug }`) is out
-# of scope by construction: extension widgets ship their own scripts per
-# campaign.
+# Ratchet, not audit (see check-page-scripts.sh): tools/widget-mount-allowlist.txt
+# may only shrink — an unlisted dead mount fails, and so does a stale entry
+# (no longer dead), since that's a hole a dead mount could be put back
+# through. Self-test: --self-test-only.
 #
-# This guard is a RATCHET, not an audit — same shape as check-page-scripts.sh.
-# tools/widget-mount-allowlist.txt names the mounts that are known-dead and
-# not fixable by a script tag alone. The set may only shrink: a name in the
-# tree but not the allowlist fails, and a name in the allowlist that no
-# longer has a dead mount also fails, since a stale entry is a hole a dead
-# mount can be put back through.
-#
-# SELF-TEST: every run first executes the resolver and the comparison against
-# fixtures in a temp dir, so "OK" always means the rule can actually fire. Run
-# just the self-test with: --self-test-only
-#
-# Exit codes:
-#   0 — every literal widget mount in the tree has a load path (or is allowlisted)
-#   1 — a mount with no load path, or a stale allowlist entry
-#   2 — the guard's own self-test failed (the guard is broken, not the code)
+# Exit: 0 every mount has a load path (or is allowlisted) / 1 dead mount or
+# stale entry / 2 self-test failed
 
 set -euo pipefail
 

@@ -1,30 +1,16 @@
 /**
  * Media Picker (slideout)
  *
- * Opt-in companion to the file-upload input. Operator clicks
- * "Choose from campaign" → a slideout card panel slides in from
- * the right showing every media file in the campaign as either a
- * thumbnail grid (default) or a metadata list (toggle in the panel
- * header). Click a card → fires a `media-picker:select` custom event
- * on the trigger button with `{id, url, thumbnailUrl, originalName,
- * mimeType, fileSize}`. The consuming form listens for that event and
- * sets the relevant hidden field — that way one widget serves every
- * surface that wants to pick existing media (map settings, entity
- * images, etc.) without the picker knowing what form it's plugged into.
+ * Opt-in companion to the file-upload input: "Choose from campaign" opens
+ * a slideout of existing media. Picking a card fires a custom event (default
+ * `media-picker:select`, `{id, url, thumbnailUrl, originalName, mimeType,
+ * fileSize}`) on the trigger button; the consuming form listens and fills
+ * its own hidden field, so one widget serves any surface without knowing
+ * what form it's plugged into.
  *
- * NOT the default — file uploads stay the primary path. The picker is
- * a discoverable secondary action.
- *
- * Mount: data-widget="media-picker" on a <button> element.
- * Config (data-* on the button):
- *   data-campaign-id   — Campaign UUID (required).
- *   data-mime-prefix   — (optional) Filter to MIME types starting with
- *                        this prefix, e.g. "image/" to hide audio.
- *   data-event-target  — (optional) Custom event name; defaults to
- *                        "media-picker:select".
- *
- * The button itself becomes the click target. The slideout is appended
- * to <body> on first open and reused thereafter.
+ * Mount: data-widget="media-picker" on a <button>. Config: data-campaign-id
+ * (required), data-mime-prefix (optional filter), data-event-target
+ * (optional event name).
  */
 (function () {
   'use strict';

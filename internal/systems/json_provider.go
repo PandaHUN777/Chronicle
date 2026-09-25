@@ -89,23 +89,19 @@ func newJSONProvider(moduleID, dataDir string, sink func(LoadEvent)) (*JSONProvi
 }
 
 // normalizeReferenceItems stamps each item with moduleID/category and
-// normalizes ID: prefer the source's own "id" when set, else fall back to
-// "slug" (data contract in Chronicle-Draw-Steel docs/DATA-SCHEMA.md; source
-// data keys items by slug and never sets "id"). Shared by the on-disk loader
-// and ZIP preview; Get() consumes the normalized ID only.
+// normalizes ID: prefer the source's own "id", else fall back to "slug"
+// (Chronicle-Draw-Steel docs/DATA-SCHEMA.md; source data keys by slug and
+// never sets "id"). Shared by the on-disk loader and ZIP preview; Get()
+// consumes only the normalized ID.
 //
-// Two classes of item are dropped rather than kept: one with neither id nor
-// slug is unaddressable, so it is skipped instead of loaded with a blank ID
-// that would collide with every other blank-ID item; one whose normalized ID
-// was already seen in this category is skipped too, since Get() is
-// first-match-wins and a silently-kept duplicate would resolve any link to
-// the wrong item's content.
+// An item with neither id nor slug is unaddressable and is skipped rather
+// than loaded with a colliding blank ID; a duplicate normalized ID within a
+// category is also skipped, since Get() is first-match-wins and a kept
+// duplicate would resolve links to the wrong item.
 //
-// Skips are aggregated into one sink call per invocation (one file, one ZIP
-// entry) with a count, so a single badly-authored file can't evict the
-// entire fixed-capacity global diagnostics ring. sink may be nil to suppress
-// diagnostics (used by preview/dry-run paths, which must not mutate global
-// state).
+// Skips are aggregated into one sink call per invocation (with a count) so
+// one bad file can't evict the whole fixed-capacity diagnostics ring. sink
+// may be nil (preview/dry-run paths must not mutate global state).
 func normalizeReferenceItems(items []ReferenceItem, moduleID, category, source string, sink func(LoadEvent)) []ReferenceItem {
 	seen := make(map[string]bool, len(items))
 	var missing, duplicate int

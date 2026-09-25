@@ -28,10 +28,10 @@ type AddonEnablementStore interface {
 }
 
 // ReconcileAddonEnablement enables the "Sync API" addon for every campaign
-// that already owns an API key but has never had the toggle recorded either
-// way (enforcement defaults to DENIED when no campaign_addons row exists).
-// It returns the number of campaigns it enabled. Runs as an idempotent
-// reconciler, not a migration, so it is safe to re-run every boot.
+// that owns an API key but has never had the toggle recorded either way
+// (enforcement defaults to DENIED when no campaign_addons row exists).
+// Returns the count enabled. Idempotent reconciler, not a migration; safe
+// to re-run every boot.
 //
 // Enable only where NO ROW EXISTS:
 //
@@ -44,8 +44,8 @@ type AddonEnablementStore interface {
 // IsEnabledForCampaign, which can't distinguish "never configured" from
 // "explicitly off".
 //
-// Best-effort by contract: it reports its error to the caller, which logs
-// and continues. A backfill must not be able to stop the server from booting.
+// Best-effort: reports its error to the caller to log and continue. Must
+// never stop the server from booting.
 func ReconcileAddonEnablement(ctx context.Context, keys CampaignKeyLister, store AddonEnablementStore) (int, error) {
 	if keys == nil || store == nil {
 		return 0, fmt.Errorf("syncapi.ReconcileAddonEnablement: nil dependency (keys=%v store=%v)",

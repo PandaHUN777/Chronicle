@@ -1,22 +1,17 @@
 #!/usr/bin/env bash
 # tools/check-v2-motion-discipline.sh
 #
-# Enforces motion discipline in the V2-scope plugin directories: no NEW
-# `transition: all` (raw CSS) or `transition-all` (Tailwind utility) in
-# calendar / timeline / ai_workspace / campaigns plugin sources. Only
-# `transform` and `opacity` may be transitioned there; other properties are
-# discouraged by the same rule but harder to lint statically, so they're
-# documented in the plugins' .ai.md and enforced via PR review instead.
+# Enforces motion discipline in V2-scope plugins (calendar/timeline/
+# ai_workspace/campaigns): no NEW `transition: all` / `transition-all`. Only
+# `transform` and `opacity` may transition there; other properties are
+# discouraged by the same rule but enforced via PR review instead (see each
+# plugin's .ai.md), since they're harder to lint statically.
 #
-# Diff-scoped FAIL: only checks lines INTRODUCED by the PR vs origin/main.
-# Pre-existing violations are grandfathered.
+# Diff-scoped: only lines introduced vs origin/main; pre-existing violations
+# are grandfathered. Forbidden tokens are fragment-joined so the script
+# doesn't self-match scanning its own tree.
 #
-# Forbidden tokens are reconstructed via fragment join so the script can scan
-# its own directory tree without self-matching.
-#
-# Exit codes:
-#   0 — no new violations introduced by the diff vs the merge base
-#   1 — at least one new violation; CI fails
+# Exit: 0 no new violations / 1 at least one new violation
 
 set -euo pipefail
 
