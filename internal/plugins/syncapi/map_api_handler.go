@@ -100,7 +100,7 @@ func (h *MapAPIHandler) GetMap(c echo.Context) error {
 	}
 
 	// Load markers for the map.
-	markers, err := h.mapSvc.ListMarkers(ctx, m.ID, role, userID)
+	markers, err := h.mapSvc.ListMarkers(ctx, m.CampaignID, m.ID, role, userID)
 	if err != nil {
 		slog.Error("api: list markers failed", slog.Any("error", err))
 		return apperror.NewInternal(fmt.Errorf("failed to load markers"))
@@ -706,7 +706,7 @@ func (h *MapAPIHandler) ListMarkers(c echo.Context) error {
 		userID = key.UserID
 	}
 
-	markers, err := h.mapSvc.ListMarkers(c.Request().Context(), m.ID, role, userID)
+	markers, err := h.mapSvc.ListMarkers(c.Request().Context(), m.CampaignID, m.ID, role, userID)
 	if err != nil {
 		return apperror.NewInternal(fmt.Errorf("failed to list markers"))
 	}

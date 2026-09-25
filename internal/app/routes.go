@@ -2403,6 +2403,15 @@ func (a *App) RegisterRoutes() {
 	// Services created unconditionally (sync API references drawingService).
 	mapsRepo := maps.NewMapRepository(a.DB)
 	mapsService := maps.NewMapService(mapsRepo)
+	// Reuses the same entityVisibilityFilterAdapter armory, media, npcs and
+	// sessions wire, so a marker naming a dm_only/private entity is narrowed
+	// by entities' one canonical visibility predicate. Type-asserted like
+	// SetBindingCleaner below so the MapService interface stays unchanged.
+	if g, ok := mapsService.(interface {
+		SetEntityVisibilityGate(maps.EntityVisibilityGate)
+	}); ok {
+		g.SetEntityVisibilityGate(&entityVisibilityFilterAdapter{svc: entityService})
+	}
 	mapsHandler := maps.NewHandler(mapsService)
 	drawingRepo := maps.NewDrawingRepository(a.DB)
 	drawingService := maps.NewDrawingService(drawingRepo)

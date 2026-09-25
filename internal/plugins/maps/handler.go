@@ -92,7 +92,7 @@ func (h *Handler) Show(c echo.Context) error {
 			userID = s.GetUserID()
 		}
 	}
-	markers, err := h.svc.ListMarkers(c.Request().Context(), mapID, role, userID)
+	markers, err := h.svc.ListMarkers(c.Request().Context(), cc.Campaign.ID, mapID, role, userID)
 	if err != nil {
 		return err
 	}
@@ -435,7 +435,7 @@ func (h *Handler) GetMapMetaAPI(c echo.Context) error {
 			userID = s.GetUserID()
 		}
 	}
-	markers, err := h.svc.ListMarkers(ctx, mapID, role, userID)
+	markers, err := h.svc.ListMarkers(ctx, cc.Campaign.ID, mapID, role, userID)
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func (h *Handler) ListMarkersAPI(c echo.Context) error {
 		}
 	}
 
-	markers, err := h.svc.ListMarkers(ctx, mapID, role, userID)
+	markers, err := h.svc.ListMarkers(ctx, cc.Campaign.ID, mapID, role, userID)
 	if err != nil {
 		return err
 	}

@@ -29,7 +29,7 @@ func TestListMarkers_PassesRoleAndUserIDToRepo(t *testing.T) {
 	}
 	svc := newTestMapService(repo)
 
-	if _, err := svc.ListMarkers(context.Background(), "map-1", 1, "user-denied"); err != nil {
+	if _, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 1, "user-denied"); err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 

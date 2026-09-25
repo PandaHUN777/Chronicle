@@ -139,7 +139,9 @@ func TestMarker_ValidatorsReadTheMergedRow(t *testing.T) {
 }
 
 // The client half: a drag must send only the position, and the edit form
-// must send an explicit null for a field the operator emptied.
+// must send an explicit null for a field the operator emptied, and send the
+// entity link only when it changed: a link to a page the viewer can't see
+// arrives blank, and echoing that blank back would unlink it.
 func TestMarkerClients_SendOnlyWhatTheyMean(t *testing.T) {
 	src, err := os.ReadFile("maps.templ")
 	if err != nil {
@@ -151,7 +153,9 @@ func TestMarkerClients_SendOnlyWhatTheyMean(t *testing.T) {
 	}
 	for _, want := range []string{
 		"body.description = fd.get('description') || null;",
-		"body.entity_id = fd.get('entity_id') || null;",
+		"entityInput.dataset.original = entityInput.value;",
+		"if (!markerID || entityVal !== entityOriginal) {",
+		"body.entity_id = entityVal || null;",
 	} {
 		if !strings.Contains(text, want) {
 			t.Errorf("maps.templ no longer sends %q — under absent-means-preserve, an emptied field that is merely omitted can never be cleared", want)
