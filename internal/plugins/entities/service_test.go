@@ -159,31 +159,32 @@ func (m *mockEntityTypeRepo) MaxSortOrder(ctx context.Context, campaignID string
 
 // mockEntityRepo implements EntityRepository for testing.
 type mockEntityRepo struct {
-	createFn         func(ctx context.Context, entity *Entity) error
-	findByIDFn       func(ctx context.Context, id string) (*Entity, error)
-	findBySlugFn     func(ctx context.Context, campaignID, slug string) (*Entity, error)
-	updateFn         func(ctx context.Context, entity *Entity) error
-	updateEntryFn    func(ctx context.Context, id, entryJSON, entryHTML string) error
-	updateImageFn    func(ctx context.Context, id, imagePath string) error
-	deleteFn         func(ctx context.Context, id string) error
-	slugExistsFn     func(ctx context.Context, campaignID, slug string) (bool, error)
-	listByCampaignFn func(ctx context.Context, campaignID string, typeIDs []int, role int, userID string, opts ListOptions) ([]Entity, int, error)
-	searchFn         func(ctx context.Context, campaignID, query string, typeIDs []int, role int, userID string, opts ListOptions) ([]Entity, int, error)
-	countByTypeFn    func(ctx context.Context, campaignID string, role int, userID string) (map[int]int, error)
-	listRecentFn     func(ctx context.Context, campaignID string, role int, userID string, limit int) ([]Entity, error)
-	findChildrenFn   func(ctx context.Context, parentID string, role int, userID string) ([]Entity, error)
-	findAncestorsFn  func(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
-	updateParentFn   func(ctx context.Context, entityID string, parentID *string) error
-	findBacklinksFn  func(ctx context.Context, campaignID, entityID string, role int, userID string) ([]Entity, error)
-	setAliasesFn     func(ctx context.Context, entityID string, aliases []string) error
-	updatePrivateFn  func(ctx context.Context, entityID string, isPrivate bool) error
-	listByOwnerFn    func(ctx context.Context, campaignID, ownerUserID string) ([]Entity, error)
-	listClaimedFn    func(ctx context.Context, campaignID string, role int, userID string) ([]Entity, error)
-	updateOwnerFn    func(ctx context.Context, entityID string, ownerUserID *string) error
-	updateMapIDFn    func(ctx context.Context, entityID string, mapID *string) error
-	listSiblingIDsFn func(ctx context.Context, campaignID string, entityTypeID int, parentID, parentNodeID *string) ([]string, error)
-	resequenceFn     func(ctx context.Context, campaignID string, orderedIDs []string) error
-	filterViewableFn func(entityIDs []string) (map[string]bool, error)
+	createFn           func(ctx context.Context, entity *Entity) error
+	findByIDFn         func(ctx context.Context, id string) (*Entity, error)
+	findBySlugFn       func(ctx context.Context, campaignID, slug string) (*Entity, error)
+	updateFn           func(ctx context.Context, entity *Entity) error
+	updateEntryFn      func(ctx context.Context, id, entryJSON, entryHTML string) error
+	updateImageFn      func(ctx context.Context, id, imagePath string) error
+	updateCoverImageFn func(ctx context.Context, id, coverImagePath string) error
+	deleteFn           func(ctx context.Context, id string) error
+	slugExistsFn       func(ctx context.Context, campaignID, slug string) (bool, error)
+	listByCampaignFn   func(ctx context.Context, campaignID string, typeIDs []int, role int, userID string, opts ListOptions) ([]Entity, int, error)
+	searchFn           func(ctx context.Context, campaignID, query string, typeIDs []int, role int, userID string, opts ListOptions) ([]Entity, int, error)
+	countByTypeFn      func(ctx context.Context, campaignID string, role int, userID string) (map[int]int, error)
+	listRecentFn       func(ctx context.Context, campaignID string, role int, userID string, limit int) ([]Entity, error)
+	findChildrenFn     func(ctx context.Context, parentID string, role int, userID string) ([]Entity, error)
+	findAncestorsFn    func(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
+	updateParentFn     func(ctx context.Context, entityID string, parentID *string) error
+	findBacklinksFn    func(ctx context.Context, campaignID, entityID string, role int, userID string) ([]Entity, error)
+	setAliasesFn       func(ctx context.Context, entityID string, aliases []string) error
+	updatePrivateFn    func(ctx context.Context, entityID string, isPrivate bool) error
+	listByOwnerFn      func(ctx context.Context, campaignID, ownerUserID string) ([]Entity, error)
+	listClaimedFn      func(ctx context.Context, campaignID string, role int, userID string) ([]Entity, error)
+	updateOwnerFn      func(ctx context.Context, entityID string, ownerUserID *string) error
+	updateMapIDFn      func(ctx context.Context, entityID string, mapID *string) error
+	listSiblingIDsFn   func(ctx context.Context, campaignID string, entityTypeID int, parentID, parentNodeID *string) ([]string, error)
+	resequenceFn       func(ctx context.Context, campaignID string, orderedIDs []string) error
+	filterViewableFn   func(entityIDs []string) (map[string]bool, error)
 }
 
 func (m *mockEntityRepo) Create(ctx context.Context, entity *Entity) error {
@@ -367,7 +368,10 @@ func (m *mockEntityRepo) FindAllMentionLinks(_ context.Context, _ string, _ int,
 	return nil, nil
 }
 
-func (m *mockEntityRepo) UpdateCoverImage(_ context.Context, _, _ string) error {
+func (m *mockEntityRepo) UpdateCoverImage(ctx context.Context, id, coverImagePath string) error {
+	if m.updateCoverImageFn != nil {
+		return m.updateCoverImageFn(ctx, id, coverImagePath)
+	}
 	return nil
 }
 
@@ -2330,6 +2334,137 @@ func TestAssignMap_NoVerifierWiredRejectsAll(t *testing.T) {
 	_, err := svc.AssignMap(context.Background(), "e1", strPtr("m1"))
 	if err == nil {
 		t.Fatal("expected default verifier to reject all map IDs")
+	}
+}
+
+// stubMediaVerifier is a one-line MediaCampaignVerifier for tests, mirroring
+// stubMapVerifier's shape.
+type stubMediaVerifier struct {
+	ok       bool
+	err      error
+	gotMedia string
+	gotCamp  string
+}
+
+func (s *stubMediaVerifier) MediaExistsInCampaign(_ context.Context, mediaID, campaignID string) (bool, error) {
+	s.gotMedia = mediaID
+	s.gotCamp = campaignID
+	return s.ok, s.err
+}
+
+// TestUpdateImage_RejectsCrossCampaign: an entity's image_path must not
+// accept a media ID from another campaign just because it's a
+// well-formed, non-traversal path.
+func TestUpdateImage_RejectsCrossCampaign(t *testing.T) {
+	ent := &Entity{ID: "e1", CampaignID: "campA"}
+	updateCalled := false
+	repo := &mockEntityRepo{
+		findByIDFn: func(_ context.Context, _ string) (*Entity, error) { return ent, nil },
+		updateImageFn: func(_ context.Context, _, _ string) error {
+			updateCalled = true
+			return nil
+		},
+	}
+	svc := newTestService(repo, &mockEntityTypeRepo{})
+	verifier := &stubMediaVerifier{ok: false} // media doesn't belong to campA
+	svc.SetMediaVerifier(verifier)
+
+	err := svc.UpdateImage(context.Background(), "e1", "media-from-campB")
+	if err == nil {
+		t.Fatal("expected an error for cross-campaign media id")
+	}
+	if updateCalled {
+		t.Error("repo.UpdateImage was called despite verifier rejecting the media id")
+	}
+	if verifier.gotMedia != "media-from-campB" || verifier.gotCamp != "campA" {
+		t.Errorf("verifier called with wrong args: gotMedia=%q gotCamp=%q", verifier.gotMedia, verifier.gotCamp)
+	}
+}
+
+// TestUpdateImage_SameCampaignSucceeds is the paired positive case: a
+// media id the verifier confirms belongs to the entity's own campaign
+// is written through as before.
+func TestUpdateImage_SameCampaignSucceeds(t *testing.T) {
+	ent := &Entity{ID: "e1", CampaignID: "campA"}
+	updateCalled := false
+	repo := &mockEntityRepo{
+		findByIDFn: func(_ context.Context, _ string) (*Entity, error) { return ent, nil },
+		updateImageFn: func(_ context.Context, _, _ string) error {
+			updateCalled = true
+			return nil
+		},
+	}
+	svc := newTestService(repo, &mockEntityTypeRepo{})
+	svc.SetMediaVerifier(&stubMediaVerifier{ok: true})
+
+	if err := svc.UpdateImage(context.Background(), "e1", "media-in-campA"); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !updateCalled {
+		t.Error("expected repo.UpdateImage to be called for a same-campaign media id")
+	}
+}
+
+// TestUpdateImage_ClearingSkipsVerifier pins that clearing the image
+// (empty string) never consults the verifier — there's no cross-campaign
+// reference to check when the field is being emptied.
+func TestUpdateImage_ClearingSkipsVerifier(t *testing.T) {
+	ent := &Entity{ID: "e1", CampaignID: "campA"}
+	repo := &mockEntityRepo{
+		findByIDFn:    func(_ context.Context, _ string) (*Entity, error) { return ent, nil },
+		updateImageFn: func(_ context.Context, _, _ string) error { return nil },
+	}
+	svc := newTestService(repo, &mockEntityTypeRepo{})
+	verifier := &stubMediaVerifier{ok: false}
+	svc.SetMediaVerifier(verifier)
+
+	if err := svc.UpdateImage(context.Background(), "e1", ""); err != nil {
+		t.Fatalf("unexpected error clearing image: %v", err)
+	}
+	if verifier.gotMedia != "" {
+		t.Error("verifier should not have been consulted when clearing the image path")
+	}
+}
+
+// TestUpdateImage_NoVerifierWiredRejectsAll pins the fail-closed default:
+// an unwired verifier must reject every non-empty image path rather than
+// silently allowing it, matching AssignMap's noopMapVerifier precedent.
+func TestUpdateImage_NoVerifierWiredRejectsAll(t *testing.T) {
+	ent := &Entity{ID: "e1", CampaignID: "c1"}
+	repo := &mockEntityRepo{
+		findByIDFn: func(_ context.Context, _ string) (*Entity, error) { return ent, nil },
+	}
+	svc := newTestService(repo, &mockEntityTypeRepo{})
+	// Intentionally do NOT call SetMediaVerifier.
+
+	err := svc.UpdateImage(context.Background(), "e1", "m1")
+	if err == nil {
+		t.Fatal("expected default verifier to reject all media ids")
+	}
+}
+
+// TestUpdateCoverImage_RejectsCrossCampaign mirrors the UpdateImage case
+// for the cover image field — the same IDOR exists there.
+func TestUpdateCoverImage_RejectsCrossCampaign(t *testing.T) {
+	ent := &Entity{ID: "e1", CampaignID: "campA"}
+	updateCalled := false
+	repo := &mockEntityRepo{
+		findByIDFn: func(_ context.Context, _ string) (*Entity, error) { return ent, nil },
+		updateCoverImageFn: func(_ context.Context, _, _ string) error {
+			updateCalled = true
+			return nil
+		},
+	}
+	svc := newTestService(repo, &mockEntityTypeRepo{})
+	verifier := &stubMediaVerifier{ok: false}
+	svc.SetMediaVerifier(verifier)
+
+	err := svc.UpdateCoverImage(context.Background(), "e1", "media-from-campB")
+	if err == nil {
+		t.Fatal("expected an error for cross-campaign media id")
+	}
+	if updateCalled {
+		t.Error("repo.UpdateCoverImage was called despite verifier rejecting the media id")
 	}
 }
 

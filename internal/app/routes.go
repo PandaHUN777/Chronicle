@@ -1408,6 +1408,34 @@ func (a *entityMapVerifierAdapter) MapExistsInCampaign(ctx context.Context, mapI
 	return m.CampaignID == campaignID, nil
 }
 
+// entityMediaVerifierAdapter wraps media.MediaService to implement
+// entities.MediaCampaignVerifier. Used by entityService.UpdateImage /
+// UpdateCoverImage to confirm a media file exists AND lives in the
+// entity's own campaign before writing it into an image field — the
+// same cross-campaign IDOR that entityMapVerifierAdapter closes for
+// map_id.
+type entityMediaVerifierAdapter struct {
+	svc media.MediaService
+}
+
+// MediaExistsInCampaign returns true only when the media file exists AND
+// its CampaignID matches. Not-found is a clean false, not an error — the
+// caller only wants to know "is this a valid choice?".
+func (a *entityMediaVerifierAdapter) MediaExistsInCampaign(ctx context.Context, mediaID, campaignID string) (bool, error) {
+	f, err := a.svc.GetByID(ctx, mediaID)
+	if err != nil {
+		var ae *apperror.AppError
+		if errors.As(err, &ae) && ae.Code == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	if f == nil {
+		return false, nil
+	}
+	return f.CampaignID != nil && *f.CampaignID == campaignID, nil
+}
+
 // armoryBuyerAccessAdapter wraps entities.EntityService to implement
 // armory.BuyerAccessChecker. Used by the transaction service to verify
 // the calling user can act on the buyer entity (own / shared / Owner /
@@ -2418,6 +2446,10 @@ func (a *App) RegisterRoutes() {
 	// entities, as a post-construction dependency (mapsService doesn't
 	// exist yet when entityService is constructed).
 	entityService.SetMapVerifier(&entityMapVerifierAdapter{svc: mapsService})
+	// Wire the media-existence + same-campaign check used by
+	// UpdateImage/UpdateCoverImage — mediaService already exists by this
+	// point (constructed earlier in this function).
+	entityService.SetMediaVerifier(&entityMediaVerifierAdapter{svc: mediaService})
 	if a.PluginHealth.IsHealthy("maps") {
 		maps.RegisterRoutes(e, mapsHandler, campaignService, authService, addonService)
 		drawingHandler := maps.NewDrawingHandler(mapsService, drawingService)
