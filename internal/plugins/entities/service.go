@@ -1081,33 +1081,23 @@ func isPlayerCharacterType(presetCategory, slug string) bool {
 }
 
 // EnsurePlayerCharacterType idempotently ensures the campaign's claimable
-// "Player Character" sub-type exists AND is nested under the default
-// "Characters" category — the shape the Player Character Claiming design always
-// intended (a PC sub-type under Characters via ParentTypeID, see ADR-039 /
-// cordinator 2026-06-19-pc-claim-design §3).
+// "Player Character" sub-type exists and is nested under the default
+// "Characters" category (ADR-039). Runs safely on every boot — the startup
+// backfill replays it across campaigns that enabled the addon earlier.
 //
-// It handles three cases, all idempotent and safe to run on every boot (the
-// startup backfill replays it across campaigns that enabled the addon before
-// this shipped — so deploying this heals production in place):
+// Three cases, independent and idempotent:
+//  1. A premade PC type exists at the top level (older builds put it
+//     there) — re-parent it under "Characters". UpdateEntityType only
+//     flips the parent pointer, so claimed characters and layout survive.
+//  2. A system's own character type (e.g. drawsteel-character) already
+//     serves as the PC — nest it under "Characters" without renaming, so
+//     the system's terminology is preserved.
+//  3. Only when neither exists: premake the claimable "Player Character"
+//     sub-type (CharacterLayout + claimable=true), nested under
+//     "Characters" when one exists, else top-level.
 //
-//  1. MIGRATION — a premade PC type already exists at the TOP LEVEL (earlier
-//     builds created it there). Re-parent it under the default "Characters"
-//     category. UpdateEntityType only flips the parent pointer, so every claimed
-//     character under the type is preserved (and its layout, which Update never
-//     touches). No-ops once nested.
-//  2. A system's own character type (e.g. drawsteel-character) already serves as
-//     the claimable PC. Nest it under "Characters" (so it reads as the PC
-//     sub-category) WITHOUT renaming — the system's terminology is preserved
-//     (modularity). Don't premake a generic type.
-//
-// Cases 1 and 2 are independent (a campaign may have BOTH a stray PC type and a
-// system type — each is nested). Only when NEITHER exists do we
-//  3. premake the claimable "Player Character" sub-type (CharacterLayout +
-//     claimable=true), nested under the default "Characters" category when one
-//     exists (else top-level, as a graceful fallback).
-//
-// The addon gate in CreateEntityType passes here because the addon is already
-// marked enabled (DB-direct check) before this runs.
+// The addon gate in CreateEntityType already confirmed the addon is
+// enabled before this runs.
 func (s *entityService) EnsurePlayerCharacterType(ctx context.Context, campaignID string) error {
 	types, err := s.types.ListByCampaign(ctx, campaignID)
 	if err != nil {

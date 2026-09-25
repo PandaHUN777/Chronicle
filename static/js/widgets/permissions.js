@@ -1,39 +1,18 @@
 /**
  * permissions.js -- Chronicle Per-Entity Permissions Widget
  *
- * Renders a "Permissions" trigger button that opens a Material-style
- * slide-in card from the right edge of the viewport. The card hosts
- * the visibility-mode selector (Everyone / DM Only / Custom) and, in
- * Custom mode, per-role / per-user / per-group grant rows.
- *
- * Animation: GPU-accelerated `transform translateX` with a 280ms ease-out
- * transition. A separate backdrop fades in to dim the page; clicking it
- * closes the card. Escape key and the X button also close.
+ * "Permissions" trigger button opens a slide-in card with the
+ * visibility-mode selector (Everyone / DM Only / Custom) and, in Custom
+ * mode, per-role / per-user / per-group grant rows.
  *
  * Two mount modes:
+ *   1. `data-endpoint` present (entity show/edit): loads/saves via
+ *      GET/PUT /permissions.
+ *   2. `data-mode="draft"` + `data-draft-target` (create form): no
+ *      endpoint yet, writes is_private into the target hidden input;
+ *      Custom mode is disabled until the entity has an ID.
  *
- *   1. `data-endpoint` present (entity show/edit pages):
- *      Loads state from GET /permissions, saves to PUT /permissions.
- *
- *   2. `data-mode="draft"` + `data-draft-target` (create form):
- *      No endpoint. The widget exposes mode selection (Everyone /
- *      DM Only) and writes is_private into the form's hidden input
- *      selected by `data-draft-target`. Custom mode is shown but
- *      disabled with a hint to configure after creation, because
- *      granular grants need an entity ID.
- *
- * Save errors render inline inside the card (top of the body, dismissible).
- * The widget consumes the structured `{error, message, category}` wire
- * shape and styles by category (validation, auth, not_found, internal) so
- * operators see the actual cause.
- *
- * Auto-mounted by boot.js on elements with data-widget="permissions".
- *
- * Config (from data-* attributes):
- *   data-endpoint     - Permissions API endpoint, e.g. /campaigns/:id/entities/:eid/permissions
- *   data-editable     - "true" if user can modify permissions (Owner only)
- *   data-mode         - "draft" to enable create-form mode (no endpoint, writes to draft target)
- *   data-draft-target - CSS selector for the hidden is_private input in draft mode
+ * Auto-mounted by boot.js on data-widget="permissions".
  */
 // Role constant matching Go permissions.RoleOwner.
 var ROLE_OWNER = 3;

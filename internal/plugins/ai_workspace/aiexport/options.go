@@ -1,25 +1,17 @@
 // Package aiexport renders a campaign's owner-scoped content into a single
-// markdown document suitable for pasting into AI tools (Claude, ChatGPT,
-// NotebookLM, etc). The package is intentionally lossy — markdown is the
-// wire format owners paste into chat, not a backup.
+// markdown document for pasting into AI tools. It is intentionally lossy —
+// markdown is a paste format, not a backup; the lossless path is
+// internal/app/export_adapters.go / campaigns/export_handler.go /
+// internal/plugins/restore/.
 //
-//   - Five categories: entities, notes, calendar events, sessions, timeline
-//     events.
-//   - Privacy modes: Safe (drops dm_only / IsPrivate / not-shared-with-
-//     owner), Permitted (matches owner's on-screen view), Everything
-//     (no visibility filtering).
-//   - A token estimate is rendered in the header so the owner can tell
-//     whether the export fits a target AI's context window.
+// Categories: entities, notes, calendar events, sessions, timeline events.
+// Privacy modes: Safe (drops dm_only/private/not-shared-with-owner),
+// Permitted (owner's on-screen view), Everything (unfiltered).
 //
-// SEC-6-AMENDED invariant: every HTML field passes through sanitize.HTMLPtr
-// BEFORE the HTML-to-markdown converter sees it — a raw DB field could carry
-// <script> or javascript: URLs the converter would faithfully translate. The
-// AST structural pin in renderer_test.go enforces this on every renderer.
-//
-// This package is a separate egress surface from the lossless backup
-// pipeline (internal/app/export_adapters.go, campaigns/export_handler.go,
-// internal/plugins/restore/), which remains the source of truth for
-// round-trip-safe exports; this package does not touch it.
+// SECURITY: every HTML field must pass sanitize.HTMLPtr before the
+// HTML-to-markdown converter sees it, or a raw DB field's <script>/
+// javascript: URL gets faithfully translated. Pinned by the AST check in
+// renderer_test.go.
 package aiexport
 
 // Category identifies one of the v1 markdown-rendered content

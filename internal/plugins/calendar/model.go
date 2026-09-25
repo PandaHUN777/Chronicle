@@ -297,28 +297,23 @@ func (c *Calendar) constLenDayIndex(year, month, day int) int {
 }
 
 // OccursOn reports whether the event lands on (year, month, day) for cal.
-// It is the single recurrence-expansion predicate; every grid/list projection
-// routes through it so there is one source of truth.
+// The single recurrence-expansion predicate; every grid/list projection
+// routes through it.
 //
-// Non-recurring events (or a legacy/empty/unknown recurrence_type) match only
-// their stored date. The five recurring types expand forward from the base
-// date:
-//   - weekly/biweekly/custom: every (interval × week) days, base-anchored, so
-//     each instance shares the base weekday;
-//   - monthly: the same day-of-month every (interval) months, base-anchored,
-//     skipped in months too short for that day (leap-aware via MonthDays);
-//   - yearly: the same month and day-of-month every (interval) years,
-//     base-anchored, skipped — never clamped — in a year whose month is too
-//     short for that day.
+// Non-recurring (or legacy/unknown recurrence_type) events match only their
+// stored date. Recurring types expand forward from the base date:
+//   - weekly/biweekly/custom: every (interval × week) days, base-anchored.
+//   - monthly: same day-of-month every interval months, skipped (not
+//     clamped) when the month is too short (leap-aware via MonthDays).
+//   - yearly: same month/day every interval years, skipped when the year's
+//     month is too short for that day.
 //
 // Recurrence stops at the recurrence-end date (inclusive) and/or after
 // RecurrenceMaxOccurrences.
 //
-// Multi-day events are not expanded here: OccursOn answers "does the
-// recurrence rule put an instance here", a different question from "is this
-// day inside the stored window". Each consumer of OccursOn has its own idea
-// of how a multi-day span should read, so widening this predicate would
-// change all of them silently.
+// Multi-day events are not expanded here — OccursOn answers only "does the
+// rule put an instance here", not "is this day inside the stored window";
+// each consumer decides that separately.
 // TODO(keyxmakerx/Chronicle#741): render a multi-day event's span as one
 // continuous bar (currently only its start date gets marked).
 func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {

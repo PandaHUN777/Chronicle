@@ -9,22 +9,18 @@ import (
 
 // onclick-handler builders.
 //
-// Rule: every interactive element inside an HTMX-swapped fragment uses
-// an inline IIFE in its onclick attribute, never a templ `script`
-// helper. A templ script helper emits a separate <script> tag that
-// browsers don't reliably execute synchronously with an hx-get
-// innerHTML swap, so the button can be clicked before the function is
-// defined ("__templ_X is not defined").
+// Rule: every interactive element inside an HTMX-swapped fragment uses an
+// inline IIFE in its onclick attribute, never a templ `script` helper — a
+// script helper's separate <script> tag isn't guaranteed to execute before
+// an hx-get innerHTML swap lets the button be clicked ("__templ_X is not
+// defined"). Build the JS body in Go and inject it via
+// templ.ComponentScript with an empty Function and the IIFE in Call, which
+// templ writes into onclick without HTML-escaping: use single-quoted JS
+// strings and JSEscapeString-escape interpolated values, never a literal
+// double quote.
 //
-// The fix: build the JS body in Go and inject it via
-// templ.ComponentScript with an empty Function (no <script> tag) and
-// the IIFE in Call. Templ writes Call into the onclick attribute value
-// without HTML-escaping, so the JS body must not contain literal double
-// quotes; use single-quoted JS strings and JSEscapeString-escape
-// interpolated values.
-//
-// onclick_handlers_test.go pins the contract: every helper's output must
-// start with `(function(`, contain no literal `"`, and never reference
+// onclick_handlers_test.go pins the contract: every helper's output starts
+// with `(function(`, contains no literal `"`, and never references
 // `__templ_`.
 
 // inlineOnClick wraps a JS body in a ComponentScript with empty
@@ -170,26 +166,13 @@ func dismissAutoPinBannerOnClick() templ.ComponentScript {
 }
 
 // showAffectedCampaignsOnClick returns the inline IIFE for the banner's
-// "Show affected campaigns" button. It locates the Campaigns expand
-// button for the affected version on /admin/packages, scrolls it into
-// view, and clicks it — the button's existing hx-get then fetches the
-// campaigns-using-version fragment.
-//
-// The `fvtt-campaigns-trigger-<sanitized-version>` button doesn't exist
-// in the DOM until the foundry-module package's "Versions" list has
-// been expanded via HTMX, so this is a two-stage expand:
-//
-//  1. Fast path — if the campaigns trigger is already in the DOM,
-//     scroll + click it.
-//  2. Otherwise, find the Versions trigger via the
-//     `data-fvtt-versions-trigger` attribute packages.templ stamps on
-//     the foundry-module package's Versions button, wire a one-shot
-//     `htmx:afterSwap` listener on its `hx-target`, then click it to
-//     load the version list; on swap, look up the campaigns trigger
-//     and scroll + click it.
-//
-// The data-attribute selector lets the JS find the target without the
-// server knowing the package ID at banner-render time.
+// "Show affected campaigns" button: scroll + click the
+// `fvtt-campaigns-trigger-<sanitized-version>` button on /admin/packages
+// (its hx-get fetches the campaigns-using-version fragment). That button
+// only exists once the Versions list is HTMX-expanded, so if it isn't in
+// the DOM yet, click the Versions trigger (found via its
+// `data-fvtt-versions-trigger` attribute, so the server needn't know the
+// package ID at render time) and retry on `htmx:afterSwap`.
 func showAffectedCampaignsOnClick(previousVersion string) templ.ComponentScript {
 	// sanitizeForID(version) replaces dots/plus/slash with hyphens —
 	// must match the packages.templ sanitizeForID helper. Calling

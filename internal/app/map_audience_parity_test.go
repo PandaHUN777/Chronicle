@@ -3,21 +3,16 @@ package app
 // map_audience_parity_test.go keeps three independent restatements of the
 // per-user map visibility predicate in lockstep: maps' ListMarkers /
 // ListDrawings SQL, maps.VisibilityRules.Allows, and
-// websocket.Message.AudienceAllows (which cannot call the Go restatement —
+// websocket.Message.AudienceAllows (which can't call the Go restatement:
 // internal/websocket must not import plugin types, and maps must not import
-// the hub). If the socket's predicate and the list's predicate disagree, a
-// marker is more or less visible over the wire than the page shows. Run
-// through both implementations against one table of cases, asserting each
-// against its documented answer independently — two that drifted together
-// would still agree with each other.
+// the hub). Each case's expectation is asserted against both implementations
+// independently, so two that drifted together would still agree with each
+// other. A failure means one of the three copies moved — decide whether the
+// SQL or the Go is right; do not edit the expectation to match.
 //
-// The contract has two defaults: with only denied_users set, an unlisted
-// user is INCLUDED (default-allow); once allowed_users is non-empty it is a
-// strict allowlist and that user is EXCLUDED (default-deny), per ListMarkers'
-// SQL.
-//
-// A failure means one of the three copies moved — decide whether the SQL or
-// the Go is right; do not edit the expectation to match.
+// Contract: with only denied_users set, an unlisted user is INCLUDED
+// (default-allow); once allowed_users is non-empty it's a strict allowlist
+// and that user is EXCLUDED (default-deny), per ListMarkers' SQL.
 
 import (
 	"testing"

@@ -1,17 +1,12 @@
 // Package patch provides three-state JSON fields for partial-update
-// requests:
+// requests: an ABSENT key preserves the stored value, an EXPLICIT null
+// clears it, and a present value replaces it. A plain pointer field can't
+// express that, since encoding/json collapses "key missing" and "key: null"
+// into the same nil; Field[T] keeps them apart by recording presence in
+// UnmarshalJSON, which the decoder only calls for keys actually in the body.
 //
-//	an ABSENT key preserves the stored value;
-//	an EXPLICIT null clears it;
-//	a present value replaces it.
-//
-// A plain pointer field cannot express that, because encoding/json collapses
-// "key missing" and "key: null" into the same nil. Field[T] keeps them apart
-// by recording presence in UnmarshalJSON, which the decoder only calls for
-// keys that are actually in the body.
-//
-// Usage on a request struct (handler layer) and on the service input it
-// feeds (services never import Echo, and Field is Echo-free):
+// Usage on a request struct (handler layer) and the service input it feeds
+// (services never import Echo, and Field is Echo-free):
 //
 //	type req struct {
 //	    Summary patch.Field[string] `json:"summary"`

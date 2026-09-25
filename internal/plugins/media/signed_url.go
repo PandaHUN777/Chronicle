@@ -195,23 +195,15 @@ const (
 )
 
 // LoadOrInitSigningSecret resolves the HMAC signing secret used by both the
-// media URLSigner and the foundry_vtt TokenSigner. Priority:
+// media URLSigner and the foundry_vtt TokenSigner. Priority: envSecret
+// (MEDIA_SIGNING_SECRET) > persisted file at path > freshly generated and
+// persisted. Persistence is load-bearing — Foundry stores manifest URLs
+// with embedded tokens signed by this secret indefinitely, so an
+// unpersisted secret invalidates every outstanding token on restart.
 //
-//  1. envSecret if non-empty (operator set MEDIA_SIGNING_SECRET).
-//  2. The persisted file at path if it exists.
-//  3. A freshly generated secret, persisted to path. If persist fails, the
-//     secret is still returned but flagged in-memory.
-//
-// Persistence is load-bearing: Foundry stores manifest URLs with embedded
-// tokens signed by this secret indefinitely, so a restart with no
-// persistence would 403 every outstanding manifest token.
-//
-// Pass path="" to disable persistence (test-only; production should always
-// pass a path).
-//
-// Returns (secret, source, error). A non-nil error never means the secret
-// is unusable — it's a soft signal persistence failed (most often "data dir
-// not writable"); log source + error to the operator either way.
+// Pass path="" to disable persistence (test-only). Returns (secret, source,
+// error); a non-nil error is a soft signal persistence failed, not that the
+// secret is unusable — log source + error to the operator either way.
 func LoadOrInitSigningSecret(envSecret, path string) (string, SigningSecretSource, error) {
 	if envSecret != "" {
 		return envSecret, SecretFromEnv, nil

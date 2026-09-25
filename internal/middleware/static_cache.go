@@ -7,29 +7,18 @@ import (
 )
 
 // StaticCache sets an explicit Cache-Control policy on static asset
-// responses. Echo's `e.Static` serves through `http.ServeContent`, which
-// emits Last-Modified but no Cache-Control, so browsers fall back to
-// heuristic freshness and can reuse a long-untouched file for hours without
-// revalidating — the "site looks old after a deploy" bug. See
-// layouts.AssetURL for the `?v=` cache-busting token this depends on.
+// responses. Echo's `e.Static` serves via `http.ServeContent`, which emits
+// Last-Modified but no Cache-Control, letting browsers reuse a stale file
+// for hours after a deploy. See layouts.AssetURL for the `?v=`
+// cache-busting token this depends on: with `?v=` the URL is
+// content-addressed, so cache hard and forever (`immutable`); without it
+// (hand-typed URL, legacy link, forgotten conversion), allow caching but
+// force revalidation so a stale copy is at worst one 304 away from correct.
 //
-// The `?v=` token picks between two policies:
-//
-//   - `?v=` present → the URL is content-addressed, so the bytes behind it
-//     can never change: cache hard and forever (`immutable`).
-//   - no `?v=` → a hand-typed URL, a legacy link, or a direct fetch. Allow
-//     caching but force revalidation on every use, so a stale copy is at
-//     worst one conditional request (304, no body) away from correct — an
-//     asset whose template we forgot to convert degrades to "always
-//     revalidated", never "silently stale".
-//
-// Applied as a DEFAULT before the handler runs: requests outside urlPrefix
-// pass straight through, and any handler that sets its own Cache-Control
-// afterwards wins.
-//
-// Registered globally rather than on a route group because static assets
-// are mounted in two places — the on-disk `/static` root and each plugin's
-// embed FS under `/static/plugins/<slug>` — and one prefix check covers both.
+// Applied as a default before the handler runs — requests outside urlPrefix
+// pass through, and a handler's own Cache-Control wins afterwards.
+// Registered globally, not on a route group, because static assets are
+// mounted in two places (`/static` and each plugin's `/static/plugins/<slug>`).
 func StaticCache(urlPrefix string) echo.MiddlewareFunc {
 	const (
 		immutablePolicy  = "public, max-age=31536000, immutable"

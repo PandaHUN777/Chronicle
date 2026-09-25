@@ -481,18 +481,15 @@ type CreateEntityInput struct {
 	OwnerUserID *string
 }
 
-// UpdateEntityInput is the validated input for updating an entity.
+// UpdateEntityInput is the validated input for updating an entity: a
+// PARTIAL update where an absent field preserves, explicit null clears,
+// and a present value replaces. ParentID/TypeLabel use patch.Field for
+// this — a plain string with "" meaning "clear" can't express "absent"
+// and silently detaches entities on a partial caller that omits it.
 //
-// This is a PARTIAL update: an ABSENT field preserves the stored value, an
-// EXPLICIT null clears it, and a present value replaces it. ParentID and
-// TypeLabel use patch.Field for this; a plain string with "" meaning
-// "clear" cannot express "absent", which silently detaches entities on any
-// partial caller that omits the field (e.g. Foundry sync).
-//
-// IsPrivate stays a plain *bool: nil means "don't change", non-nil means
-// "set to this value" — the same three-state contract on a NOT NULL
-// column. The permissions widget is the sole authoritative writer of it;
-// other in-app handlers must not send it.
+// IsPrivate stays a plain *bool (nil = don't change, non-nil = set) on the
+// same three-state contract; the permissions widget is the sole
+// authoritative writer, other handlers must not send it.
 //
 // TODO(keyxmakerx/Chronicle#613): ImagePath is a value-typed field the
 // service never reads — campaign import believes it applies image paths

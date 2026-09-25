@@ -5,17 +5,10 @@
  * dashboards, owner dashboards, category dashboards, and page templates
  * through one UI.
  *
- * Mount: data-widget="layout-editor"
- * Config:
- *   data-endpoint       - GET/PUT/DELETE endpoint for layout JSON
- *   data-campaign-id    - Campaign UUID
- *   data-csrf-token     - CSRF token
- *   data-context        - "dashboard" or "template"
- *   data-features       - Comma-separated feature flags
- *   data-layout         - (optional) Initial layout JSON
- *   data-block-types    - (optional) Override palette block types JSON
- *   data-fields         - (optional) Entity type field definitions for previews
- *   data-role           - (optional) Role for dashboard layouts
+ * Mount: data-widget="layout-editor". Config: data-endpoint (GET/PUT/DELETE
+ * layout JSON), data-campaign-id, data-csrf-token, data-context
+ * ("dashboard"|"template"), data-features, and optional data-layout,
+ * data-block-types, data-fields, data-role.
  */
 (function () {
   'use strict';

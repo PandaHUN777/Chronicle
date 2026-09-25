@@ -1,27 +1,14 @@
 /**
  * Entity Map widget
  *
- * Wires the per-entity Map Editor block. Two responsibilities, both
- * Scribe+ only:
+ * Wires the per-entity Map Editor block, Scribe+ only: picker mode (no
+ * map yet) PUTs /campaigns/:id/entities/:eid/map on card click; embed
+ * mode's "Change map" swaps the iframe back to the picker. Reloads the
+ * page after assign rather than swapping templ fragments, since the
+ * iframe has to fully tear down anyway.
  *
- *   1. Picker mode (no map assigned yet): clicking a thumbnail card
- *      issues PUT /campaigns/:id/entities/:eid/map and reloads the
- *      block on success.
- *   2. Embed mode (map assigned): the "Change map" button replaces the
- *      iframe with the picker so the DM can switch maps without
- *      leaving the entity page.
- *
- * The block re-renders server-side after the assign, so we just
- * window.location.reload() — simpler than swapping templ fragments
- * client-side and the iframe needs to fully tear down anyway.
- *
- * Mount: data-widget="entity-map"
- * Config:
- *   data-entity-id    - Entity UUID (required)
- *   data-campaign-id  - Campaign UUID (required)
- *   data-map-id       - Currently-assigned map UUID (empty if none)
- *   data-is-scribe    - "true" if viewer can change/assign maps
- *   data-csrf         - CSRF token (set on the picker mount only)
+ * Mount: data-widget="entity-map" with data-entity-id, data-campaign-id,
+ * data-map-id, data-is-scribe, data-csrf (picker mount only).
  */
 (function () {
   'use strict';

@@ -1,30 +1,15 @@
 /**
  * entity_notes.js -- Chronicle Player Notes Widget
  *
- * Per-user, per-entity notes with a 5-tier audience ACL:
- *   private    - author only
- *   dm_only    - Owner + IsDmGranted users (only Owner can author)
- *   dm_scribe  - Owner, Scribe, IsDmGranted users (Scribe-tier can author)
- *   everyone   - all campaign members
- *   custom     - explicit user list (sharedWith[])
+ * Per-user, per-entity notes with a 5-tier audience ACL: private (author
+ * only), dm_only (Owner + IsDmGranted, Owner-authored), dm_scribe (adds
+ * Scribe-tier authors), everyone, custom (sharedWith[]). The server
+ * enforces the ACL on every read/write; data-can-author-* hints only
+ * drive which options the UI offers — an unauthorized write is still
+ * rejected server-side.
  *
- * Server enforces ACL on every read/write. The widget shows audience
- * options based on data-can-author-* hints (UX), but the API will
- * reject unauthorized writes regardless.
- *
- * Live updates: subscribes to /ws for entity_note.* messages on the
- * current campaign and refetches the list. Falls back to 30s polling
- * if WebSocket is unavailable (or as a baseline; the two paths layer).
- *
- * Auto-mounted by boot.js on elements with data-widget="entity-notes".
- *
- * Config (from data-* attributes):
- *   data-entity-id              - Entity ID
- *   data-campaign-id            - Campaign ID
- *   data-endpoint               - API base (/campaigns/:id/entities/:eid/notes)
- *   data-csrf                   - CSRF token
- *   data-can-author-dm-only     - "true" if viewer can author dm_only notes
- *   data-can-author-dm-scribe   - "true" if viewer can author dm_scribe notes
+ * Live updates via /ws entity_note.* messages, with 30s-poll fallback.
+ * Auto-mounted by boot.js on data-widget="entity-notes".
  */
 (function () {
   'use strict';

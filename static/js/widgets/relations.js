@@ -1,20 +1,12 @@
 /**
- * relations.js -- Chronicle Entity Relations Widget
+ * relations.js -- bi-directional entity relations widget, grouped by
+ * relation type. Add/remove UI is Scribe+ only. Auto-mounted by boot.js on
+ * data-widget="relations".
  *
- * Displays bi-directional relations between entities, grouped by relation type.
- * Provides UI for adding and removing relations (Scribe+ only).
- * Auto-mounted by boot.js on elements with data-widget="relations".
- *
- * Config (from data-* attributes):
- *   data-relations-endpoint - Relations list/create endpoint (GET/POST),
- *                             e.g. /campaigns/:id/entities/:eid/relations
- *   data-relation-types-endpoint - Common relation types endpoint (GET),
- *                                  e.g. /campaigns/:id/relation-types
- *   data-entity-search-endpoint - Entity search endpoint (GET),
- *                                 e.g. /campaigns/:id/entities?q=...
- *   data-campaign-url - Base URL for entity links,
- *                       e.g. /campaigns/:id
- *   data-editable     - "true" if user can modify relations (Scribe+)
+ * Config (data-*): relations-endpoint (GET/POST list/create, e.g.
+ * /campaigns/:id/entities/:eid/relations), relation-types-endpoint (GET),
+ * entity-search-endpoint (GET), campaign-url (base for entity links),
+ * editable ("true" for Scribe+).
  */
 Chronicle.register('relations', {
   init: function (el, config) {

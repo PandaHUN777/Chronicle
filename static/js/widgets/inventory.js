@@ -1,20 +1,14 @@
 /**
  * inventory.js -- Chronicle Inventory Widget
  *
- * Displays a character's inventory as a list of items (entities linked via
- * "Has Item" relations) with quantity, equipped, and attuned metadata.
- * Items can be searched and added from existing item entities.
+ * A character's inventory as items linked via "Has Item" relations, with
+ * quantity/equipped/attuned metadata; items are searched and added from
+ * existing item entities.
  *
- * Mount via:
- *   <div data-widget="inventory"
- *        data-relations-endpoint="/campaigns/:id/entities/:eid/relations"
- *        data-entity-search-endpoint="/campaigns/:id/entities/search"
- *        data-campaign-url="/campaigns/:id"
- *        data-relation-type="Has Item"
- *        data-reverse-relation-type="In Inventory Of"
- *        data-editable="true"
- *        data-csrf-token="..."
- *   ></div>
+ * Mount: data-widget="inventory" with data-relations-endpoint,
+ * data-entity-search-endpoint, data-campaign-url, data-relation-type
+ * (default "Has Item"), data-reverse-relation-type, data-editable,
+ * data-csrf-token.
  */
 Chronicle.register('inventory', {
   init: function (el) {

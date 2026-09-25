@@ -1,22 +1,13 @@
 /**
- * relation_graph.js -- Chronicle Relations Graph Visualization
+ * relation_graph.js -- D3 force-directed graph of entity relationships within
+ * a campaign (nodes by entity type, edges by relation, incl. @mentions).
+ * Auto-mounted by boot.js on data-widget="relation-graph".
  *
- * D3.js force-directed graph showing entity relationships within a campaign.
- * Nodes represent entities (colored by type), edges represent relations.
- * Supports @mention edges, type/search filtering, local graph mode, and
- * orphan detection. Auto-mounted by boot.js on elements with
- * data-widget="relation-graph".
+ * Config (data-*): campaign-id, api-url (GET /campaigns/:id/relations-graph),
+ * height (default 500), entity-types (JSON array for filter dropdown),
+ * show-filters, focus-entity + hops (local/ego graph mode, default hops 2).
  *
- * Config (from data-* attributes):
- *   data-campaign-id    - Campaign ID
- *   data-api-url        - Graph API endpoint (GET /campaigns/:id/relations-graph)
- *   data-height         - Optional height in px (default: 500)
- *   data-entity-types   - JSON array of {slug, name, color, icon} for filter dropdown
- *   data-show-filters   - "true" to show the filter toolbar (default: false)
- *   data-focus-entity   - Entity ID for local/ego graph mode
- *   data-hops           - Hop depth for local graph (default: 2)
- *
- * Requires D3.js v7. If not loaded, dynamically fetches from CDN.
+ * Requires D3.js v7; loads from CDN if not already present.
  */
 (function () {
   'use strict';

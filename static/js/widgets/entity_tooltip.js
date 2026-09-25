@@ -1,34 +1,17 @@
 /**
  * entity_tooltip.js -- Chronicle Entity Tooltip/Popover Widget
  *
- * Provides hover tooltips for entity references throughout the app.
- * When the user hovers over any element with a `data-entity-preview`
- * attribute (whose value is the preview API URL), a floating card shows:
+ * Hovering (or long-pressing, on touch) any element with a
+ * `data-entity-preview` URL shows a floating card: image, type badge,
+ * name, up to 5 custom-field attribute pairs, and an entry excerpt, per
+ * the entity's popup_config (showImage/showAttributes/showEntry).
  *
- *   - Gradient-bordered image (entity type color -> purple) with
- *     attributes side-by-side when both are present
- *   - Type badge, optional descriptor, privacy indicator
- *   - Entity name
- *   - Up to 5 key-value attribute pairs from the entity's custom fields
- *   - Entry excerpt (first ~150 chars, 3-line clamp)
+ * Used two ways: auto-mounted by boot.js on data-widget="entity-tooltip"
+ * (scans children for data-entity-preview), or via the global helper
+ * Chronicle.tooltip.attach(element, previewURL) for other widgets.
  *
- * Content is controlled per-entity via popup_config (showImage,
- * showAttributes, showEntry). Layout adapts dynamically.
- *
- * Two usage modes:
- *   1. Auto-mounted by boot.js on elements with data-widget="entity-tooltip"
- *      (scans children for data-entity-preview elements).
- *   2. Global helper: Chronicle.tooltip.attach(element, previewURL) for
- *      other widgets to programmatically attach tooltips.
- *
- * Features:
- *   - Debounced hover (300ms) to avoid API spam
- *   - Client-side LRU cache (max 100 entries)
- *   - Smart positioning (above or below, avoids viewport overflow)
- *   - Touch support (long press to show, tap elsewhere to dismiss)
- *   - Dark mode support via .dark class on <html>
- *   - Accessible: role="tooltip", aria-describedby
- *   - Inline CSS injected once (no Tailwind dependency)
+ * Debounced (300ms) and LRU-cached (100 entries) to avoid API spam;
+ * positions itself to avoid viewport overflow.
  */
 (function () {
   'use strict';

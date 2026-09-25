@@ -1,29 +1,19 @@
-// Package calendar — import.go provides calendar import from three formats:
-// Chronicle native JSON, Simple Calendar (Foundry VTT), and Calendaria (Foundry VTT).
+// Package calendar — import.go imports calendars from three formats,
+// auto-detected from the JSON shape:
 //
-// # Supported Formats
+//   - Chronicle native (chronicle-calendar-v1): round-trips perfectly.
+//   - Simple Calendar (Foundry VTT): top-level "calendar" key with
+//     months/weekdays/time/leapYear; numberOfDays/numberOfLeapYearDays,
+//     hoursInDay/minutesInHour, startingMonth/startingDay,
+//     cycleLength/cycleDayAdjust.
+//   - Calendaria (Foundry VTT): top-level "months" as an object, or
+//     "days.hoursPerDay" present; days/leapDays, cycleLength/referenceDate,
+//     eras and festivals.
 //
-// ## Chronicle (chronicle-calendar-v1)
-// Native format exported by Chronicle. Round-trips perfectly.
-//
-// ## Simple Calendar (Foundry VTT)
-// The most popular Foundry VTT calendar module. Identified by top-level
-// "calendar" key containing "months", "weekdays", "time", "leapYear", etc.
-// Months use numberOfDays/numberOfLeapYearDays. Time uses hoursInDay/minutesInHour.
-// Seasons have startingMonth/startingDay. Moons have cycleLength/cycleDayAdjust.
-//
-// ## Calendaria (Foundry VTT)
-// A newer Foundry VTT calendar module. Identified by top-level "months" as an
-// object (not array) with keyed entries, or by presence of "days.hoursPerDay".
-// Months use days/leapDays. Moons have cycleLength/referenceDate. Supports eras
-// and festivals natively.
-//
-// Calendaria authors SEASONS IN TWO SHAPES and both are read: a day-of-year span
-// (dayStart/dayEnd counted from the start of the year) and a MONTH RANGE
-// (monthStart/monthEnd naming whole months, dayStart/dayEnd narrowing the first
-// and last). Which shape a file is in, and whether its month indices are 0- or
-// 1-based, is detected per file — see calendariaSeasonMonthBase, and do not
-// replace that detection with a constant: the real exports disagree.
+// Calendaria seasons appear in two shapes (day-of-year span, or a month
+// range with 0- or 1-based indices), and which shape/base a file uses is
+// detected per file in calendariaSeasonMonthBase — do not replace that
+// detection with a constant, real exports disagree.
 package calendar
 
 import (

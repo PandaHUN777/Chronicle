@@ -1,58 +1,24 @@
 #!/bin/sh
 # scripts/backup.sh -- One-shot complete backup of a Chronicle deployment.
 #
-# Snapshots three things:
-#   1. The MariaDB schema + data via mysqldump | gzip.
-#   2. The media directory (uploads, avatars, packages) via tar | gzip.
-#   3. Optionally, the Redis dataset via redis-cli --rdb (sessions only;
-#      survivable, so this is best-effort).
+# Snapshots the MariaDB schema+data (mysqldump|gzip), the media directory
+# (tar|gzip), and optionally Redis (best-effort, sessions only). Each
+# artifact gets a sibling chronicle_manifest_<TS>.txt with SHA-256 sums plus
+# the migration/build version, so restore.sh can validate a consistent set.
 #
-# Each artifact gets a sibling chronicle_manifest_<TS>.txt listing
-# SHA-256 sums + the migration version + the chronicle build version, so
-# restore.sh can validate that the artifacts were produced from a
-# consistent snapshot.
+# Distinct from the in-process PreMigrationBackup (internal/database/
+# pre_migration_backup.go), which fires automatically on a boot with a
+# pending migration and can abort boot via BACKUP_REQUIRED=1. This script is
+# the operator-driven full snapshot for cron/pre-upgrade use; both write into
+# $BACKUP_DIR but this script never touches chronicle_pre_migrate_* files.
 #
-# Distinct from the in-process pre-migration backup (PreMigrationBackup,
-# internal/database/pre_migration_backup.go) — that one fires automatically
-# on a boot that has a PENDING migration to apply, core or plugin (two
-# gates: MigrateWithBackup for db/migrations, and main.go's
-# pre-plugin-migration gate over database.PendingPluginMigrations), and is
-# skipped on the ordinary restart where nothing is pending. It writes into
-# BACKUP_DIR; BACKUP_REQUIRED=1 makes its failure abort the boot.
-# This script is the operator-driven complete snapshot, suitable for cron
-# and for pre-upgrade safety. Both write into $BACKUP_DIR; this script
-# does not touch chronicle_pre_migrate_* files (those have their own
-# rotator in the Go code).
-#
-# Invocation (compose, primary):
-#   docker compose exec -T chronicle /app/scripts/backup.sh
-# Invocation (standalone host):
-#   DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... \
-#     MEDIA_PATH=/var/lib/chronicle/media BACKUP_DIR=/var/backups/chronicle \
-#     ./scripts/backup.sh
-#
-# Args:
-#   --check          Validate env + tool availability, then exit (0/non-0).
-#                    No I/O. Cheap to run from CI or cron-precondition.
-#   --out DIR        Override BACKUP_DIR for this run.
-#   --no-media       Skip the media tarball.
-#   --no-redis       Skip the Redis dump.
-#   --retention N    Override BACKUP_RETENTION_DAYS for this run.
-#
-# Env contract:
-#   BACKUP_DIR              (default /app/data/backups)
-#   BACKUP_RETENTION_DAYS   (default 7)
-#   DB_HOST                 (default localhost:3306; "host" or "host:port")
-#   DB_USER                 (required)
-#   DB_PASSWORD             (required)
-#   DB_NAME                 (default chronicle)
-#   MEDIA_PATH              (default /app/data/media)
-#   REDIS_URL               (default redis://localhost:6379; optional)
+# Usage: docker compose exec -T chronicle /app/scripts/backup.sh
+#   [--check] [--out DIR] [--no-media] [--no-redis] [--retention N]
+# Env: BACKUP_DIR, BACKUP_RETENTION_DAYS, DB_HOST, DB_USER, DB_PASSWORD,
+#   DB_NAME, MEDIA_PATH, REDIS_URL (see Env section below for defaults).
 #
 # Exit codes: 0 success / 1 operator error / 2 precondition / 3 tool failure.
-#
-# Output: line-oriented `KEY=value` to stdout, suitable for cron-mailto +
-# log scrapers. No spinner, no color. Final line is BACKUP=ok or
+# Output: line-oriented KEY=value to stdout; final line is BACKUP=ok or
 # BACKUP=failed reason=<short>.
 
 set -eu

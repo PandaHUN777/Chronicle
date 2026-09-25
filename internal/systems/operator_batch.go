@@ -1,21 +1,13 @@
 // Package systems — operator_batch.go implements the BATCH half of the
-// operator AI workspace: a request/approve/execute protocol mirroring the
-// campaign ai_workspace plugin's export→prompt→parse→commit loop.
-//
-// Flow (all read-only):
-//  1. The operator downloads the FUNCTIONS SPEC (FunctionsSpecJSON) — a compact,
-//     machine-readable catalog the external AI consumes.
-//  2. The AI composes ONE batch-request object naming the diagnostics it wants.
-//  3. The operator pastes it into Admin ▸ Diagnostics ▸ AI Workspace.
-//  4. ParseBatch validates it against the catalog and produces a PLAN the operator
-//     reviews (prompt-injection containment: the human sees exactly what will run
-//     before approving; unknown names and full-dump requests are flagged).
-//  5. On approval, RunBatch executes only the read-only diagnostics, redacts the
-//     output, and returns ONE compact document the operator pastes back to the AI.
-//
-// The batch runs only the named diagnostics, prefixed by a one-line manifest
-// and a byte-count footer. The heavy full dump (system.health) requires an
-// explicit `full_dump: true` in the request so it can't leak by accident.
+// operator AI workspace: a request/approve/execute protocol, all read-only.
+// The operator downloads FunctionsSpecJSON (the catalog); an external AI
+// composes ONE batch-request naming the diagnostics it wants; ParseBatch
+// validates it and produces a PLAN the operator reviews before approving
+// (prompt-injection containment — unknown names and full-dump requests are
+// flagged); RunBatch then executes only the named, read-only diagnostics,
+// redacts the output, and returns one compact document. The heavy full
+// dump (system.health) needs an explicit `full_dump: true` so it can't
+// leak by accident.
 package systems
 
 import (

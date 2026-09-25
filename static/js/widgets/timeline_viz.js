@@ -1,43 +1,15 @@
 /**
- * timeline_viz.js -- D3.js Interactive Timeline Visualization Widget
+ * timeline_viz.js -- D3 interactive SVG timeline widget: zoomable spine
+ * ruler (6 levels, era to day), event markers/clustering, range bars, era
+ * bands, mini-map, entity swim-lanes, search/filter, event connections, and
+ * create-from-timeline via double-click.
  *
- * Renders an interactive SVG timeline with:
- *   - Center spine ruler with multi-tier ticks (primary/secondary/tertiary)
- *   - Horizontal time axis with 6 zoom levels (era→day)
- *   - Event markers with zoom-level-dependent visual styles
- *   - Range bars for multi-day events (horizontal colored bars)
- *   - Event clustering at low zoom (era/century) with count badges
- *   - Category-based event icons at year/month zoom
- *   - Calendar era background bands with watermark labels
- *   - Mini-map overview strip with viewport indicator
- *   - Pan/drag via d3.zoom, scroll wheel zoom
- *   - Tooltips on hover (event name, date, entity, category)
- *   - Color-coded events (per-link override or timeline default color)
- *   - Entity group swim-lanes (when groups exist)
- *   - Clickable zoom level buttons, zoom fit, search/filter bar
- *   - Event detail panel on click
- *   - Event connections: SVG lines/arrows between related events
- *   - Create-from-timeline: double-click empty space to create event at that date
+ * Mount: <div data-widget="timeline-viz" data-campaign-id data-timeline-id
+ *             data-timeline-color data-api-url>
  *
- * Zoom levels and visual styles:
- *   Era     — Small dots with subtle glow (clustered when dense)
- *   Century — Small circles with glow effect (clustered when dense)
- *   Decade  — Medium circles with category color coding
- *   Year    — Circles/icons with labels, date annotations
- *   Month   — Pill-shaped markers with label backgrounds
- *   Day     — Card-style markers with full event detail
- *
- * Mount: <div data-widget="timeline-viz"
- *             data-campaign-id="..."
- *             data-timeline-id="..."
- *             data-timeline-color="..."
- *             data-api-url="...">
- *
- * Requires D3.js v7. If D3 is not yet loaded when the widget mounts (e.g.
- * during HTMX navigation), it is loaded dynamically from the CDN.
- *
- * Load-order safe: if boot.js hasn't executed yet (Chronicle undefined),
- * registration is deferred until DOMContentLoaded.
+ * Requires D3.js v7; loads from CDN if not already present. Registration is
+ * deferred until DOMContentLoaded if boot.js hasn't run yet (Chronicle
+ * undefined).
  */
 (function() {
 var _impl = {

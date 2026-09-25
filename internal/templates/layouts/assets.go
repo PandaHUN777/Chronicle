@@ -1,25 +1,14 @@
 // assets.go provides cache-busted static asset URLs.
 //
-// Echo's `e.Static` serves assets via `http.ServeContent`, which emits
-// Last-Modified but no Cache-Control, so browsers can hold a build-old copy
-// for hours without revalidating — a deploy that adds a CSS class can render
-// against a stale stylesheet that has never heard of it.
+// Echo's `e.Static` serves via `http.ServeContent`, which sets Last-Modified
+// but no Cache-Control, so browsers can hold a stale copy for hours. Every
+// template routes assets through AssetURL, which appends `?v=<digest>`: the
+// first 10 hex chars of the file's SHA-256 when it resolves on disk or a
+// plugin FS, else a per-build fallback token. Digests are cached per process
+// lifetime.
 //
-// Every asset URL emitted by a template routes through AssetURL, which
-// appends `?v=<digest>`:
-//
-//   - `<digest>` is the first 10 hex chars of the file's SHA-256 when the
-//     asset resolves on disk (or through a registered plugin FS), so a
-//     deploy only busts the files that actually changed.
-//   - Assets that can't be resolved fall back to a per-build token, coarser
-//     but still busting on every deploy.
-//
-// Digests are computed once per path and cached for the process lifetime.
-//
-// The other half is middleware.StaticCache (internal/middleware/
-// static_cache.go), which turns the versioned URLs into a real caching
-// policy: long-lived immutable caching for `?v=`-carrying requests, forced
-// revalidation otherwise.
+// middleware.StaticCache (internal/middleware/static_cache.go) turns the
+// versioned URL into the actual caching policy.
 package layouts
 
 import (

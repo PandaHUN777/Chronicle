@@ -428,22 +428,15 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 
 // entityPrivacyResolver decides the is_private flag for entities created
 // through this API, merging what the client asked for over the campaign's
-// DefaultVisibility setting.
+// DefaultVisibility via the shared campaigns.CampaignSettings.
+// ResolveNewEntityPrivacy. Two rules specific to this surface:
 //
-// The merge itself is campaigns.CampaignSettings.ResolveNewEntityPrivacy —
-// the single implementation every creation path in the repo shares. What
-// lives here is the two things that are specific to this surface:
-//
-//   - The settings read is LAZY and happens AT MOST ONCE. A sync batch may
-//     carry up to 2000 changes; re-reading the campaign per created entity
-//     would be 2000 queries for a value that cannot change mid-request. A
-//     request whose changes all state is_private explicitly, or that creates
-//     nothing, spends no read at all.
-//   - An unreadable campaign FAILS CLOSED. The setting is the only thing
-//     standing between a DM-only campaign and a publicly visible entity, so
-//     "we could not find out" resolves to private. Over-hiding costs the DM
-//     one toggle; publishing a hidden entity to the whole table cannot be
-//     taken back, which is the entire reason this code path was rewritten.
+//   - The settings read is LAZY and AT MOST ONCE per request: a sync batch
+//     can carry up to 2000 changes, and re-reading per entity would be 2000
+//     queries for a value that can't change mid-request.
+//   - An unreadable campaign FAILS CLOSED to private. The setting is the
+//     only thing standing between a DM-only campaign and a publicly visible
+//     entity, and publishing a hidden entity can't be taken back.
 type entityPrivacyResolver struct {
 	h          *APIHandler
 	campaignID string

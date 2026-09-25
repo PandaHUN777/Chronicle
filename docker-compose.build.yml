@@ -9,24 +9,16 @@
 #
 # `make docker-build` and `make docker-all-local` wrap those two commands.
 #
-# WHY THIS IS A SEPARATE FILE. A single service must not carry both `image:`
-# and `build:` — that gives one tag two producers (`docker compose build`
-# stamps a local build with the registry name; `docker compose pull`
-# overwrites it from the registry) and makes `docker compose up -d` do neither
-# when an image already holds the tag. So this override:
+# Separate file because one service can't carry both `image:` and `build:`
+# (two producers for one tag). This override renames the image to
+# `chronicle:local` (the published tag's only producer is CI) and sets
+# `pull_policy: build` so compose doesn't try to pull `chronicle:local` from
+# Docker Hub.
 #
-#   1. Renames the image to `chronicle:local`, never
-#      `ghcr.io/<org>/chronicle:latest`. The published tag has exactly one
-#      producer — CI.
-#   2. Sets `pull_policy: build`, cancelling the base file's
-#      `pull_policy: always`. Without this, compose would try to pull
-#      `chronicle:local` from Docker Hub and fail.
-#
-# The build args below are the same ones CI passes (see .github/workflows/
-# ci.yml). They are optional — an unstamped local image is fine, and the binary
-# still self-identifies via the VCS revision Go embeds during the Docker build
-# (Dockerfile stage 2 installs git precisely so that works). Passing them just
-# makes `docker image inspect chronicle:local` agree with the binary.
+# Build args below match what CI passes (.github/workflows/ci.yml). Optional —
+# an unstamped local image still self-identifies via the VCS revision Go
+# embeds during the build — but passing them makes `docker image inspect
+# chronicle:local` agree with the binary.
 # ============================================================================
 
 services:

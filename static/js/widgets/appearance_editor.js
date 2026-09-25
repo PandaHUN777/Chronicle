@@ -1,21 +1,11 @@
 /**
  * appearance_editor.js -- Campaign Appearance Editor Widget
  *
- * Mounts on a data-widget="appearance-editor" element. Provides live preview
- * for brand name, accent color, and topbar styling. Changes are held locally
- * until the user explicitly clicks "Save Changes".
- *
- * Config attributes:
- *   data-campaign-id  -- Campaign ID
- *   data-csrf         -- CSRF token
- *   data-brand-name   -- Current brand name (may be empty)
- *   data-brand-logo   -- Current brand logo path (may be empty)
- *   data-accent-color -- Current accent color hex (may be empty)
- *   data-accent-action -- Current action-highlight accent hex (primary
- *                          buttons, hover/press, FABs; may be empty)
- *   data-accent-app    -- Current app-identity accent hex (character pages,
- *                          calendar app; may be empty)
- *   data-topbar-style -- Current topbar style JSON (default "{}")
+ * Mounts on data-widget="appearance-editor". Live-previews brand name/logo
+ * and topbar styling, plus three accent colors: data-accent-color
+ * (site-wide), data-accent-action (primary buttons/hover/FABs),
+ * data-accent-app (character pages, calendar app). Changes stay local until
+ * the user clicks "Save Changes".
  */
 (function () {
   'use strict';

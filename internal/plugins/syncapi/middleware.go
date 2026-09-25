@@ -62,21 +62,19 @@ func permissionsForCampaignRole(role campaigns.Role) []APIKeyPermission {
 }
 
 // RequireAuthOrAPIKey authenticates /api/v1/* requests by EITHER a session
-// cookie OR an Authorization: Bearer API key. If a chronicle_session cookie
-// validates, it synthesises an APIKey from the caller's campaign membership
-// (CampaignID, UserID, Permissions) and sets it under apiKeyContextKey so
-// downstream middleware works uniformly; otherwise it delegates to
-// RequireAPIKey for the Bearer path.
+// cookie OR an Authorization: Bearer API key. A valid chronicle_session
+// cookie synthesises an APIKey from the caller's campaign membership
+// (CampaignID, UserID, Permissions) under apiKeyContextKey so downstream
+// middleware works uniformly; otherwise it delegates to RequireAPIKey.
 //
 // Security notes:
-//   - The session cookie is SameSite=Lax (see auth.setSessionCookie), so a
-//     cross-origin POST will NOT include it — that cookie attribute is the
-//     CSRF defense here, no separate token is needed.
-//   - Synthesised keys carry ID == synthKeySessionID so the rate limiter and
-//     LogRequest path can distinguish session callers from real API keys.
-//   - IP blocklist / IP allowlist / device fingerprint enforcement run only
-//     on the Bearer path; session auth trusts the upstream auth service's
-//     own session validation.
+//   - The session cookie is SameSite=Lax (auth.setSessionCookie), so a
+//     cross-origin POST won't include it — that's the CSRF defense here,
+//     no separate token needed.
+//   - Synthesised keys carry ID == synthKeySessionID so the rate limiter
+//     and LogRequest can tell session callers from real API keys.
+//   - IP blocklist/allowlist and device-fingerprint checks run only on the
+//     Bearer path; session auth trusts the upstream auth service.
 //
 // Must be wired in place of RequireAPIKey on the /api/v1 group.
 func RequireAuthOrAPIKey(authSvc auth.AuthService, campaignSvc campaigns.CampaignService, syncSvc SyncAPIService) echo.MiddlewareFunc {
@@ -511,20 +509,15 @@ type AddonChecker interface {
 // EXTERNAL Bearer clients on /api/v1/*.
 //
 // Passes synthetic session identities (ID == synthKeySessionID) through
-// untouched: "Sync API" is an INTEGRATION toggle, so an owner disabling it
-// revokes outside access, not Chronicle's own UI. Unlike RequireAddonAPI,
-// this answers 403 ("sync_api_disabled"), not 404 — a 404 here would make
-// the Foundry module take its version-compatibility path and hide the real
-// reason. The key is authentic and the campaign real; what's missing is
-// authorization.
+// untouched: the toggle is an INTEGRATION control, so disabling it revokes
+// outside access, not Chronicle's own UI. Unlike RequireAddonAPI, this
+// answers 403 ("sync_api_disabled"), not 404 — a 404 would send the Foundry
+// module down its version-compatibility path and hide the real reason.
 //
-// Mounted on the /api/v1 groups rather than on the campaign sub-group so a
-// route added later cannot quietly land outside the gate, and it reads the
-// campaign from the KEY (key.CampaignID) rather than c.Param("id") so a
-// future route without an :id segment is still covered.
-//
-// Fails closed on every uncertainty: no key, no campaign on the key, or an
-// unreadable addon state all refuse the request.
+// Mounted on /api/v1 (not the campaign sub-group) so a later route can't
+// land outside the gate, and reads the campaign from key.CampaignID rather
+// than c.Param("id") so a route without an :id segment is still covered.
+// Fails closed on any uncertainty: no key, no campaign, unreadable state.
 func RequireSyncAPIAddon(addonChecker AddonChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

@@ -7,13 +7,9 @@
 <!-- Update: When major structural changes are made.                          -->
 <!-- ====================================================================== -->
 
-## System Overview
-
-Chronicle is a monolithic Go application with a modular internal structure
-organized into three extension tiers: **Plugins**, **Systems**, and **Widgets**.
-The core handles bootstrapping, configuration, database connections, middleware,
-and route aggregation. Everything else is a self-contained unit in one of the
-three tiers.
+Chronicle is a monolithic Go app; core handles bootstrapping, config, DB
+connections, middleware and route aggregation, everything else is a Plugin,
+System or Widget (see root `CLAUDE.md` for what each tier is).
 
 ## Three-Tier Extension Architecture
 
@@ -74,18 +70,12 @@ other plugins are tagged `CALV5-PLACEHOLDER:`.
 ```
 Entity Profile Page Load:
   1. Plugin (entities) renders page skeleton via Templ
-  2. Widget (title) renders the entity name field
-  3. Widget (tags) renders the tag picker
-  4. Widget (editor) mounts TipTap for entry content
-  5. Widget (attributes) renders configurable entity fields
-  6. System (installed via package manager) provides tooltip data when
-     hovering @mentions that reference game content
+  2. Widgets (title, tags, editor, attributes) render their own fields
+  3. System (installed via package manager) supplies tooltip data for
+     @mentions that reference game content
 ```
 
-**Communication rules:**
-- Plugins talk to each other through **service interfaces** (never direct repo access)
-- Widgets communicate via **DOM events** and **API endpoints**
-- Systems are **read-only content providers** -- they never modify campaign state
+Cross-tier communication rules are in root `CLAUDE.md` → Code Conventions.
 
 ## Directory Structure
 
@@ -103,17 +93,16 @@ chronicle/
 │   ├── config/                       # CORE: Configuration loading (env vars)
 │   │   └── config.go
 │   │
-│   ├── database/                     # CORE: Database connections + migrations
-│   │   ├── mariadb.go                #   MariaDB connection pool
-│   │   ├── redis.go                  #   Redis client
+│   ├── database/                     # CORE: connections, migrations, backup/recovery
+│   │   ├── mariadb.go / redis.go     #   Connection pools
+│   │   ├── migrate.go                #   Core migration runner
 │   │   ├── plugin_schema.go          #   Plugin migration runner (reads embed.FS)
 │   │   └── plugin_health.go          #   Plugin health registry
 │   │
-│   ├── middleware/                    # CORE: HTTP middleware
-│   │   ├── auth.go                   #   Session validation
-│   │   ├── logging.go                #   Request logging
-│   │   ├── recovery.go               #   Panic recovery
-│   │   └── csrf.go                   #   CSRF protection
+│   ├── middleware/                    # CORE: HTTP middleware (logging, recovery, CSRF,
+│   │                                  #   CORS, rate limiting, IDOR checks, security headers,
+│   │                                  #   static caching); session validation lives in
+│   │                                  #   internal/plugins/auth/middleware.go
 │   │
 │   ├── apperror/                     # CORE: Domain error types
 │   │   └── errors.go
@@ -155,16 +144,16 @@ chronicle/
 │   │   └── handler.go                #   System reference page handlers
 │   │
 │   ├── widgets/                      # WIDGETS: Reusable UI building blocks
-│   │   ├── editor/                   #   TipTap rich text editor
+│   │   ├── editor/                   #   TipTap rich text editor (no backend of its
+│   │   │   │                         #   own; loads/saves via the entity API)
 │   │   │   ├── .ai.md
-│   │   │   ├── handler.go            #   API: save/load content
 │   │   │   └── templates/
 │   │   ├── notes/                    #   Floating notes panel (full backend)
 │   │   │   ├── .ai.md
 │   │   │   ├── model.go              #   Note, NoteVersion, Block structs
 │   │   │   ├── repository.go         #   CRUD + locking + versions SQL
 │   │   │   ├── service.go            #   Business logic + snapshots
-│   │   │   ├── handler.go            #   13 HTTP endpoints
+│   │   │   ├── handler.go            #   HTTP endpoints (see routes.go)
 │   │   │   └── routes.go
 │   │   ├── title/                    #   Page title component
 │   │   ├── tags/                     #   Tag picker/display
@@ -176,10 +165,10 @@ chronicle/
 │       │   ├── base.templ
 │       │   └── app.templ
 │       ├── components/
-│       │   ├── navbar.templ
-│       │   ├── sidebar.templ
-│       │   ├── flash.templ
-│       │   └── pagination.templ
+│       │   ├── breadcrumbs.templ
+│       │   ├── pagination.templ
+│       │   ├── plugin_unavailable.templ
+│       │   └── rebuilding.templ
 │       └── pages/
 │           ├── landing.templ
 │           └── error.templ
@@ -194,8 +183,8 @@ chronicle/
 │   ├── js/                           # Global scripts (boot.js is the widget auto-mounter;
 │   │   │                             #   keyboard_shortcuts.js, search_modal.js, sidebar_drill.js,
 │   │   │                             #   theme.js, command_palette.js, and more)
-│   │   └── widgets/                  # One file per widget (editor.js, attributes.js, tags.js,
-│   │                                 #   mentions.js, notes.js, map_widget.js, relations.js, etc.)
+│   │   └── widgets/                  # One file per widget (editor.js, attributes.js,
+│   │                                 #   tag_picker.js, editor_mention.js, notes.js, etc.)
 │   ├── vendor/                       # Vendored CDN libs
 │   ├── fonts/
 │   └── img/
@@ -219,30 +208,22 @@ chronicle/
 
 ## Plugin Internal Structure
 
-Every plugin follows this exact structure. No exceptions.
+Every plugin has this common shape (test files, and exactly where `.templ`
+files live, vary per plugin; not every plugin embeds something, and the file
+that does may hold migrations, static assets, or both — see ADR-030):
 
 ```
 internal/plugins/<name>/
   .ai.md              # Plugin-level AI documentation
-  embed.go            # Embeds migrations/*.sql via Go embed.FS (ADR-030)
+  embed.go            # Optional: go:embed for migrations and/or static assets
   handler.go          # Echo handlers (thin: bind, call service, render)
-  handler_test.go     # Handler tests (HTTP-level, mock service)
   service.go          # Business logic (never imports Echo types)
-  service_test.go     # Service tests (unit, mocked repo)
   repository.go       # MariaDB queries (hand-written SQL)
-  repository_test.go  # Repository tests (integration, real DB)
   model.go            # Domain models, DTOs, request/response structs
   routes.go           # Route registration function
-  migrations/         # Plugin-specific schema migrations (embedded in binary)
-    001_*.up.sql
-    001_*.down.sql
-  templates/          # Templ components for this plugin
-    index.templ       #   List view
-    show.templ        #   Detail view
-    form.templ        #   Create/edit form
-    partials/         #   HTMX fragments
-      list_item.templ
-      detail_panel.templ
+  migrations/         # Plugin-specific schema migrations, if any (embedded in binary)
+  templates/          # Templ components for this plugin (some plugins keep
+                       #   top-level .templ files instead of this subdirectory)
 ```
 
 ## System (Game System) Internal Structure
@@ -267,40 +248,26 @@ Widgets have minimal backend and primarily live in static/js/widgets/.
 internal/widgets/<name>/
   .ai.md              # Widget-level AI documentation
   handler.go          # API endpoints (save/load/search) -- optional
-  templates/          # Templ mount-point components
-    mount.templ       #   Renders the data-widget div for auto-mounting
+  *.templ             # Optional: a widget with its own markup (e.g. relations/graph.templ,
+                       #   notes/journal.templ) keeps it top-level, not in a subdirectory
 
-static/js/widgets/<name>.js   # Client-side JavaScript (the actual widget)
+static/js/widgets/<name>.js   # Client-side JavaScript (the actual widget); mounts to
+                               # a `data-widget` element rendered by whatever page embeds it
 ```
 
-## Request Flow
-
-1. HTTP request arrives at Echo router
-2. Global middleware: logging -> recovery -> CSRF
-3. Route middleware: auth session -> permissions
-4. **Handler** binds request, validates, calls **Service**
-5. **Service** applies business logic, calls **Repository**
-6. **Repository** runs hand-written SQL against MariaDB
-7. Handler checks `HX-Request` header:
-   - HTMX: render Templ fragment
-   - Full page: render Templ page in layout
-8. Response sent to client
+Request flow and cross-boundary rules: see root `CLAUDE.md`.
 
 ## Dependency Flow
+
+Each layer has its own constructor (`NewUserRepository`, `NewAuthService`,
+`NewHandler`, ...), wired bottom-up in `internal/app/routes.go`:
 
 ```
 cmd/server/main.go
   -> internal/app/app.go          (creates DB pool, Redis, config)
-    -> each plugin's New()        (receives dependencies)
-      -> handler                  (receives service interface)
-        -> service                (receives repository interface)
-          -> repository           (receives *sql.DB)
+    -> internal/app/routes.go     (constructs repo -> service -> handler per plugin,
+                                    registers routes)
 ```
 
-**Rules:**
-- Handlers depend on service **interfaces** (not concrete types)
-- Services depend on repository **interfaces** (not concrete types)
-- Cross-plugin communication goes through service interfaces
-- A plugin NEVER imports another plugin's internal types
-- Systems NEVER write to the database
-- Widgets are self-contained; backend is optional
+Handlers depend on service interfaces, services on repository interfaces —
+never concrete types — so a plugin's internal types stay unimported outside it.

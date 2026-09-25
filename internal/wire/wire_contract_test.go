@@ -1,30 +1,17 @@
 // Package wire holds Chronicle's wire-contract integrity tests.
 //
-// This file snapshot-tests the set of Echo route registrations across the
-// codebase, so any PR that adds, removes, or renames a route surfaces as
-// drift against a curated expected list (snapshot file). This catches
-// duplicate-path silent fallthrough onto the wrong auth surface.
+// This file snapshot-tests every Echo route registration (AST-based — a
+// literal `<receiver>.METHOD("...", ...)` call; runtime `e.Routes()` needs a
+// full App) against a curated expected list, so any PR that adds, removes,
+// or renames a route surfaces as drift, catching duplicate-path silent
+// fallthrough onto the wrong auth surface.
 //
-// Known scope limitations:
+// Limitations: group-prefix isn't resolved (the tuple is file/method/path
+// literal, so renaming `e.Group("/admin")` won't trigger this); auth surface
+// isn't classified; routes registered via loops, helpers, or programmatic
+// builders aren't captured.
 //
-//  1. AST-based static extraction, not runtime `e.Routes()` enumeration —
-//     runtime enumeration needs a full App (real DB, Redis, services), too
-//     heavy for the test layer. AST extraction catches every route
-//     registered by a literal call like `<receiver>.METHOD("...", ...)`
-//     with a string-literal path.
-//
-//  2. Echo group-prefix is NOT resolved statically. The tuple recorded is
-//     (file, method, path-literal-at-call-site); renaming `e.Group("/admin")`
-//     to `e.Group("/v2/admin")` does not trigger this test.
-//
-//  3. Auth surface is NOT classified — this ships (file, method, path), not
-//     (method, path, auth); that needs symbol resolution beyond what go/ast
-//     gives without type info.
-//
-//  4. Routes registered via loops, helper functions, or programmatic
-//     builders are NOT captured — only literal METHOD-call registration.
-//
-// To update the snapshot after intentionally adding/removing routes:
+// Update the snapshot after an intentional route change:
 //
 //	UPDATE_ROUTES_SNAPSHOT=1 go test ./internal/wire/...
 package wire

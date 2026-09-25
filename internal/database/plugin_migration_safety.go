@@ -1,34 +1,23 @@
 // Package database provides connection setup for MariaDB and Redis.
 //
 // plugin_migration_safety.go guards execPluginMigration against MariaDB
-// having no transactional DDL: every CREATE / ALTER / DROP / RENAME commits
-// implicitly and cannot be rolled back, so a multi-statement migration that
-// fails partway leaves earlier statements applied with no record of it —
-// and a retry from statement one then fails on "table already exists" /
-// "duplicate column name" against a non-idempotent ALTER, degrading the
-// plugin forever. This file does not undo anything already run; it does two
-// things instead:
+// having no transactional DDL: every CREATE/ALTER/DROP/RENAME commits
+// implicitly, so a multi-statement migration that fails partway leaves
+// earlier statements applied with no record of it, and a naive retry then
+// fails on "table already exists" against a non-idempotent ALTER, degrading
+// the plugin forever. It does not undo anything already run; instead:
 //
-//  1. PRE-FLIGHT APPLICABILITY CHECK. Before the first statement executes,
-//     every statement is checked against the schema catalogue as it will be
-//     at that point in the migration. If any statement cannot possibly
-//     succeed, the migration aborts having executed NOTHING — turning
-//     "half-applied, unrecoverable" into "nothing applied, actionable
-//     error". It is a table-granularity check: it catches the failures that
-//     produce unrecoverable states (missing/duplicate/renamed tables), not
-//     every possible SQL error.
+//  1. Pre-flight: every statement is checked against the schema catalogue as
+//     it will be at that point, table-granularity only. If any cannot
+//     possibly succeed, the migration aborts having executed nothing.
+//  2. If a statement fails anyway, the number that DID succeed is recorded,
+//     keyed by a hash of the migration's SQL, so the next boot resumes after
+//     them instead of replaying a non-idempotent statement.
 //
-//  2. PARTIAL-PROGRESS RECORDING. When a statement fails anyway — the
-//     pre-flight cannot foresee an FK violation, a duplicate column, a full
-//     disk — the number of statements that DID succeed is recorded first,
-//     keyed by a hash of the migration's SQL. The next boot resumes after
-//     them instead of replaying a non-idempotent ALTER a second time.
-//
-// The SQL hash is what makes resuming safe: a recorded offset is only
-// honoured if the migration's text is byte-identical to the text that
-// produced it. Migrations are append-only and immutable (ADR-044) so this
-// should never diverge, but a resume that skipped the wrong statements would
-// be worse than the crash-loop it replaces, so it is checked, not assumed.
+// The hash gate matters: a recorded offset is honoured only if the
+// migration's text is byte-identical to what produced it, since migrations
+// are append-only (ADR-044) and a resume that skipped the wrong statements
+// would be worse than the crash-loop it replaces.
 package database
 
 import (

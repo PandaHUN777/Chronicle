@@ -1,12 +1,8 @@
-// Package chronicle provides Go type definitions and host function helpers
-// for building Chronicle WASM plugins. It defines the JSON structures used
-// to communicate with Chronicle's host functions and provides helper types
-// for hook events, entities, tags, calendar events, relations, and KV storage.
-//
-// This package is intended to be imported by Go/TinyGo WASM plugins as a
-// lightweight SDK. It does NOT contain the actual host function implementations
-// (those are provided by the Chronicle runtime); it only defines the data
-// contracts and convenience types.
+// Package chronicle provides Go types and host-function helpers for
+// building Chronicle WASM plugins: JSON structures for hook events,
+// entities, tags, calendar events, relations, and KV storage. It defines
+// only the data contracts (the Chronicle runtime provides the actual host
+// function implementations).
 //
 // Usage in a plugin:
 //

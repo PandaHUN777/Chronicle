@@ -1,24 +1,11 @@
 /**
  * boot.js -- Chronicle Widget Auto-Mounter
  *
- * Scans the DOM for elements with `data-widget` attributes and mounts
- * registered widget implementations. Widgets register themselves via
- * `Chronicle.register(name, { init, destroy })`.
+ * Scans the DOM for `data-widget` elements and mounts registered widget
+ * implementations (Chronicle.register(name, { init, destroy })), e.g.:
+ *   <div data-widget="editor" data-endpoint="..." data-editable="true"></div>
  *
- * Usage in HTML:
- *   <div data-widget="editor"
- *        data-endpoint="/api/v1/campaigns/abc/entities/42/entry"
- *        data-editable="true">
- *   </div>
- *
- * Widget registration:
- *   Chronicle.register('editor', {
- *       init(el, config) { ... },
- *       destroy(el) { ... }
- *   });
- *
- * After HTMX swaps (hx-swap), new widgets are auto-mounted via the
- * htmx:afterSettle event listener.
+ * Re-mounts new widgets after HTMX swaps via the htmx:afterSettle event.
  */
 (function () {
   'use strict';
@@ -603,13 +590,9 @@
   };
 
   /**
-   * Convenience wrapper around fetch() for API calls.
-   *
-   * Automatically:
-   *  - Sets Accept: application/json
-   *  - Adds X-CSRF-Token header on mutating requests (POST/PUT/DELETE)
-   *  - Serializes plain-object bodies as JSON (sets Content-Type)
-   *  - Sets credentials: same-origin
+   * fetch() wrapper for API calls: sets Accept: application/json, adds
+   * X-CSRF-Token on mutating requests (POST/PUT/DELETE), JSON-serializes
+   * plain-object bodies, and sets credentials: same-origin.
    *
    * @param {string} url - Request URL.
    * @param {Object} [opts] - Options forwarded to fetch().

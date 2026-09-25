@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
 # Start a local MariaDB for integration tests WITHOUT Docker.
 #
-# Every integration test in this repo skips when no database answers, and the
-# skip message says "run `make docker-up`" — a dead end in sandboxes and CI
-# images with no Docker daemon. The MariaDB server binary is installed there
-# regardless (/usr/sbin/mariadbd) and can be run directly against a scratch
-# datadir. mariadbd refuses to start as root unless you say --user=root, and a
-# Unix socket path has a ~107 character limit that a long scratch path
-# silently exceeds; both are handled below.
+# Integration tests skip when no DB answers, and the skip message says "run
+# `make docker-up`" — a dead end without a Docker daemon. mariadbd is
+# installed regardless (/usr/sbin/mariadbd) and runs directly against a
+# scratch datadir; it refuses to start as root without --user=root, and a
+# long scratch path can silently exceed the ~107-char Unix socket path
+# limit — both handled below.
 #
 # USAGE
 #   tools/start-test-db.sh          # start (idempotent); prints the DSN to export
-#   tools/start-test-db.sh --stop   # stop it and leave the datadir
-#   tools/start-test-db.sh --clean  # stop it and delete the datadir
+#   tools/start-test-db.sh --stop   # stop it, leave the datadir
+#   tools/start-test-db.sh --clean  # stop it, delete the datadir
 #
-# The tests discover it through CHRONICLE_TEST_DB_DSN, which this script prints.
-# It listens on 13306, NOT 3306, so it can never collide with a real dev server
-# or be mistaken for one.
+# Tests discover it via CHRONICLE_TEST_DB_DSN, printed here. Listens on
+# 13306, not 3306, so it never collides with or is mistaken for a real dev
+# server.
 
 set -euo pipefail
 

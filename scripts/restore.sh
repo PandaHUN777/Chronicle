@@ -1,42 +1,20 @@
 #!/bin/sh
-# scripts/restore.sh -- Restore a Chronicle deployment from a backup set.
+# scripts/restore.sh -- Restore a Chronicle deployment from a scripts/backup.sh
+# snapshot set (distinct from recovering the automatic
+# chronicle_pre_migrate_*.sql.gz pre-migration backup — see
+# docs/deployment.md §7 Scenario A).
 #
-# Operator-driven, multi-gate restore. Distinct from the in-process
-# pre-migration backup recovery (which is just "use the most recent
-# chronicle_pre_migrate_*.sql.gz" — see docs/deployment.md §7 Scenario
-# A). This script handles full snapshots produced by scripts/backup.sh.
+# A single gated command, not a sequence of scripts, because that's what an
+# operator types at 2 AM under stress: safety comes from confirmation flags
+# and pre-flight checks. It does NOT run migrations — RunStartupHealthChecks
+# refuses to boot if the restored DB doesn't match the running image's
+# expected migration version.
 #
-# Why a single command with gates rather than multiple sequential
-# scripts: a single entry point is what the operator types at 2 AM
-# under stress. Safety comes from explicit confirmation flags and
-# pre-flight checks, not from forcing the operator to remember a
-# sequence of unique commands.
-#
-# The restore does NOT run migrations — it just recreates DB state,
-# extracts media, and (optionally) replaces the Redis dump. Validation
-# of schema-vs-code happens automatically when chronicle next starts:
-# RunStartupHealthChecks refuses to boot if the restored DB doesn't
-# match the running image's expected migration version. No
-# --migrate-only flag needed.
-#
-# Invocation (compose, primary):
-#   docker compose exec chronicle /app/scripts/restore.sh \
-#     --manifest /app/data/backups/chronicle_manifest_<TS>.txt
-# Invocation (standalone host):
-#   DB_HOST=... DB_USER=... DB_PASSWORD=... DB_NAME=... \
-#     MEDIA_PATH=... ./scripts/restore.sh --manifest <PATH>
-#
-# Args:
-#   --manifest PATH  REQUIRED. The chronicle_manifest_<TS>.txt that
-#                    drives the restore. Pairing DB + media + redis
-#                    artifacts via a manifest prevents the "I restored
-#                    last week's DB and last month's media" class of
-#                    bug.
-#   --db-only        Skip media tarball extraction.
-#   --media-only     Skip DB restore.
-#   --yes            Skip the interactive RESTORE confirmation.
-#   --force          Allow restore over a non-empty target. Default is
-#                    to refuse if DB has tables or MEDIA_PATH is non-empty.
+# Usage: docker compose exec chronicle /app/scripts/restore.sh
+#   --manifest PATH [--db-only] [--media-only] [--yes] [--force]
+# --manifest (required) pairs the DB/media/redis artifacts, so a stale mix
+#   (e.g. last week's DB with last month's media) can't slip through.
+# --force allows restoring over a non-empty target (default: refuse).
 #
 # Exit codes: 0 success / 1 operator error / 2 precondition / 3 tool failure.
 

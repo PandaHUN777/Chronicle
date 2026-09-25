@@ -1,22 +1,14 @@
 // Package wire holds Chronicle's wire-contract integrity tests.
 //
-// This file is a cross-plugin import fence (T-B2 plugin isolation) using
-// go/ast source scanning: it detects new internal/plugins/A →
-// internal/plugins/B import edges outside the allowlisted set. A
-// grandfathered baseline encodes the existing edge matrix; only edges not
-// already in the baseline fail the test.
+// This file is a cross-plugin import fence (T-B2 plugin isolation): a
+// go/ast scan flags any new internal/plugins/A -> internal/plugins/B import
+// edge not already in the grandfathered baseline. Allowlisted for any
+// plugin: auth, campaigns, addons, audit, settings, smtp, media, plus a
+// plugin's own subpackages and any .../api subpackage.
 //
-// Allowlisted "shared" plugins that may be imported by any plugin:
-//   auth, campaigns, addons, audit, settings, smtp, media
-//
-// Additionally allowlisted are imports to a plugin's OWN sub-packages
-// (e.g. ai_workspace → ai_workspace/importer) and imports to any
-// .../api subpackage (future contracts extraction path).
-//
-// To regenerate the baseline after an intentional change:
+// Regenerate the baseline after an intentional change and commit it in the
+// same PR:
 //   UPDATE_PLUGIN_IMPORT_BASELINE=1 go test ./internal/wire/... -run TestPluginImportGuard
-//
-// Then commit the updated baseline in the same PR.
 package wire
 
 import (

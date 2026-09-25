@@ -136,30 +136,18 @@ always_allowed_prefixes=(
 )
 
 # ---------------------------------------------------------------------------
-# const-registry files: strictly narrower than always_allowed_prefixes, and
-# the correct tool when a file needs to DEFINE a colliding label rather than
-# USE a plugin. Matching is by EXACT path (not prefix), and inside a listed
-# file only a bare const-assignment line — `Name = "slug"` and nothing else on
-# it — is exempt. Every other added line in that file is checked exactly as if
-# it were not listed, so a `report.Fail("<slug>", …)` smuggled into a registry
-# file still fails, and so does a trailing-code line dressed up to look like
-# an assignment.
+# const-registry files: narrower than always_allowed_prefixes — for a file
+# that DEFINES a colliding const label rather than USING a plugin. Matched
+# by EXACT path; only a bare `Name = "slug"` const-assignment line is
+# exempt, every other line in the file is checked normally.
 #
-# Listed:
-#   internal/plugins/campaigns/import_report.go — import-report section/kind
-#   vocabulary. Two report headings and two singular nouns happen to spell
-#   plugin slugs; see the const block there for why they are labels and not
-#   references.
+# import_report.go: two report section/kind labels that happen to spell
+# plugin slugs. operator_diag_campaign.go: a layout block type
+# (`blockTypeCalendar`) spelling the calendar slug — internal/systems can't
+# import a plugin to reuse calendar.PluginSlug directly.
 #
-#   internal/systems/operator_diag_campaign.go — one layout block type that
-#   spells the calendar plugin's slug (`blockTypeCalendar`). The diagnostic
-#   annotates block types it is handed by the app layer; internal/systems may
-#   not import a plugin, so it cannot borrow calendar.PluginSlug the way
-#   internal/app/operator_diag_campaign_adapter.go does.
-#
-# Pinned by tools/test-plugin-isolation.sh, which mutation-tests the narrowness
-# in both directions (a const line passes; the same slug on any other line of
-# the same file still fails).
+# Pinned by tools/test-plugin-isolation.sh (mutation-tests narrowness both
+# ways: a const line passes, any other line with the same slug fails).
 # ---------------------------------------------------------------------------
 const_registry_files=(
   "internal/plugins/campaigns/import_report.go"

@@ -1,30 +1,18 @@
-// Package systems — operator_diag_assets.go is the "where did my CSS/JS
-// actually go?" half of the host diagnostics. host.build (operator_diag_host.go)
-// answers which BINARY is running; these answer which ASSETS that binary is
-// serving, and they answer it for both places Chronicle keeps them.
+// Package systems — operator_diag_assets.go answers which ASSETS the
+// running binary is serving (host.build in operator_diag_host.go answers
+// which binary), across both places Chronicle keeps them: the on-disk
+// static root (a bare relative path "static", resolved against the process
+// working directory — hardcoded identically in internal/app/app.go and
+// internal/templates/layouts/assets.go, so a diagnostic must resolve it the
+// same way rather than hardcode an absolute path), and each plugin's
+// //go:embed-ed static FS, visible only from inside the binary.
 //
-// WHY it exists. Chronicle serves its own front-end from TWO storage mechanisms
-// that look nothing alike from a shell:
-//
-//   - the on-disk static root, a bare relative path ("static") resolved against
-//     the PROCESS WORKING DIRECTORY — /app/static in the container, <repo>/static
-//     in dev. Nothing configures it; it is hardcoded identically in
-//     internal/app/app.go (e.Static) and internal/templates/layouts/assets.go
-//     (os.DirFS). A diagnostic that hardcoded either absolute path would be
-//     wrong in the other environment and, worse, would never surface the real
-//     failure mode: the app looking in a directory that is not there.
-//
-//   - each plugin's //go:embed-ed static FS, which exists ONLY inside the
-//     binary. No `ls`, no `grep`, no `find` over the container filesystem can
-//     ever see those bytes — host.embedded is the only way to look at them.
-//
-// The `?v=` token. Every asset URL a template emits is cache-busted by
-// layouts.AssetURL. These diagnostics call THAT function rather than
-// reimplementing its hashing, so the reported token can never disagree with
-// what the browser is actually served. A mismatch against the sha256 of the
-// bytes on disk now means either the file changed under a running process
-// (the digest is memoised for the process lifetime by design) or the asset
-// never resolved and fell back to the per-build token.
+// These diagnostics call layouts.AssetURL for the `?v=` cache-bust token
+// rather than reimplementing its hashing, so it can never disagree with
+// what the browser is served. A mismatch against the on-disk sha256 means
+// either the file changed under a running process (the digest is memoised
+// for process lifetime) or the asset never resolved and fell back to the
+// per-build token.
 package systems
 
 import (

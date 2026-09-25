@@ -1,22 +1,12 @@
 # AI Documentation Index
 
-Context for AI sessions working on Chronicle. Start at the root `CLAUDE.md`;
-this page maps the rest.
+Context for AI sessions working on Chronicle. Start at the root `CLAUDE.md`
+("Where things live" covers open work, GitHub Issues, and when to edit a doc);
+this page maps the rest of `.ai/`, present tense throughout.
 
-**Open work is not in these files.** It lives in GitHub Issues (see "Where
-things live" in `CLAUDE.md`). The files here describe how the system works now,
-in the present tense. Edit one when the behavior it describes changes, and
-never append dated entries or "recent work".
-
-## How to use these files
-
-1. **Every session:** start from the issue for your task. Issues labelled
-   `needs-operator` are waiting on the human.
-2. **When working on a plugin or widget:** read its `.ai.md` (index below).
-3. **When coding:** read `conventions.md` for patterns with code examples.
-4. **When making or questioning a design choice:** read `decisions.md`. Older
-   cross-repo rulings live in the private Cordinator repo's `decisions/`, which
-   code comments still cite; Cordinator is otherwise a frozen archive.
+Read a plugin's or widget's own `.ai.md` when working on it (index below).
+Older cross-repo rulings live in the private Cordinator repo's `decisions/`,
+which code comments still cite; Cordinator is otherwise a frozen archive.
 
 ## Reference files
 

@@ -1,22 +1,14 @@
-// foundry_vtt — admin.templ renders the "campaigns using v0.1.5"
-// expandable card UI. The packages plugin's /admin/packages page calls
-// these fragments via hx-get on each foundry-module typed package's
-// version row.
+// foundry_vtt — admin.templ renders the "campaigns using v0.1.5" expandable
+// card UI, called via hx-get from the packages plugin's admin page.
 //
-// HTMX-swap-safe pattern requirements (see onclick_handlers.go for the
-// full reasoning):
-//
+// HTMX-swap-safe rules (see onclick_handlers.go):
 //  1. Inline `onclick="(function(){...})()"` IIFEs, never delegated
-//     event listeners or `templ script` helpers — the latter's
-//     <script> tag doesn't reliably execute synchronously with an
-//     hx-get innerHTML swap, so a click can race function definition.
-//  2. Inline literal Alpine `x-data="{ open: false }"`, never
-//     `x-data="someExternalFunction()"` — an external reference can be
-//     undefined when Alpine processes the directive after an HTMX swap.
-//  3. `<details>` + `<summary>` for collapsible reveals when JS isn't
-//     needed — browser-native, no race window.
-//  4. Defense-in-depth `style="display:none"` alongside x-show=open
-//     for modal-like reveals.
+//     listeners or `templ script` — the latter's <script> tag can race an
+//     hx-get innerHTML swap.
+//  2. Inline literal `x-data="{ open: false }"`, never a reference to an
+//     external Alpine function — it can be undefined right after a swap.
+//  3. `<details>`/`<summary>` for collapsible reveals when JS isn't needed.
+//  4. `style="display:none"` alongside x-show=open, defense in depth.
 
 package foundry_vtt
 

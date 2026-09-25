@@ -1,21 +1,11 @@
 // Package entity_notes implements the player-facing entity-page notes
-// widget. Each note belongs to one author and has an audience setting
-// (private / dm_only / dm_scribe / everyone / custom) that controls
-// which other campaign members can read it.
-//
-// The audience model intentionally separates *who can see a note* from
-// *who wrote it*: the author always sees their own notes regardless
-// of audience, and DMs cannot read another user's `private` notes.
-// This is the "true private space" guarantee — without it, players
-// have no place to keep notes the GM doesn't see.
-//
-// Distinct from:
-//   - internal/widgets/notes/    — campaign-scoped floating notebook panel
-//   - internal/widgets/posts/    — entity-scoped *shared* sub-content
-//   - entities.player_notes col  — GM-authored player-visible note on the entity
-//
-// See db/migrations/000023_entity_notes.up.sql for the schema and the
-// audience-enum docstring.
+// widget. Each note has an audience (private / dm_only / dm_scribe /
+// everyone / custom) controlling who besides the author can read it. The
+// author always sees their own notes; DMs cannot read another user's
+// `private` notes — this is the "true private space" guarantee players
+// rely on. See db/migrations/000023_entity_notes.up.sql for the audience
+// enum. Distinct from internal/widgets/notes (campaign notebook panel) and
+// internal/widgets/posts (entity-scoped shared content).
 package entity_notes
 
 import (
