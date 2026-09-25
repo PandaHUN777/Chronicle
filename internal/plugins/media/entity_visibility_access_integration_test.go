@@ -384,6 +384,46 @@ func TestADR058Integration_CoverImageOnly_PlayerDenied(t *testing.T) {
 	mustDeny(t, h.checkMediaAccess(c, file, false, ""), "[real DB] Player reading a COVER image used only by a dm_only entity")
 }
 
+// TestADR058Integration_PathFormCoverImage_PlayerDenied: an image field
+// stored in disk-path form ("2026/09/<id>.png", as an import or a restored
+// backup might write it) instead of the bare media ID must still be found
+// by FindReferences; otherwise the file looks unreferenced and
+// checkMediaAccess falls back to the role-blind membership grant ADR-058
+// rules out.
+func TestADR058Integration_PathFormCoverImage_PlayerDenied(t *testing.T) {
+	if testing.Short() {
+		t.Skip("integration test requires a database; skipped under -short")
+	}
+	db := newADR058ScratchDB(t)
+	campaignID, owner := seedADR058Campaign(t, db)
+	player := seedADR058User(t, db, "Player")
+	seedADR058Member(t, db, campaignID, player, "player")
+	typeID := seedADR058EntityType(t, db, campaignID)
+
+	fileID := seedADR058MediaFile(t, db, campaignID, owner)
+	pathForm := "2026/09/" + fileID + ".png"
+	seedADR058Entity(t, db, campaignID, typeID, owner, adr058Entity{
+		Name: "Secret Lair", IsPrivate: true, CoverImagePath: &pathForm,
+	})
+
+	// FindReferences must report this entity even though the stored
+	// value is the disk-path form, not the bare id.
+	refs, err := NewMediaRepository(db).FindReferences(context.Background(), campaignID, fileID)
+	if err != nil {
+		t.Fatalf("FindReferences: %v", err)
+	}
+	if len(refs) != 1 {
+		t.Fatalf("FindReferences must match the path-form cover image reference; got %d refs: %+v", len(refs), refs)
+	}
+
+	h := newADR058RealHandler(db)
+	mediaCampaignID := campaignID
+	file := &MediaFile{ID: fileID, CampaignID: &mediaCampaignID, CampaignIsPublic: boolPtr(false)}
+	c := newADR058TestContext(player)
+
+	mustDeny(t, h.checkMediaAccess(c, file, false, ""), "[real DB] Player reading a path-form COVER image used only by a dm_only entity")
+}
+
 // TestADR058Integration_CoDM_SeesWhatDMSees drives the real promotion
 // path: a co-DM (player role + a real campaigns.settings dm_grant_ids
 // entry) reading a hidden entity's image.

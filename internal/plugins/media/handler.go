@@ -11,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/redis/go-redis/v9"
 
@@ -924,6 +925,15 @@ func (h *Handler) CampaignMediaRefs(c echo.Context) error {
 
 	ctx := c.Request().Context()
 	mediaID := c.Param("mid")
+	if _, err := uuid.Parse(mediaID); err != nil {
+		// FindReferences' LIKE arm assumes mediaID is a server-generated
+		// UUID with no wildcard characters; mediaID here is the raw URL
+		// segment, never validated against a real media record. A
+		// non-UUID value (e.g. "%" or "_") would otherwise widen the
+		// LIKE match to any path-form reference in the campaign instead
+		// of erroring, so reject it the same as a real not-found id.
+		return apperror.NewNotFound("media file not found")
+	}
 	refs, err := h.service.FindReferences(ctx, cc.Campaign.ID, mediaID)
 	if err != nil {
 		return err

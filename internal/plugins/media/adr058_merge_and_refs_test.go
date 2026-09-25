@@ -360,16 +360,23 @@ func sortedKeys(m map[string]any) []string {
 
 // --- Decision 4: "where is this used" joins the DM-team permissions story ---
 
+// campaignRefsTestMediaID is a fixture media id shaped like the real
+// server-generated UUID production always sees (generateUUID in
+// service.go) — CampaignMediaRefs now rejects a :mid that doesn't parse
+// as one, so a placeholder like "file-1" would fail before ever reaching
+// the fake service these tests assert against.
+const campaignRefsTestMediaID = "11111111-1111-4111-8111-111111111111"
+
 // newCampaignRefsTestContext builds an Echo GET context for
 // /campaigns/:id/media/:mid/refs carrying cc as the campaign context, using
 // the same "campaign_context" key campaigns/middleware.go sets.
 func newCampaignRefsTestContext(cc *campaigns.CampaignContext, userID string) (echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
-	req := httptest.NewRequest(http.MethodGet, "/campaigns/"+cc.Campaign.ID+"/media/file-1/refs", nil)
+	req := httptest.NewRequest(http.MethodGet, "/campaigns/"+cc.Campaign.ID+"/media/"+campaignRefsTestMediaID+"/refs", nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 	c.SetParamNames("id", "mid")
-	c.SetParamValues(cc.Campaign.ID, "file-1")
+	c.SetParamValues(cc.Campaign.ID, campaignRefsTestMediaID)
 	c.Set("campaign_context", cc)
 	if userID != "" {
 		auth.SetSession(c, &auth.Session{UserID: userID})
@@ -459,5 +466,45 @@ func TestCampaignMediaRefs_CoDM_Promoted_SeesFullList(t *testing.T) {
 	}
 	if !strings.Contains(rec.Body.String(), "Secret Lair") {
 		t.Errorf("a co-DM promoted to Owner must see everything the DM sees; body=%s", rec.Body.String())
+	}
+}
+
+// TestCampaignMediaRefs_NonUUIDMediaID_Rejected pins the fix for a
+// LIKE-wildcard widening: FindReferences' query trusts mediaID to be a
+// server-generated UUID with no LIKE metacharacters, but :mid is the raw,
+// unvalidated URL segment. A value like "%" would otherwise reach the
+// LIKE arm and match any path-form reference in the campaign; it must be
+// rejected before FindReferences is ever called.
+func TestCampaignMediaRefs_NonUUIDMediaID_Rejected(t *testing.T) {
+	findRefsCalled := false
+	svc := &fakeAccessMediaService{
+		findReferencesFn: func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
+			findRefsCalled = true
+			return nil, nil
+		},
+	}
+	h := &Handler{service: svc, entityVisibility: &fakeEntityVisibilityFilter{}}
+	cc := &campaigns.CampaignContext{Campaign: &campaigns.Campaign{ID: "camp-1"}, MemberRole: campaigns.RoleScribe}
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/campaigns/camp-1/media/%25/refs", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("id", "mid")
+	c.SetParamValues(cc.Campaign.ID, "%")
+	c.Set("campaign_context", cc)
+	auth.SetSession(c, &auth.Session{UserID: "scribe-1"})
+
+	err := h.CampaignMediaRefs(c)
+
+	if err == nil {
+		t.Fatal("expected a non-UUID :mid to be refused, got nil (success)")
+	}
+	appErr, ok := err.(*apperror.AppError)
+	if !ok || appErr.Code != http.StatusNotFound {
+		t.Errorf("expected a NotFound *apperror.AppError, got %T: %v", err, err)
+	}
+	if findRefsCalled {
+		t.Error("a non-UUID :mid must be rejected before FindReferences is called, not passed through to the LIKE query")
 	}
 }
