@@ -1,14 +1,9 @@
-// bestiary_import_visibility_test.go — importing a creature from the
-// bestiary must respect the campaign's DefaultVisibility setting.
-//
-// bestiaryEntityCreatorAdapter.CreateFromStatblock built its
-// CreateEntityInput with {Name, FieldsData} and never set IsPrivate, so every
-// creature imported into a "DM Only" campaign arrived visible to every
-// player — the boss statblock included.
-//
-// The bestiary plugin's EntityCreator interface has no is_private parameter
-// and no per-import visibility control, so an import is ALWAYS the absent
-// case: the campaign default is the only input there is.
+// bestiary_import_visibility_test.go pins that
+// bestiaryEntityCreatorAdapter.CreateFromStatblock sets IsPrivate from the
+// campaign's DefaultVisibility setting: the bestiary plugin's EntityCreator
+// interface has no is_private parameter or per-import visibility control, so
+// the campaign default is the only input there is. Omitting it would import
+// every creature visible to players even in a "DM Only" campaign.
 package app
 
 import (

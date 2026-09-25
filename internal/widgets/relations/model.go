@@ -175,11 +175,10 @@ type EntityTypeListerForGraph interface {
 }
 
 // EntityViewFilter reports which of a set of entity IDs a viewer may see,
-// applying the canonical entity-visibility policy. Implemented by an adapter over
-// the entity service (app wiring). Used by the graph service to drop private
-// entities' nodes/edges from viewers who cannot see them. Defined here to avoid
-// importing the entities package. See cordinator/dispatches/chronicle/
-// C-PUBLIC-VIEW-FIX-R2.md.
+// applying the canonical entity-visibility policy. Implemented by an adapter
+// over the entity service (app wiring). Used by the graph service to drop
+// private entities' nodes/edges from viewers who cannot see them. Defined
+// here to avoid importing the entities package.
 type EntityViewFilter interface {
 	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }

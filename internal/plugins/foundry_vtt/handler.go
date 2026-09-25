@@ -30,9 +30,7 @@ type Handler struct {
 
 // PresenceLookup is the narrow contract the presence-pill fragment
 // handler needs from the WebSocket hub. Mirrors maps.FoundryPresenceLookup
-// (same shape; intentionally duplicated to keep maps decoupled from
-// foundry_vtt). Wired in via SetPresenceLookup from app/routes.go after
-// the WS hub is constructed.
+// (duplicated deliberately to keep maps decoupled from foundry_vtt).
 type PresenceLookup interface {
 	FoundryPresence(campaignID string) (lastSeen *time.Time, connected bool)
 }
@@ -51,33 +49,22 @@ func NewHandler(svc Service) *Handler {
 
 // FoundryPresenceResponse is the JSON shape returned by the
 // /campaigns/:id/foundry-presence diagnostic endpoint. NeverSeen is
-// true when we have no record of any Foundry-module connection for
+// true when there's no record of any Foundry-module connection for
 // this campaign (the pill renders "never" in that case); otherwise
-// LastSeen is set to the most recent activity timestamp.
-//
-// NW-2.3: relocated from the campaigns plugin where the endpoint
-// originally lived. URL, response shape, and auth chain are preserved
-// byte-for-byte to keep any operator bookmarks / external monitoring
-// working — the plugin boundary moved, not the wire contract.
+// LastSeen holds the most recent activity timestamp.
 type FoundryPresenceResponse struct {
 	Connected bool       `json:"connected"`
 	NeverSeen bool       `json:"never_seen"`
 	LastSeen  *time.Time `json:"last_seen,omitempty"`
 }
 
-// GetFoundryPresenceAPI returns the Foundry-module presence status
-// for the campaign. Any campaign member can read — presence is
-// operator diagnostic info, not sensitive state. Member access is
-// enforced by the parent group's RequireCampaignAccess middleware
-// (see app/routes.go's fvttCampaignAuthed group).
+// GetFoundryPresenceAPI returns the Foundry-module presence status for
+// the campaign. Any campaign member can read — presence is operator
+// diagnostic info, not sensitive state. Member access is enforced by
+// the parent group's RequireCampaignAccess middleware (see
+// app/routes.go's fvttCampaignAuthed group).
 //
 // GET /campaigns/:id/foundry-presence
-//
-// NW-2.3: moved from campaigns.Handler.GetFoundryPresenceAPI. The
-// implementation reuses the existing foundry_vtt.PresenceLookup
-// (already wired by app/routes.go via SetPresenceLookup), so the
-// move shed the duplicate campaigns.FoundryPresenceLookup interface
-// + handler field + setter without changing the wiring's behavior.
 func (h *Handler) GetFoundryPresenceAPI(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -98,19 +85,16 @@ func (h *Handler) GetFoundryPresenceAPI(c echo.Context) error {
 
 // --- owner: tab fragment ---
 
-// OwnerTabFragmentHandler serves the per-campaign settings tab as
-// an HTMX fragment. Called by the campaigns settings.templ's
-// VTT Setup Guides → Foundry VTT disclosure section via hx-get.
+// OwnerTabFragmentHandler serves the per-campaign settings tab as an
+// HTMX fragment, called by campaigns settings.templ's VTT Setup Guides
+// disclosure section via hx-get.
 //
 // GET /campaigns/:id/foundry-vtt/settings-tab
 //
-// C-FMC-9 (Bug 3): error paths now render an inline error state
-// INSIDE the swap target instead of returning apperror.NewMissingContext
-// or 4xx/5xx. HTMX wouldn't swap a 4xx/5xx response by default, so
-// owners hit a stuck-on-spinner state — visually "blank settings
-// page". This handler now ALWAYS returns 200 with a rendered
-// fragment; errors are surfaced via OwnerTabErrorState within the
-// same container.
+// Always returns 200 with a rendered fragment, even on error: HTMX
+// won't swap a 4xx/5xx response by default, so a raw error status here
+// would leave owners stuck on a spinner. Errors render inline via
+// OwnerTabErrorState within the same swap target instead.
 func (h *Handler) OwnerTabFragmentHandler(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -145,16 +129,11 @@ func (h *Handler) OwnerTabFragmentHandler(c echo.Context) error {
 }
 
 // CampaignSettingsFoundryGuideHandler serves the foundry-VTT-labeled
-// disclosure block inside the per-campaign Settings -> Integrations
-// tab's "VTT Setup Guides" section. Lazy-loaded by
-// campaigns/settings.templ via HTMX. Owner-gated by the route's
-// requireOwner middleware so a non-owner can't fetch the install-URL
-// inner-fragment-loader markup.
+// disclosure block inside Settings -> Integrations -> "VTT Setup
+// Guides". Lazy-loaded by campaigns/settings.templ via HTMX.
+// Owner-gated so a non-owner can't fetch the install-URL fragment.
 //
 // GET /campaigns/:id/foundry-vtt/setup-guide-fragment
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (the
-// fragment-lazy-load convention) + NW-2.2 Chunk D.
 func (h *Handler) CampaignSettingsFoundryGuideHandler(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -165,16 +144,12 @@ func (h *Handler) CampaignSettingsFoundryGuideHandler(c echo.Context) error {
 }
 
 // DashboardSyncBlockHandler serves the per-campaign dashboard "Foundry
-// VTT Sync" block. Lazy-loaded by campaigns/dashboard_blocks.templ
-// when the campaign's dashboard layout includes a sync_status block.
-// Campaign-member access; the inner /sync-status hx-get is owner-
-// gated by syncapi (preserves prior UX where non-owners see the
-// outer chrome but the inner status fails).
+// VTT Sync" block. Lazy-loaded by campaigns/dashboard_blocks.templ when
+// the dashboard layout includes a sync_status block. Campaign-member
+// access; the inner /sync-status hx-get is owner-gated by syncapi, so
+// non-owners see the outer chrome but the inner status fails.
 //
 // GET /campaigns/:id/foundry-vtt/dashboard-sync-block
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md +
-// NW-2.2 Chunk D.
 func (h *Handler) DashboardSyncBlockHandler(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -184,13 +159,10 @@ func (h *Handler) DashboardSyncBlockHandler(c echo.Context) error {
 }
 
 // CampaignShowPresencePillHandler serves the "Connected to Foundry"
-// status chip displayed next to the map title. Lazy-loaded by
-// maps/maps.templ. Campaign-member access (non-sensitive status data).
+// status chip next to the map title. Lazy-loaded by maps/maps.templ.
+// Campaign-member access (non-sensitive status data).
 //
 // GET /campaigns/:id/foundry-vtt/presence-pill-fragment
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md +
-// NW-2.2 Chunk D.
 func (h *Handler) CampaignShowPresencePillHandler(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -201,9 +173,8 @@ func (h *Handler) CampaignShowPresencePillHandler(c echo.Context) error {
 }
 
 // resolvePresence converts the WS hub's (lastSeen, connected) tuple into
-// the templ's PresenceView. Mirrors maps.Handler.resolveFoundryPresence;
-// the duplication is deliberate (each plugin owns its own renderable
-// view of the same underlying data).
+// the templ's PresenceView. Mirrors maps.Handler.resolveFoundryPresence
+// deliberately — each plugin owns its own view of the same data.
 func (h *Handler) resolvePresence(campaignID string) PresenceView {
 	if h.presenceLookup == nil {
 		// Defensive — SetPresenceLookup not called. Treat as never-
@@ -218,19 +189,12 @@ func (h *Handler) resolvePresence(campaignID string) PresenceView {
 }
 
 // CampaignShowBannerHandler serves the "newer Foundry module version
-// available" banner displayed at the top of the campaign show page.
-// Lazy-loaded by campaigns/show.templ. Owner-gated by the route's
-// requireOwner middleware — matches the prior in-handler role gate.
-//
-// Returns either the rendered banner (if HasUpdate) or an empty body
-// (if no update or banner not applicable). The templ itself renders
-// nothing when HasUpdate is false, so the lazy-load slot replaces
-// itself with empty content — graceful invisible state.
+// available" banner at the top of the campaign show page. Lazy-loaded
+// by campaigns/show.templ; owner-gated by the route's requireOwner
+// middleware. Renders nothing when HasUpdate is false, so the lazy-load
+// slot resolves to an invisible empty state.
 //
 // GET /campaigns/:id/foundry-vtt/show-banner-fragment
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md +
-// NW-2.2 Chunk D.
 func (h *Handler) CampaignShowBannerHandler(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc == nil {
@@ -300,15 +264,13 @@ func (h *Handler) InstallURLAPI(c echo.Context) error {
 
 // --- public: manifest + download (token-gated, no campaign middleware) ---
 
-// PublicManifestAPI is the endpoint Foundry hits on install + every
-// update check. Token-gated; no campaign middleware (the per-
-// campaign signed token is the only access control).
+// PublicManifestAPI is the endpoint Foundry hits on install and every
+// update check. Token-gated; no campaign middleware — the per-campaign
+// signed token is the only access control. Error responses are
+// JSON-shaped per errors.go's categorized formats so Foundry can parse
+// and surface the message inline.
 //
 // GET /api/v1/campaigns/:cid/foundry-vtt/module.json?token=...
-//
-// Error responses are JSON-shaped per the operator's contract so
-// Foundry's FM-CSU-DIAG can parse them and surface the message
-// inline. See errors.go for the categorized formats.
 func (h *Handler) PublicManifestAPI(c echo.Context) error {
 	cid := c.Param("cid")
 	token := c.QueryParam("token")
@@ -325,37 +287,15 @@ func (h *Handler) PublicManifestAPI(c echo.Context) error {
 	return c.JSONBlob(http.StatusOK, manifest)
 }
 
-// PublicDownloadAPI streams the per-campaign rewritten zip. The
-// per-campaign token is the only access control; same shape as
-// the manifest endpoint.
+// PublicDownloadAPI streams the per-campaign rewritten zip: install dir
+// copied byte-for-byte except module.json, which is replaced with the
+// per-campaign Chronicle-URL-rewritten bytes so Foundry's later update
+// checks stay on Chronicle instead of reverting to the upstream URLs
+// baked into the on-disk file. Same token-only access control as the
+// manifest endpoint. No caching — signatures must be fresh per request
+// since token rotation invalidates earlier ones.
 //
 // GET /api/v1/campaigns/:cid/foundry-vtt/module.zip?token=...
-//
-// C-FMC-7 architectural correction: this endpoint now does per-
-// campaign zip REWRITING at download time. Earlier (C-FMC-5b/5c)
-// the endpoint streamed the install dir as-is, on the assumption
-// that serve-time manifest rewriting at the manifest endpoint was
-// sufficient. That was wrong — Foundry's update checks AFTER
-// install read the extracted on-disk module.json (from the zip
-// Chronicle served), and that file carried the upstream GitHub
-// URLs. So update checks reverted to GitHub even though the
-// install URL was Chronicle's.
-//
-// The fix: each download walks the install dir, copies every file
-// byte-for-byte EXCEPT the module.json at the descriptor-declared
-// path, which gets replaced with the same rewritten bytes the
-// manifest endpoint serves. Foundry extracts a zip whose embedded
-// module.json points at Chronicle URLs; update checks stay on
-// Chronicle forever.
-//
-// Two different campaigns get different rewritten zips (different
-// per-campaign signed manifest URLs in their module.json) even
-// though both reference the same on-disk install dir. No caching —
-// signatures must be freshly computed per request since token
-// rotation invalidates earlier signatures.
-//
-// chronicle-package.json is excluded from the zip output (it's
-// Chronicle-side metadata, not part of the module Foundry installs).
 func (h *Handler) PublicDownloadAPI(c echo.Context) error {
 	cid := c.Param("cid")
 	token := c.QueryParam("token")
@@ -382,17 +322,12 @@ func (h *Handler) PublicDownloadAPI(c echo.Context) error {
 
 // --- error mapping ---
 
-// respondError converts an error to the right HTTP shape. For
-// foundry_vtt typed errors, returns the categorized JSON body
-// Foundry's FM-CSU-DIAG knows how to parse. For other errors,
-// re-returns them so Echo's apperror middleware handles them.
-//
-// Logs a structured breadcrumb for every typed error response so
-// server-side operators can root-cause without depending on
-// Foundry's client-side error rendering — Foundry core code emits
-// generic "is forbidden" on 403 regardless of the structured body
-// Chronicle sends, so the server log is the operator's only
-// reliable diagnostic for cases like cordinator Issue #17.
+// respondError converts an error to the right HTTP shape. Foundry_vtt
+// typed errors get the categorized JSON body; other errors re-return
+// so Echo's apperror middleware handles them. Logs a structured
+// breadcrumb for every typed error, since Foundry core's client-side
+// error rendering collapses a 403 to a generic "is forbidden" and the
+// server log is the operator's only reliable diagnostic.
 func (h *Handler) respondError(c echo.Context, err error) error {
 	fe := AsError(err)
 	if fe == nil {
@@ -415,29 +350,16 @@ func (h *Handler) respondError(c echo.Context, err error) error {
 
 // --- zip helpers ---
 
-// zipDirToWriterWithRewrite walks installDir and writes a zip
-// stream to w. The file at moduleJSONPath (relative to installDir,
-// e.g. "module.json" or "dist/module.json") is REPLACED with
-// rewrittenManifest — the per-campaign Chronicle-URL-rewritten
-// bytes the service produced. Every other file is copied byte-for-
-// byte.
-//
-// chronicle-package.json is excluded — the descriptor is Chronicle-
-// side metadata, not part of the module Foundry installs. Including
-// it would leak the descriptor contract into the client's filesystem
-// and confuse Foundry's manifest reader.
-//
-// C-FMC-7: this is the load-bearing piece of the URL-rewriting fix.
-// Foundry's "Check for Update" reads the on-disk module.json that
-// came from the installed zip; if THAT file's manifest field points
-// at GitHub, update checks bypass Chronicle forever. Replacing
-// module.json inside the streamed zip is the only place where we
-// can guarantee Foundry's extracted file carries Chronicle URLs.
-//
-// Path comparison uses filepath.Clean on both sides — descriptors
-// may declare the path as "module.json" or "./module.json" or
-// "dist/module.json"; filepath.Walk produces forward-slash relative
-// paths on Linux but the comparison normalizes either form.
+// zipDirToWriterWithRewrite walks installDir and writes a zip stream to
+// w. The file at moduleJSONPath is replaced with rewrittenManifest (the
+// per-campaign Chronicle-URL-rewritten bytes); every other file is
+// copied byte-for-byte. This is the only place the extracted module.json
+// can be guaranteed to carry Chronicle URLs, since Foundry's "Check for
+// Update" reads that on-disk file, not the manifest endpoint.
+// chronicle-package.json is excluded — it's Chronicle-side metadata, not
+// part of the module Foundry installs. Path comparison uses
+// filepath.Clean on both sides so "module.json" and "./module.json"
+// compare equal.
 func zipDirToWriterWithRewrite(installDir, moduleJSONPath string, rewrittenManifest []byte, w io.Writer) error {
 	zw := zip.NewWriter(w)
 	defer func() { _ = zw.Close() }()

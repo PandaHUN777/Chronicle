@@ -1,18 +1,13 @@
 // notes_share_picker.test.mjs — pins the share-with-players picker contract
-// between internal/widgets/notes/handler.go (memberRef) and the notes widget.
+// between internal/widgets/notes/handler.go (memberRef) and the notes widget:
+// notes.js must read the same field names GET /campaigns/:id/notes/members
+// actually emits ({user_id, username, role}), or a checkbox silently renders
+// blank and shares with no one.
 //
-// The regression: GET /campaigns/:id/notes/members has only ever shipped
-// {user_id, username, role}, but notes.js read m.id / m.name. escapeHtml
-// (boot.js) turns undefined into '', so every checkbox rendered blank with
-// value="", the `m.id !== currentUserId` filter excluded nobody (undefined is
-// never equal to a user id), and ticking a row PUT sharedWith:[""] — a note
-// shared with no one. Nothing was broken loudly enough to notice.
-//
-// notes.js is a browser IIFE bound to TipTap + the live DOM, so — following
-// notes_autosave.test.mjs and widget_listener_leaks.test.mjs — this pins the
-// binding by source contract rather than by executing it. What makes it more
-// than a regex is that the expected key names are not written here: they are
-// read out of the Go struct tags, so renaming either side goes red.
+// notes.js is a browser IIFE bound to TipTap + the live DOM, so this pins the
+// binding by source contract rather than by executing it. The expected key
+// names are read out of the Go struct tags rather than written here, so
+// renaming either side goes red.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

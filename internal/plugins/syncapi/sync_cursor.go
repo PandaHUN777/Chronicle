@@ -1,25 +1,12 @@
 // Package syncapi — sync_cursor.go encodes the pull cursor for
-// POST /api/v1/campaigns/:id/sync.
+// POST /api/v1/campaigns/:id/sync, letting a client resume a paged entity
+// walk past syncMaxPullPages instead of re-scanning from the top each time.
 //
-// The pull walks the campaign's entity list internally, page by page, and
-// stops after syncMaxPullPages so one request cannot hold a connection open
-// across an unbounded table scan. That stop was originally a hard ceiling:
-// the response set has_more, but the request had no way to say "resume where
-// you stopped", and since is a *filter* over the list rather than a position
-// in it. So a campaign with more than syncMaxPullPages*syncPageSize entities
-// had a tail that no sync request could ever reach — every pull re-scanned
-// the same first thousand and stopped.
-//
-// The cursor turns that ceiling into a page size. It carries the next
-// internal page number, and it is opaque on the wire on purpose: the client's
-// only contract is "send back what you were given", so the server can later
-// switch from offset paging to a keyset without breaking a client that
-// hard-coded the arithmetic.
-//
-// Offset paging is safe here only because entity list ordering is a TOTAL
-// order — every ORDER BY in the entities repository ends in e.id ASC (sweep
-// R3 stage 4). Without that tiebreaker a page walk duplicates and skips rows,
-// which is exactly the bug this endpoint would otherwise re-import.
+// The cursor carries the next internal page number and is opaque on the
+// wire, so the server can later switch to a keyset cursor without breaking
+// clients. Offset paging is safe only because every ORDER BY in the
+// entities repository ends in e.id ASC, giving a total order; without that
+// tiebreaker a page walk would duplicate and skip rows.
 package syncapi
 
 import (

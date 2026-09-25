@@ -52,10 +52,9 @@ func RegisterCampaignRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.Camp
 	// Integrations tab fragments (owner only — HTMX-loaded within Settings page).
 	cg.GET("/integrations/keys", h.IntegrationsKeysFragment, campaigns.RequireRole(campaigns.RoleOwner))
 
-	// Calendar sync beacon (C-SYNC-DATE-BEACON): any campaign member may
-	// read — NO RequireRole, unlike every other route in this group. See
-	// the doc comment on Handler.GetCalendarSyncBeacon. Polled by the
-	// calendar sky strip's sync chip (calendar_v2_shell.js).
+	// Calendar sync beacon: any campaign member may read — NO RequireRole,
+	// unlike every other route in this group. See the doc comment on
+	// Handler.GetCalendarSyncBeacon.
 	cg.GET("/calendar-sync-beacon", h.GetCalendarSyncBeacon)
 }
 
@@ -91,8 +90,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	// API v1 group with session-or-bearer auth, rate limiting, and
 	// JSON Content-Type enforcement. Rate limiting is a no-op for
 	// session callers (see RateLimit comment). RequireJSONContentType
-	// closes FM-SEC C-4 / Chronicle audit M-3 per operator decision
-	// D-C3.1 — anything POST/PUT/PATCH-ing on this group MUST be
+	// requires anything POST/PUT/PATCH-ing on this group to be
 	// application/json; the lone multipart endpoint (UploadMedia)
 	// re-registers below on v1Multipart, which keeps auth + rate-limit
 	// but skips the JSON enforcement.
@@ -168,9 +166,9 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	calGroup.GET("/calendars", calAPI.ListCalendars, RequirePermission(PermRead))
 	calGroup.GET("/calendar", calAPI.GetCalendar, RequirePermission(PermRead))
 	calGroup.GET("/calendar/date", calAPI.GetCurrentDate, RequirePermission(PermRead))
-	// Applied-date confirm (C-SYNC-APPLIED-BEACON): same auth + permission
-	// as the GET above — real Bearer keys only, see ConfirmDate's doc
-	// comment for the synthetic-session-key rejection.
+	// Applied-date confirm: same auth + permission as the GET above — real
+	// Bearer keys only, see ConfirmDate's doc comment for the
+	// synthetic-session-key rejection.
 	calGroup.POST("/calendar/date/confirm", calAPI.ConfirmDate, RequirePermission(PermRead))
 	calGroup.GET("/calendar/seasons", calAPI.GetSeasons, RequirePermission(PermRead))
 	calGroup.GET("/calendar/moons", calAPI.GetMoons, RequirePermission(PermRead))
@@ -178,9 +176,9 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	calGroup.GET("/calendar/event-categories", calAPI.GetEventCategories, RequirePermission(PermRead))
 	calGroup.GET("/calendar/structure", calAPI.GetStructure, RequirePermission(PermRead))
 	calGroup.GET("/calendar/weather", calAPI.GetWeather, RequirePermission(PermRead))
-	// World-state seed (C-CAL-WORLDSTATE-WIRE): the Bearer-group mirror of the
-	// web route's GET /calendar/world-state. Same seed, same dm_only gating —
-	// the role resolved from the key is what filters celestial events.
+	// The Bearer-group mirror of the web route's GET /calendar/world-state.
+	// Same seed, same dm_only gating — the role resolved from the key is
+	// what filters celestial events.
 	calGroup.GET("/calendar/world-state", calAPI.GetWorldState, RequirePermission(PermRead))
 	calGroup.GET("/calendar/cycles", calAPI.GetCycles, RequirePermission(PermRead))
 	calGroup.GET("/calendar/festivals", calAPI.GetFestivals, RequirePermission(PermRead))
@@ -196,9 +194,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 
 	// Calendar write endpoints (require "write" permission + calendar addon).
 	// POST /calendar imports a Calendaria-shaped payload as a new
-	// Chronicle calendar — closes the routing gap operator surfaced
-	// 2026-05-19. Wire contract pinned in cordinator/decisions/
-	// 2026-05-19-calendar-create-wire.md. C-CAL-CREATE-SYNCAPI-ALIGN.
+	// Chronicle calendar.
 	calGroup.POST("/calendar", calAPI.CreateCalendar, RequirePermission(PermWrite))
 	calGroup.POST("/calendar/events", calAPI.CreateEvent, RequirePermission(PermWrite))
 	calGroup.PUT("/calendar/events/:eventID", calAPI.UpdateEvent, RequirePermission(PermWrite))

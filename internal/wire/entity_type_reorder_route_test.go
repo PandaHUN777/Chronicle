@@ -1,16 +1,9 @@
 // entity_type_reorder_route_test.go pins the Owner-only access control on
 // PUT /campaigns/:id/entity-types/:etid/reorder via AST inspection.
-//
-// The sub-category reorder route was introduced Scribe-gated in C-NAV-V3 PR1
-// and realigned to Owner in PR2 (0c / RC-15.4): reordering the entity-type
-// taxonomy is structural campaign configuration — the same tier as every other
-// entity-type mutation (create/update/delete) and the sidebar-config PUT, all
-// Owner-only. The wire snapshot tracks method+path+file but NOT the role, so
-// this AST test is the guard against a silent downgrade back to Scribe.
-//
-// It walks the AST of internal/plugins/entities/routes.go, finds the PUT call
-// carrying "entity-types/:etid/reorder", and asserts one of its remaining
-// arguments is RequireRole(RoleOwner).
+// Reordering the entity-type taxonomy is structural campaign configuration,
+// the same tier as create/update/delete and the sidebar-config PUT. The
+// wire snapshot tracks method+path+file but not the role, so this AST test
+// guards against a silent downgrade to Scribe.
 
 package wire
 

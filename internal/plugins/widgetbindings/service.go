@@ -1,8 +1,8 @@
-// service.go — the binding service: the precedence resolver + the integrity
-// "mitigation kit" (C-WIDGET-BINDING-P1-SPINE).
+// The binding service: the precedence resolver plus the integrity mitigation
+// kit.
 //
-// FK-free polymorphism (see package doc + ADR) means integrity is enforced
-// here, as an AND of three mechanisms (precedent refinement #1):
+// FK-free polymorphism (see package doc, ADR-038) means integrity is
+// enforced here, as an AND of three mechanisms:
 //   - per-plugin DELETE HOOK     → OnInstanceDeleted (owning plugins call it)
 //   - always-on RENDER-TIME GUARD → Resolve validates each candidate via
 //     WidgetType.InstanceExists and skips dead ones

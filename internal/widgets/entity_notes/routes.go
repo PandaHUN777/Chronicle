@@ -17,12 +17,8 @@ import (
 // gates per-write (e.g., players can author private/everyone/custom but
 // not dm_only).
 //
-// Gated on the "player-notes" addon (ADR-056): this is a FEATURE toggle, not
-// an integration one, so — unlike sync-api's session short-circuit — off
-// means off for every caller, with no first-party exception. Before this,
-// disabling the addon only hid the dashboard block
-// (entities/block_registry_core.go); every route here stayed reachable to
-// any campaign member.
+// Gated on the "player-notes" addon (ADR-056): a feature toggle, so off means
+// off for every caller, with no first-party exception.
 func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignService, authSvc auth.AuthService, addonSvc addons.AddonService) {
 	g := e.Group("/campaigns/:id",
 		auth.RequireAuth(authSvc),

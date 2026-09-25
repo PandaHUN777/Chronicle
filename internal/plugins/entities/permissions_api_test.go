@@ -1,10 +1,7 @@
-// permissions_api_test.go — pins the C-PERMISSIONS-SAVE-FIX
-// invariants on both the wrap-and-preserve helper and the wire-
-// shape responder. The original bug (cordinator Issue #5) hid every
-// stage's failure as the generic "An unexpected error occurred"
-// because every sub-error was smothered as apperror.NewInternal.
-// These tests fail if that regression returns OR if the wire-
-// contract shape regresses to the legacy { error, message } pair.
+// permissions_api_test.go pins the wrap-and-preserve helper and the
+// wire-shape responder: a sub-error must never be smothered as the
+// generic apperror.NewInternal, and the wire contract must not regress to
+// the legacy { error, message } pair.
 package entities
 
 import (
@@ -21,11 +18,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 )
 
-// TestWrapPermissionError_PreservesTypedAppError pins the
-// load-bearing fix: a typed *AppError sub-cause (e.g. NotFound
-// from UpdateVisibility hitting a row deleted by a concurrent
-// client) must NOT be smothered as Internal. Smothering is the
-// exact bug the operator hit.
+// TestWrapPermissionError_PreservesTypedAppError pins that a typed
+// *AppError sub-cause (e.g. NotFound from UpdateVisibility hitting a row
+// deleted by a concurrent client) must NOT be smothered as Internal.
 func TestWrapPermissionError_PreservesTypedAppError(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -55,11 +50,10 @@ func TestWrapPermissionError_PreservesTypedAppError(t *testing.T) {
 	}
 }
 
-// TestWrapPermissionError_WrapsUntypedWithStage pins the second
-// part of the fix: an untyped (raw DB) error must come out as a
-// typed Internal AppError whose Message names the stage. Without
-// the stage hint the operator's only diagnostic was the generic
-// "An unexpected error occurred" text — Issue #5.
+// TestWrapPermissionError_WrapsUntypedWithStage pins that an untyped (raw
+// DB) error comes out as a typed Internal AppError whose Message names the
+// stage, so the operator's diagnostic isn't just "An unexpected error
+// occurred".
 func TestWrapPermissionError_WrapsUntypedWithStage(t *testing.T) {
 	raw := errors.New("Error 1062 (23000): Duplicate entry 'ent-1-role-2-edit' for key 'uq_entity_perm'")
 	wrapped := wrapPermissionError(context.Background(), "writing grant rows", raw)
@@ -91,12 +85,9 @@ func TestWrapPermissionError_WrapsUntypedWithStage(t *testing.T) {
 	}
 }
 
-// TestWrapPermissionError_DoesNotEmitGenericText pins the
-// regression itself: the wire body must NOT contain the
-// "An unexpected error occurred. Please try again." text that
-// matches apperror.NewInternal's default Message verbatim. If
-// this string ever shows up in the wire body for a wrapped error,
-// we've regressed to the Issue #5 state.
+// TestWrapPermissionError_DoesNotEmitGenericText pins that the wire body
+// must NOT contain the "An unexpected error occurred. Please try again."
+// text that matches apperror.NewInternal's default Message verbatim.
 func TestWrapPermissionError_DoesNotEmitGenericText(t *testing.T) {
 	raw := errors.New("db boom")
 	wrapped := wrapPermissionError(context.Background(), "switching visibility to custom", raw)
@@ -183,12 +174,11 @@ func TestRespondPermissionsError_PassesUntypedThrough(t *testing.T) {
 	}
 }
 
-// --- service-level test: the original Issue #5 user-visible bug
-//     was that EVERY stage's failure looked like a generic Internal.
-//     This test pins that VisibilityCustom's UpdateVisibility path,
-//     when its sub-error is a typed NotFound (e.g. entity row deleted
-//     by a concurrent client between SetPermissions and UpdateVisibility),
-//     surfaces as a typed NotFound — not Internal.
+// TestSetEntityPermissions_PreservesNotFoundFromUpdateVisibility pins that
+// VisibilityCustom's UpdateVisibility path, when its sub-error is a typed
+// NotFound (e.g. entity row deleted by a concurrent client between
+// SetPermissions and UpdateVisibility), surfaces as a typed NotFound, not
+// Internal.
 
 func TestSetEntityPermissions_PreservesNotFoundFromUpdateVisibility(t *testing.T) {
 	entityRepo := &mockEntityRepo{

@@ -15,9 +15,9 @@
 # The restore does NOT run migrations — it just recreates DB state,
 # extracts media, and (optionally) replaces the Redis dump. Validation
 # of schema-vs-code happens automatically when chronicle next starts:
-# RunStartupHealthChecks (internal/database/healthcheck.go:92-133)
-# refuses to boot if the restored DB doesn't match the running
-# image's expected migration version. No --migrate-only flag needed.
+# RunStartupHealthChecks refuses to boot if the restored DB doesn't
+# match the running image's expected migration version. No
+# --migrate-only flag needed.
 #
 # Invocation (compose, primary):
 #   docker compose exec chronicle /app/scripts/restore.sh \

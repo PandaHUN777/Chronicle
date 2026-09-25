@@ -308,12 +308,10 @@ templ PinnedCard(entity *Entity, cc *campaigns.CampaignContext) {
 //
 // The data-entity-id attribute is the contract the bulk-actions widget
 // (static/js/widgets/bulk_actions.js) reads to inject the per-row
-// multi-select <td> checkbox. Without it, the widget still injects the
-// select-all <th> on the header but skips the rows entirely, leaving
-// the header one column wider than every body row — most visible at
-// mobile breakpoints where most other columns are hidden. The widget
-// is only active when a parent declares data-widget="bulk-actions"
-// (All Pages today); the attribute is inert elsewhere.
+// multi-select <td> checkbox; without it the widget still injects the
+// select-all <th> on the header but skips every row, leaving the header
+// one column wider than the body. The widget only activates when a parent
+// declares data-widget="bulk-actions"; the attribute is inert elsewhere.
 templ EntityTableRow(entity *Entity, cc *campaigns.CampaignContext) {
 	<tr class="hover:bg-surface-alt transition-colors group" data-entity-id={ entity.ID }>
 		<td class="px-4 py-2.5">

@@ -1,18 +1,7 @@
-// entity_partial_update_test.go — sweep R4, the syncapi half of the
-// absent-means-preserve contract.
-//
-// Two defects, one shape, both reproduced against the shipped code before
-// this file existed:
-//
-//   - apiUpdateEntityRequest had no parent_id member AT ALL, so every
-//     update on the sync wire detached the entity from the Chronicle
-//     hierarchy.
-//   - is_private was a value-typed bool, so the Foundry actor-sync's
-//     {name}-only rename push bound false and PUBLISHED a hidden character
-//     entity to every player in the campaign. That is the privacy break.
-//
-// The batch door (POST .../sync, syncChange) had both of the same holes;
-// fixing one and not the other would have left the break reachable.
+// entity_partial_update_test.go pins the absent-means-preserve partial-update
+// contract on both the single-entity update door and the batch door
+// (POST .../sync, syncChange): an omitted parent_id or is_private must
+// preserve the current value, never reset it to zero/public.
 package syncapi
 
 import (

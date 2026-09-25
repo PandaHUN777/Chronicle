@@ -1,10 +1,8 @@
 package syncapi
 
-// calendar_sync_beacon_handler_test.go — C-SYNC-DATE-BEACON. Pins
-// GetCalendarSyncBeacon (the member-read GET /campaigns/:id/calendar-sync-beacon
-// endpoint the sky strip's sync chip polls): the recorded-beacon shape, and
-// the never-recorded degrade (empty response, not an error — the chip
-// treats that the same as "no Foundry-confirmed date").
+// calendar_sync_beacon_handler_test.go pins GetCalendarSyncBeacon (GET
+// /campaigns/:id/calendar-sync-beacon): the recorded-beacon shape, and the
+// never-recorded degrade (empty response, not an error).
 
 import (
 	"context"
@@ -91,9 +89,9 @@ func TestGetCalendarSyncBeacon_NoneRecorded_ReturnsEmptyNotError(t *testing.T) {
 	}
 }
 
-// TestGetCalendarSyncBeacon_ExposesAppliedFields pins C-SYNC-APPLIED-BEACON:
-// the response gains the applied-date half alongside the pre-existing
-// served-date fields when a confirm has landed for this campaign.
+// TestGetCalendarSyncBeacon_ExposesAppliedFields pins that the response
+// carries the applied-date half alongside the served-date fields once a
+// confirm has landed for this campaign.
 func TestGetCalendarSyncBeacon_ExposesAppliedFields(t *testing.T) {
 	served := time.Date(2026, 7, 17, 12, 0, 0, 0, time.UTC)
 	applied := time.Date(2026, 7, 18, 9, 30, 0, 0, time.UTC)
@@ -129,11 +127,9 @@ func TestGetCalendarSyncBeacon_ExposesAppliedFields(t *testing.T) {
 }
 
 // TestGetCalendarSyncBeacon_ConfirmBeforeAnyGET_ServedFieldsOmitted pins the
-// create-on-confirm case (repository.go ConfirmCalendarDateBeacon): a
-// confirm can land before any served-date GET for this campaign, leaving a
-// beacon row whose served fields are the 0/0 "unset" sentinel. The response
-// MUST omit the served date rather than surfacing the fake "0000-00-00" —
-// only the applied half is real.
+// create-on-confirm case: a confirm landing before any served-date GET
+// leaves a beacon row whose served fields are the 0/0 "unset" sentinel, and
+// the response must omit the served date rather than surface "0000-00-00".
 func TestGetCalendarSyncBeacon_ConfirmBeforeAnyGET_ServedFieldsOmitted(t *testing.T) {
 	applied := time.Date(2026, 7, 18, 9, 30, 0, 0, time.UTC)
 	appliedYear, appliedMonth, appliedDay := 2026, 7, 18

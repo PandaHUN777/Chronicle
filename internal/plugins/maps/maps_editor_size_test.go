@@ -7,14 +7,12 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// TestMapEditorBody_InvalidatesSizeAfterLayout pins the maps #9 fix. The
-// editor's inline Leaflet IIFE runs at parse time, before the flex-sized
-// container (dedicated page) or a freshly-shown embed has its final height,
-// so Leaflet reads the wrong size at construction: the image overlay paints
-// into the wrong box (the container's bg-surface-alt shows through as a pale
-// rectangle) and markers land at the wrong pixels (piling near the toolbar).
-// The editor must re-measure once layout settles — the same guard the
-// dashboard map widget (map_widget.js) already uses.
+// TestMapEditorBody_InvalidatesSizeAfterLayout pins that the editor's inline
+// Leaflet IIFE re-measures once layout settles. It runs at parse time, before
+// a flex-sized container or freshly-shown embed has its final height, so
+// without a re-measure Leaflet reads the wrong size at construction (image
+// overlay in the wrong box, markers at the wrong pixels) — the same guard the
+// dashboard map widget (map_widget.js) uses.
 func TestMapEditorBody_InvalidatesSizeAfterLayout(t *testing.T) {
 	cc := &campaigns.CampaignContext{
 		Campaign:   &campaigns.Campaign{ID: "camp-1"},

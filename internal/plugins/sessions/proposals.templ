@@ -1,6 +1,6 @@
-// proposals.templ renders the slot-proposal UI (C-SCHED-P2): the proposals list
-// and one proposal's detail with per-option accept/decline/tentative controls,
-// live tallies, and (owner-only) the per-responder breakdown. Times are rendered
+// proposals.templ renders the slot-proposal UI: the proposals list and one
+// proposal's detail with per-option accept/decline/tentative controls, live
+// tallies, and (owner-only) the per-responder breakdown. Times are rendered
 // in the viewer's own zone (the service projects the UTC instants).
 
 package sessions
@@ -156,7 +156,7 @@ templ proposalOption(cc *campaigns.CampaignContext, view *ProposalView, ov Propo
 				@respondButton(cc, view.Proposal.ID, ov.Option.ID, ResponseYes, "Yes", "fa-check", ov.MyResponse, csrfToken)
 				@respondButton(cc, view.Proposal.ID, ov.Option.ID, ResponseMaybe, "Maybe", "fa-question", ov.MyResponse, csrfToken)
 				@respondButton(cc, view.Proposal.ID, ov.Option.ID, ResponseNo, "No", "fa-xmark", ov.MyResponse, csrfToken)
-				// Confirm-winner (C-SCHED-P3): Scribe+ only. Picking a slot closes the
+				// Confirm-winner: Scribe+ only. Picking a slot closes the
 				// proposal and creates the session, then HX-Redirects to it.
 				if cc.MemberRole >= campaigns.RoleScribe {
 					<button

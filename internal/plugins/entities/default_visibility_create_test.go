@@ -1,16 +1,12 @@
-// default_visibility_create_test.go — the campaign's DefaultVisibility
-// setting has to reach EVERY entity-creation path, not just the web form.
+// default_visibility_create_test.go pins that the campaign's
+// DefaultVisibility setting reaches EVERY entity-creation path, including
+// QuickCreateAPI (the JSON endpoint the shop inventory widget posts to,
+// which must not silently create public items in a "DM Only" campaign), not
+// just the web form.
 //
-// Before the fix, CampaignSettings.DefaultVisibility had exactly one
-// consumer in the whole repo: Handler.Create, the HTML form. QuickCreateAPI —
-// the JSON endpoint the shop inventory widget posts to — built its
-// CreateEntityInput with {Name, EntityTypeID} and nothing else, so every item
-// the shop widget created in a "DM Only" campaign was visible to every player
-// the instant it existed.
-//
-// The three directions per path are the point. "Absent" and "explicit false"
-// are DIFFERENT: the campaign default fills in the first and must not
-// override the second, which is why the resolution takes a patch.Field.
+// "Absent" and "explicit false" are DIFFERENT: the campaign default fills in
+// the first and must not override the second, which is why the resolution
+// takes a patch.Field.
 package entities
 
 import (
@@ -137,14 +133,10 @@ func TestQuickCreateAPI_HonoursCampaignDefaultVisibility(t *testing.T) {
 
 // --- Handler.Create (the web form, which already honoured the setting) -----
 
-// The form path is the ONE path that was already correct. This pins its
-// behaviour across the refactor that moved the four-line inline block onto
-// the shared CampaignSettings.ResolveNewEntityPrivacy, so "there is now one
-// implementation" cannot quietly mean "the form path changed".
-//
-// An unchecked HTML checkbox submits NOTHING, so the form's value-typed
-// false IS the absent case — the form has no way to express "explicitly
-// public", and never had one.
+// The form path resolves privacy via the shared
+// CampaignSettings.ResolveNewEntityPrivacy. An unchecked HTML checkbox
+// submits NOTHING, so the form's value-typed false IS the absent case — the
+// form has no way to express "explicitly public".
 func TestCreate_FormHonoursCampaignDefaultVisibility(t *testing.T) {
 	cases := []struct {
 		name       string

@@ -1,4 +1,4 @@
-// Tests for the C-FMC-8 admin auto-pin banner flow.
+// Tests for the admin auto-pin banner flow.
 //
 // Contracts pinned:
 //

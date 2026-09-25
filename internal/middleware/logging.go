@@ -16,15 +16,9 @@ import (
 // from request logs to prevent leaking secrets (e.g. password reset tokens).
 //
 // "sig" and "expires" cover media's HMAC-signed URLs
-// (internal/plugins/media/signed_url.go): together they ARE a live,
-// time-bounded credential — ADR-058 decision 6 binds that credential to a
-// specific viewer, but it is still a valid, directly-usable bearer value
-// for anyone who reads it back out of a log file, for as long as
-// `expires` says (up to media.SignedURLTTL). Before this, the request
-// logger wrote both in plaintext on every media request, so a log file
-// held a working credential for the rest of its life — arguably worse
-// than the query string itself, which at least expires and stops being
-// forwarded once the response is served.
+// (internal/plugins/media/signed_url.go): together they are a live,
+// time-bounded bearer credential (ADR-058 decision 6), valid for anyone who
+// reads it back out of a log file until `expires` (up to media.SignedURLTTL).
 var sensitiveParams = []string{
 	"token", "key", "password", "secret", "api_key",
 	"access_token", "refresh_token", "client_secret", "session",

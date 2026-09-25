@@ -81,21 +81,12 @@ func TestTokenSigner_CampaignIDWithDots(t *testing.T) {
 	}
 }
 
-// TestTokenSigner_DomainSeparation — foundry_vtt's signer uses the
-// "foundry-vtt:" domain prefix; a token minted by foundry_modules'
-// signer (with "foundry-module:" prefix) must NOT verify here.
-// This is the security property that lets both plugins coexist
-// during the C-FMC-5b parallel period without cross-contamination.
-//
-// Computed externally with foundry_modules' constants for the
-// regression-test fixture rather than calling foundry_modules
-// directly (which would create an awkward inter-plugin test dep).
+// TestTokenSigner_DomainSeparation: foundry_vtt's signer uses the
+// "foundry-vtt:" domain prefix, so a token minted with a
+// "foundry-module:" prefix must not verify here — this is what
+// prevents cross-plugin token replay.
 func TestTokenSigner_DomainSeparation(t *testing.T) {
 	signer := NewTokenSigner("shared-secret")
-	// Manually compute what a "foundry-module:" prefix would yield
-	// for the same secret + campaign + version. If the foundry-vtt
-	// signer ever accidentally drops its domain prefix, this token
-	// would verify and we'd silently allow cross-plugin replay.
 	// Inline reimplementation of compute() with the other domain
 	// prefix. If foundry-vtt's signer ever drops its domain prefix,
 	// this would verify and we'd allow cross-plugin replay.

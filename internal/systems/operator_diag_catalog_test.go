@@ -5,27 +5,16 @@ import (
 	"testing"
 )
 
-// The host.* family was built in five separate stages, each adding its own
-// diagnostics and its own tests. The per-stage tests are thorough about their
-// own renderers, but nothing checked the family AS A CATALOG — and the catalog
-// is the artefact the operator and the AI assistant actually meet first. These
-// tests cover the properties that only exist across stage boundaries, so a
-// sixth stage adding a diagnostic inherits them for free.
+// These tests cover the host.* family AS A CATALOG — properties the per-stage
+// renderer tests don't reach, so a diagnostic added later inherits them for
+// free.
 
 // TestEveryHostDiagnosticRunsWithEmptyArg executes every registered host.*
-// diagnostic through the real dispatch path with NO argument.
-//
-// Why the empty argument specifically: the route passes `?arg=` through
-// verbatim, so a bare click on the admin page's Run button is exactly this
-// call. Several of these diagnostics take an argument, and the no-argument
-// branch is the one an operator hits by accident — it must print usage or a
-// default listing, never panic and never come back blank. A blank result is
-// the specific failure this whole workstream exists to prevent: it reads as
-// "nothing to report" when it actually means "this never ran".
-//
-// The per-stage suites each cover their own diagnostics; the value here is that
-// the loop is over the CATALOG, so a diagnostic added later is covered whether
-// or not its author writes this test again.
+// diagnostic through the real dispatch path with NO argument — the call a
+// bare click on the admin page's Run button makes. The no-argument branch
+// must print usage or a default listing, never panic and never come back
+// blank (a blank result reads as "nothing to report" when it means "this
+// never ran").
 func TestEveryHostDiagnosticRunsWithEmptyArg(t *testing.T) {
 	cat := diagnosticCatalog()
 
@@ -76,17 +65,10 @@ func TestEveryHostDiagnosticRunsWithEmptyArg(t *testing.T) {
 
 // TestCatalogDescriptionsStayScannable caps Desc length.
 //
-// Desc is documented on the struct as a "one-line 'what you get / when to use'"
-// and it is rendered IN FULL for every entry by renderCatalog (the menu) and by
-// FunctionsSpecJSON (what the assistant reads to choose). It is a menu, not the
+// Desc is rendered IN FULL for every entry by renderCatalog (the menu) and by
+// FunctionsSpecJSON (what the assistant reads to choose). It is a menu, not
 // documentation: whatever a reader needs once they have chosen belongs in the
 // diagnostic's own output, where the person acting on it is actually looking.
-//
-// The host.* entries arrived carrying their incident narrative in the Desc and
-// ran to 588/539/492/470/463 bytes against a pre-existing catalog mean of 177,
-// which pushed the menu to 8.9 KB and the functions spec to 13 KB. The cap is
-// set above today's longest with real headroom, so ordinary editing is
-// unaffected — it exists to stop a future stage reintroducing a paragraph.
 func TestCatalogDescriptionsStayScannable(t *testing.T) {
 	// Chosen to sit clearly above the longest current Desc and clearly below
 	// the essay-length ones that were removed. Raising this is a decision about
@@ -106,13 +88,10 @@ func TestCatalogDescriptionsStayScannable(t *testing.T) {
 	}
 }
 
-// TestCatalogNamesAreUniqueAndWellFormed re-checks uniqueness across the whole
-// catalog. TestDiagnosticCatalog_WellFormed already asserts this; the reason to
-// state it again here is the ArgHint half, which nothing else covers: a
-// diagnostic whose Run parses an argument but whose ArgHint is empty is
-// invisible on the admin page, because RenderDiagnosticsHTML only draws an
-// input box when ArgHint is set. That combination is silently unusable rather
-// than broken, which is the hardest kind of defect to notice.
+// TestCatalogNamesAreUniqueAndWellFormed covers the ArgHint half nothing else
+// does: a diagnostic whose Run parses an argument but whose ArgHint is empty
+// is invisible on the admin page, since RenderDiagnosticsHTML only draws an
+// input box when ArgHint is set.
 func TestCatalogNamesAreUniqueAndWellFormed(t *testing.T) {
 	seen := map[string]bool{}
 	for _, d := range diagnosticCatalog() {
@@ -135,14 +114,8 @@ func TestCatalogNamesAreUniqueAndWellFormed(t *testing.T) {
 
 // TestHostFamilyPrecedesTheRest pins the ordering claim the catalog comment
 // makes: every host.* diagnostic sorts ahead of every system.*/packages.*/
-// entity.* one.
-//
-// This is not cosmetic. Each stage asserted its own diagnostics sat near the
-// top, but "near the top" is not composable — five stages each inserting at
-// their own preferred position is how a group becomes interleaved. The reason
-// the group leads is that every other diagnostic describes what is being
-// served, and all of them are worthless if the binary is not the one the
-// operator thinks it is.
+// entity.* one, because every other diagnostic describes what is being
+// served and is worthless if the binary is not the one the operator thinks.
 func TestHostFamilyPrecedesTheRest(t *testing.T) {
 	cat := diagnosticCatalog()
 
@@ -170,14 +143,10 @@ func TestHostFamilyPrecedesTheRest(t *testing.T) {
 	}
 }
 
-// TestOnlyGenuinelyHeavyDiagnosticsRequireFullDump pins the FullDump flag.
-//
-// FullDump means a batch must pass full_dump:true to run the diagnostic, so it
-// is friction deliberately applied to expensive or verbose checks. Applied to a
+// TestOnlyGenuinelyHeavyDiagnosticsRequireFullDump pins the FullDump flag:
+// a batch must pass full_dump:true to run a flagged diagnostic. Applied to a
 // cheap one it just makes the tool annoying; omitted from an expensive one it
-// removes the guard. Both directions are asserted by name, because the flag's
-// correctness is a judgement about each diagnostic that should be restated
-// explicitly when a new one is added rather than inferred.
+// removes the guard, so both directions are asserted by name.
 func TestOnlyGenuinelyHeavyDiagnosticsRequireFullDump(t *testing.T) {
 	// The heavy ones: system.health dumps served reality for every loaded
 	// system, and host.assets hashes every file under the static root by

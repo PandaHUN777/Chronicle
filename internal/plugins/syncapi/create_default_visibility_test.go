@@ -1,18 +1,8 @@
-// create_default_visibility_test.go — the campaign's DefaultVisibility
-// setting on the two REST creation doors.
-//
-// Both doors ignored it. POST /api/v1/campaigns/:id/entities bound
-// is_private to a value-typed bool, so an omitted key decoded to false and
-// the entity was created PUBLIC; the batch-sync "create" branch already had
-// the three-state patch.Field[bool] but threw the distinction away with
-// .Val(false). A DM who set the campaign default to "DM Only" got public
-// entities from every Foundry sync anyway — the same defect class as the
-// {name}-only rename push that once published a hidden character entity to
-// every player (sweep R4, see entity_partial_update_test.go).
-//
-// The batch case matters on its own: fixing the single-entity door and not
-// the batch door would have left the break reachable through POST /sync,
-// which is exactly the mistake sweep R4 called out when it fixed both.
+// create_default_visibility_test.go pins that both REST creation doors —
+// POST /api/v1/campaigns/:id/entities and the batch-sync "create" branch —
+// apply the campaign's DefaultVisibility setting when is_private is omitted,
+// rather than defaulting to public. See entity_partial_update_test.go for
+// the related partial-update contract.
 package syncapi
 
 import (
@@ -145,11 +135,9 @@ func TestCreateEntity_HonoursCampaignDefaultVisibility(t *testing.T) {
 	}
 }
 
-// A campaign whose settings cannot be read must NOT fall open. The setting is
-// the only thing standing between a DM-only campaign and a public entity, so
-// an unknown default resolves to private rather than to "visible to everyone".
-// Recovering from an over-hidden entity is a toggle; recovering from a leak is
-// not possible.
+// A campaign whose settings cannot be read must fail closed: an unknown
+// default resolves to private, since recovering from a leak is not possible
+// but recovering from an over-hidden entity is just a toggle.
 func TestCreateEntity_UnreadableCampaignFailsClosed(t *testing.T) {
 	esvc := &stubEntitySvcCapturingCreate{}
 	csvc := &stubCampaignSvcWithSettings{getByIDErr: context.DeadlineExceeded}

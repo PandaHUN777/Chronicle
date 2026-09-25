@@ -49,15 +49,15 @@ templ TimelineEmbedEmpty(cc *campaigns.CampaignContext) {
 }
 
 // BlockTimeline renders the entity-page timeline block. timelineID is the
-// instance resolved by the widget-binding framework (C-WIDGET-BINDING-P2):
-//   - empty (unbound) → today's behavior: a lazy campaign-level PREVIEW LIST
-//     of the campaign's timelines (identical to pre-framework).
-//   - non-empty (bound) → the single bound timeline rendered via the shared
-//     timeline-viz widget (the host's timeline tracks that record).
+// instance resolved by the widget-binding framework:
+//   - empty (unbound) → a lazy campaign-level preview list of the campaign's
+//     timelines.
+//   - non-empty (bound) → the single bound timeline via the shared
+//     timeline-viz widget.
 //
-// entityID + source + isScribe (P4b) thread the host + resolution so Scribe+
-// can open the create-or-pick picker (bind a specific timeline / revert to the
-// preview list). The affordance only shows for a per-entity host.
+// entityID + source + isScribe thread the host + resolution so Scribe+ can
+// open the create-or-pick picker; the affordance only shows for a per-entity
+// host.
 templ BlockTimeline(cc *campaigns.CampaignContext, timelineID, entityID, source string, isScribe bool) {
 	if isScribe && entityID != "" {
 		<div class="card p-0 overflow-hidden mb-2" data-timeline-binding>

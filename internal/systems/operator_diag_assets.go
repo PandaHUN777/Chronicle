@@ -15,23 +15,16 @@
 //     failure mode: the app looking in a directory that is not there.
 //
 //   - each plugin's //go:embed-ed static FS, which exists ONLY inside the
-//     binary. On 2026-08-11 an operator grepped /app/static for a calendar
-//     feature's assets, found nothing, and read that as missing code. The code
-//     was present and serving — it was compiled in. No `ls`, no `grep`, no
-//     `find` over the container filesystem can ever see those bytes. host.embedded
-//     is the only way to look at them, which is why its description says so in
-//     plain words rather than assuming the reader knows.
+//     binary. No `ls`, no `grep`, no `find` over the container filesystem can
+//     ever see those bytes — host.embedded is the only way to look at them.
 //
 // The `?v=` token. Every asset URL a template emits is cache-busted by
 // layouts.AssetURL. These diagnostics call THAT function rather than
-// reimplementing its hashing, because a second copy of a cache-busting rule is
-// a copy that can disagree with the one the browser is actually served — and it
-// would disagree precisely while an operator was using it to decide whether a
-// browser is holding a stale file. The comparison between the token AssetURL
-// emits and the sha256 of the bytes on disk right now is itself the finding: a
-// mismatch means either the file changed under a running process (the digest is
-// memoised for the process lifetime by design) or the asset never resolved at
-// all and fell back to the per-build token.
+// reimplementing its hashing, so the reported token can never disagree with
+// what the browser is actually served. A mismatch against the sha256 of the
+// bytes on disk now means either the file changed under a running process
+// (the digest is memoised for the process lifetime by design) or the asset
+// never resolved and fell back to the per-build token.
 package systems
 
 import (
@@ -116,7 +109,8 @@ func hostAssetContainsDiagnostic() Diagnostic {
 	}
 }
 
-// hostEmbeddedDiagnostic is the one that closes the 2026-08-11 trap.
+// hostEmbeddedDiagnostic lists plugin assets compiled into the binary — the
+// only way to see them, since they live nowhere on the container filesystem.
 func hostEmbeddedDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:  "host.embedded",

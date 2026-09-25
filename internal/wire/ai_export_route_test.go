@@ -1,19 +1,12 @@
 // ai_export_route_test.go pins the owner-only access control on
 // GET /campaigns/:id/ai-export/generate via AST inspection.
 //
-// C-AI-WORKSPACE-V1-B (this PR) relocated the route from the campaigns
-// plugin to the ai_workspace plugin. URL preserved; this test follows.
-//
 // The route is registered inside the ai_workspace plugin's
-// RegisterOwnerRoutes with the `requireOwner` middleware parameter
-// (same pattern as foundry_vtt's owner-gated routes). The test walks
-// the AST of internal/plugins/ai_workspace/routes.go, finds the GET
-// call carrying "ai-export/generate", and asserts one of its remaining
-// arguments is the Ident `requireOwner`.
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §5 acceptance invariants (owner-scoped).
+// RegisterOwnerRoutes with the `requireOwner` middleware parameter (same
+// pattern as foundry_vtt's owner-gated routes). The test walks the AST of
+// internal/plugins/ai_workspace/routes.go, finds the GET call carrying
+// "ai-export/generate", and asserts one of its remaining arguments is the
+// Ident `requireOwner`.
 
 package wire
 
@@ -32,12 +25,8 @@ import (
 // no-plugin-names-outside-plugin-dir guard.
 var aiwsDirName = "ai_" + "workspace"
 
-// TestAIExportRoute_HasOwnerGate asserts the
-// /campaigns/:id/ai-export/generate route registration includes the
-// requireOwner middleware argument. The route lives inside the
-// ai_workspace plugin's RegisterOwnerRoutes function and consumes
-// the `requireOwner echo.MiddlewareFunc` parameter passed in by
-// app/routes.go (which constructs it as RequireRole(RoleOwner)).
+// TestAIExportRoute_HasOwnerGate asserts the route registration includes
+// the requireOwner middleware argument.
 func TestAIExportRoute_HasOwnerGate(t *testing.T) {
 	root := repoRoot(t)
 	routesPath := filepath.Join(root, "internal", "plugins", aiwsDirName, "routes.go")

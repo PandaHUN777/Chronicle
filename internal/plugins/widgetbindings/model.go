@@ -1,21 +1,17 @@
-// Package widgetbindings is the foundation for the widget-binding framework
-// (C-WIDGET-BINDING-P1-SPINE): a generic, host-agnostic mapping of
-// host (entity / entity-type / dashboard) ↔ widget-type ↔ data-instance.
+// Package widgetbindings is the foundation for the widget-binding framework:
+// a generic, host-agnostic mapping of host (entity / entity-type /
+// dashboard) ↔ widget-type ↔ data-instance.
 //
-// It is the dynamic, declarative replacement for the per-widget hardcoding
-// that `entity_calendar`/`entity_worldstate`/`map_editor` grew independently
-// (the `entities.map_id` column is the same idea, hardcoded for one type).
-// Widget types register their behavior in the Registry; the Service resolves,
-// for a given host, which data-instance a widget renders, following a
-// precedence chain (host's own binding → entity-type template → default).
+// Widget types register their behavior in the Registry; the Service
+// resolves, for a given host, which data-instance a widget renders,
+// following a precedence chain (host's own binding → entity-type template →
+// default).
 //
-// Design rationale (see ADR 2026-06-07-widget-binding-polymorphic-fk-free in
-// .ai/decisions.md): the binding table is POLYMORPHIC and FK-FREE on both
-// host_id and instance_id, so it can live in a plugin without tripping the
-// core-before-plugin migration-ordering rule. Referential integrity is the
-// app layer's job (MariaDB has no RLS backstop) — enforced by an AND of three
-// mechanisms: per-plugin delete hooks, an always-on render-time orphan guard,
-// and a periodic campaign integrity sweep.
+// The binding table is polymorphic and FK-free on both host_id and
+// instance_id (ADR-038), so it can live in a plugin without tripping the
+// core-before-plugin migration-ordering rule. Referential integrity is
+// therefore the app layer's job, enforced by per-plugin delete hooks, an
+// always-on render-time orphan guard, and a periodic campaign integrity sweep.
 package widgetbindings
 
 import "time"
@@ -64,9 +60,8 @@ type WidgetBinding struct {
 	UpdatedAt  time.Time `json:"updated_at"`
 }
 
-// HostRef identifies the thing a widget is rendered on, for resolution. It is
-// plain strings so this foundation plugin imports no other plugin (entity /
-// campaign code depends on widgetbindings, never the reverse).
+// HostRef identifies the thing a widget is rendered on, for resolution. It
+// is plain strings so this foundation plugin imports no other plugin.
 //
 // EntityTypeID enables the inheritance path: for an `entity` host it carries
 // the entity's type id so Resolve can fall back to the entity-type's template

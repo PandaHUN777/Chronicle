@@ -1,14 +1,10 @@
-// Tests for the descriptor loader — the two paths the operator
-// cares about most:
+// Tests for the descriptor loader:
 //
-//  1. Missing chronicle-package.json → fallback to defaults
-//     (the normal case; modules without FM-PKG-DESCRIPTOR shipped yet)
-//  2. Present chronicle-package.json → schema-validated parse
-//     (the new case; modules opting into descriptor-driven serve)
+//  1. Missing chronicle-package.json → fallback to defaults.
+//  2. Present chronicle-package.json → schema-validated parse.
 //
-// Plus: present-but-invalid descriptor fails LOUDLY (the operator's
-// fail-loud contract from C-FMC-5a). No silent fallback on parse
-// failure or schema mismatch.
+// A present-but-invalid descriptor fails loudly: no silent fallback
+// on parse failure or schema mismatch.
 package foundry_vtt
 
 import (

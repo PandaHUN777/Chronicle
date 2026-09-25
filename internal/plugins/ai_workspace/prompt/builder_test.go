@@ -1,15 +1,12 @@
 // builder_test.go pins the prompt builder's behavior against the
-// §3.5 template + the locked operator decisions. Each test exercises
-// a different combination of picker toggles + content-mode +
-// privacy.
+// template, exercising combinations of picker toggles, content-mode
+// and privacy.
 //
-// SEC-6-AMENDED inheritance is verified indirectly — when ContentMode
-// != "none", the test passes a stub Exporter whose Generate output
-// contains a <script> tag, and asserts the prompt body contains it
-// VERBATIM. The aiexport.Service is what actually sanitizes (PR
-// #349's TestRenderers_FunnelThroughHtmlToMarkdown enforces); the
-// prompt builder is a pure pass-through of that already-sanitized
-// content.
+// SEC-6 inheritance is verified indirectly: when ContentMode != "none",
+// the test passes a stub Exporter whose Generate output contains a
+// <script> tag, and asserts the prompt body contains it VERBATIM —
+// aiexport.Service is what actually sanitizes; the prompt builder is
+// a pure pass-through of that already-sanitized content.
 package prompt
 
 import (
@@ -24,7 +21,7 @@ import (
 
 // stubEntityLister returns canned entity types + list responses.
 type stubEntityLister struct {
-	types   []entities.EntityType
+	types      []entities.EntityType
 	listByType map[int][]entities.Entity
 }
 
@@ -37,7 +34,7 @@ func (s *stubEntityLister) List(_ context.Context, _ string, typeID int, _ int, 
 	return ents, len(ents), nil
 }
 
-// stubTagLister — V1 doesn't call it but interface needs an impl.
+// stubTagLister — unused by these tests, but the interface needs an impl.
 type stubTagLister struct{}
 
 func (stubTagLister) ListByCampaign(_ context.Context, _ string, _ bool) ([]tags.Tag, error) {
@@ -67,8 +64,8 @@ func defaultEntityTypes() []entities.EntityType {
 	}
 }
 
-// TestBuild_EntityTypesOnly pins the §3.5 entity-types section.
-// Disabled types are filtered out; preset-category appears when set.
+// TestBuild_EntityTypesOnly pins the entity-types section. Disabled
+// types are filtered out; preset-category appears when set.
 func TestBuild_EntityTypesOnly(t *testing.T) {
 	svc := NewService(&stubEntityLister{types: defaultEntityTypes()}, stubTagLister{}, &stubExporter{})
 	got, err := svc.Build(context.Background(), "Ashfall", "owner-1", "camp-1", Input{
@@ -98,8 +95,8 @@ func TestBuild_EntityTypesOnly(t *testing.T) {
 	}
 }
 
-// TestBuild_CategoriesInUse pins the §3.5 "Categories currently in
-// use" section — distinct TypeLabel values per type, counts, sorted.
+// TestBuild_CategoriesInUse pins the "Categories currently in use"
+// section — distinct TypeLabel values per type, counts, sorted.
 func TestBuild_CategoriesInUse(t *testing.T) {
 	svc := NewService(&stubEntityLister{
 		types: defaultEntityTypes(),
@@ -134,10 +131,9 @@ func TestBuild_CategoriesInUse(t *testing.T) {
 	}
 }
 
-// TestBuild_FrontMatterExample pins the schema-format section.
-// Operator decision §3.6 + scoping §3.5 — the template is a contract
-// with AI consumers; the example block here is what they're trained
-// to imitate.
+// TestBuild_FrontMatterExample pins the schema-format section: the
+// template is a contract with AI consumers, and the example block
+// here is what they're trained to imitate.
 func TestBuild_FrontMatterExample(t *testing.T) {
 	svc := NewService(nil, nil, &stubExporter{})
 	got, err := svc.Build(context.Background(), "Ashfall", "owner-1", "camp-1", Input{
@@ -163,10 +159,9 @@ func TestBuild_FrontMatterExample(t *testing.T) {
 }
 
 // TestBuild_ContentMode_All exercises the Exporter reuse path. Stub
-// returns a malicious-shaped markdown body — prompt builder embeds
-// it verbatim (sanitization happens inside aiexport per
-// SEC-6-AMENDED; prompt builder is a pass-through). The test also
-// asserts Privacy + GMNotes flags propagate.
+// returns a malicious-shaped markdown body — prompt builder embeds it
+// verbatim (sanitization happens inside aiexport; prompt builder is a
+// pass-through). Also asserts Privacy + GMNotes flags propagate.
 func TestBuild_ContentMode_All(t *testing.T) {
 	exp := &stubExporter{markdown: "# Ashfall content\n\n<not-sanitized-by-prompt-layer>"}
 	svc := NewService(nil, nil, exp)
@@ -278,7 +273,7 @@ func TestBuild_OperatorInstructionPosition(t *testing.T) {
 
 // TestBuild_AllSectionsTogether is the smoke test — every picker
 // toggle ON, ContentMode=all. Confirms the assembled prompt is
-// well-formed and the §3.5 closing instructions land.
+// well-formed and the closing instructions land.
 func TestBuild_AllSectionsTogether(t *testing.T) {
 	svc := NewService(&stubEntityLister{
 		types: defaultEntityTypes(),

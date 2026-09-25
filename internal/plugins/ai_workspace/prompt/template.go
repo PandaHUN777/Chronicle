@@ -1,10 +1,8 @@
-// template.go holds the verbatim §3.5 prompt template per
-// reports/chronicle/2026-05-26-c-ai-workspace-scoping.md. The
-// template is locked operator-side; this is the wire format the
+// template.go holds the prompt template — the wire format the
 // "Copy AI Prompt" button emits.
 //
 // `text/template` (not `html/template`) — output is markdown, not
-// HTML; we never want template-side escaping. The `join` funcmap
+// HTML, so no template-side escaping is wanted. The `join` funcmap
 // covers the Subcategories list inline-render.
 
 package prompt
@@ -14,9 +12,9 @@ import (
 	"text/template"
 )
 
-// templateData is the type the §3.5 template renders against.
-// Field names match the template's `{{ .Field }}` references
-// exactly; reordering or renaming requires a template-source change.
+// templateData is the type promptTemplate renders against. Field
+// names match the template's `{{ .Field }}` references exactly;
+// reordering or renaming requires a template-source change.
 type templateData struct {
 	// Schema picker conditionals.
 	IncludeEntityTypes        bool
@@ -29,8 +27,8 @@ type templateData struct {
 	// conditional is true.
 	EntityTypes     []entityTypeView
 	CategoriesInUse []categoryInUseView
-	SampleEntities  []sampleEntityView // V2; never populated by V1
-	TagsVocabulary  []tagView          // V2; never populated by V1
+	SampleEntities  []sampleEntityView // not yet populated; see builder.go
+	TagsVocabulary  []tagView          // not yet populated; see builder.go
 
 	// Content section.
 	ContentMode     string
@@ -47,29 +45,28 @@ type entityTypeView struct {
 	PresetCategory string
 }
 
-// categoryInUseView is the §3.5 "Categories currently in use" row.
+// categoryInUseView is the "Categories currently in use" row.
 type categoryInUseView struct {
 	TypeName      string
 	Subcategories []string
 	Count         int
 }
 
-// sampleEntityView is reserved for V2 — the picker doesn't expose
-// the toggle yet.
+// sampleEntityView is reserved — the picker doesn't expose the toggle yet.
 type sampleEntityView struct {
 	TypeName      string
 	MarkdownBlock string
 }
 
-// tagView is reserved for V2 — same reason.
+// tagView is reserved — same reason.
 type tagView struct {
 	Name   string
 	DmOnly bool
 }
 
-// promptTemplate is the verbatim §3.5 template text. Changing this
-// updates the scoping report's locked operator-visible wire format —
-// must be paired with a Cordinator decision-doc amendment.
+// promptTemplate is the operator-visible wire format for the "Copy AI
+// Prompt" button; changing it changes what operators paste into AI
+// tools.
 const promptTemplate = `You are helping me extend my TTRPG campaign in Chronicle, an Obsidian-style
 worldbuilding tool. Generate new content that conforms to my world's existing
 structure so I can paste your output back into Chronicle's AI Import flow

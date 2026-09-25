@@ -1,11 +1,10 @@
 /**
  * sidebar_editor.js -- Unified Sidebar Edit Mode
  *
- * Replaces sidebar_reorg.js and sidebar_layout_editor.js with a single
- * inline editing experience. One pencil button triggers edit mode for
- * all sidebar items (dashboard, addons, categories, sub-types, sections,
- * links). At entity level (drilled into a category), it signals
- * sidebar_tree.js to enable drag-and-drop on the entity tree.
+ * One pencil button triggers edit mode for all sidebar items (dashboard,
+ * addons, categories, sub-types, sections, links). At entity level (drilled
+ * into a category), it signals sidebar_tree.js to enable drag-and-drop on
+ * the entity tree.
  *
  * Items become directly draggable (no grip handles). Eye toggles,
  * edit/delete actions appear inline on hover.

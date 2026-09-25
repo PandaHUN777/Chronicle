@@ -1,15 +1,9 @@
-// timeline_settings_partial_update_test.go — sweep R4 / ADR-054 #2, the
-// timeline-SETTINGS half of the absent-means-preserve contract (the sibling
-// standalone_event_partial_update_test.go already covers the event half).
-//
-// This one fires on every settings save, not just a narrow push: the web
-// request struct (handler.go UpdateAPI) has no visibility_rules or
-// description_html member AT ALL, so those two keys are ALWAYS absent from
-// the wire — and UpdateTimeline assigned both unguarded, so every single
-// settings save (rename, recolor, re-icon, whatever) bound them to Go's
-// zero value and wrote it. canUserView() treats an absent VisibilityRules
-// as visible to everyone, so renaming a timeline scoped to three players
-// silently republished it to the whole campaign on the very next save.
+// Pins the timeline-settings half of the absent-means-preserve contract
+// (ADR-054): visibility_rules and description_html are always absent from
+// the settings-save wire struct, so UpdateTimeline must preserve them on
+// absence, never clear them — canUserView() treats an absent
+// VisibilityRules as visible to everyone, so clearing it would silently
+// republish a restricted timeline to the whole campaign.
 package timeline
 
 import (
@@ -74,12 +68,10 @@ func TestTimelineSettingsSave_PreservesDescriptionHTMLAndVisibilityRules(t *test
 	assertPtrEq(t, "Description", got.Description, want.Description)
 }
 
-// The three directions on VisibilityRules/DescriptionHTML: absent
-// preserves, present replaces, explicit null clears. Nothing on the
-// shipped web UI can reach "present"/"null" for these two (the settings
-// form's wire struct never carries them; the dedicated visibility endpoint
-// owns VisibilityRules) — this pins the SERVICE contract so a future
-// caller (or a hand-built request) gets the right behavior regardless.
+// Pins the service-level contract for VisibilityRules/DescriptionHTML:
+// absent preserves, present replaces, explicit null clears — regardless of
+// what the current web UI can reach, since the dedicated visibility
+// endpoint owns VisibilityRules.
 func TestTimeline_VisibilityRulesAndDescriptionHTML_ThreeDirections(t *testing.T) {
 	strp := func(s string) *string { return &s }
 	cases := []struct {

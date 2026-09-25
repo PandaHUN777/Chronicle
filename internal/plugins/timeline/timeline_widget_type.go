@@ -1,12 +1,10 @@
-// timeline_widget_type.go — registers "timeline" with the widget-binding
-// framework (C-WIDGET-BINDING-P2-WORLDSTATE-TIMELINE). A timeline's bindable
-// instance is a timeline record.
+// Registers "timeline" with the widget-binding framework. A timeline's
+// bindable instance is a timeline record.
 //
-// NOTE on the default: the entity-page `BlockTimeline` today renders a
-// campaign-level PREVIEW LIST (lazy /timelines/preview), not a single
-// timeline. So there is NO single default instance — DefaultInstance returns
-// (—, false), and the block keeps its list when unbound (today's behavior).
-// A binding makes the block render that one specific timeline instead.
+// The entity-page `BlockTimeline` renders a campaign-level preview list
+// (lazy /timelines/preview) when unbound, so there is no single default
+// instance: DefaultInstance returns (_, false). A binding makes the block
+// render one specific timeline instead.
 package timeline
 
 import (
@@ -75,17 +73,14 @@ func (w *timelineWidgetType) DefaultInstance(ctx context.Context, host widgetbin
 	return "", false, nil
 }
 
-// ListInstances returns the campaign's timelines for the create-or-pick UI
-// (C-WIDGET-BINDING-P4b), role-filtered via the service.
+// ListInstances returns the campaign's timelines for the create-or-pick UI,
+// role-filtered via the service.
 //
-// C-AUTHZ-EMPTY-USERID / ADR-049: this used to pass userID `""` and rely on the
-// filters reading that as "trusted system caller" — the same value an anonymous
-// HTTP request carries, which is how logged-out visitors were served restricted
-// rows elsewhere. The trust is unchanged and its BEHAVIOUR is unchanged (the
-// picker still lists allow-list-restricted timelines); it is now DECLARED with
-// permissions.SystemViewer, which no request-derived viewer can be. The trust
-// itself is justified the same way it always was: this surface is Scribe-gated
-// at the route and there is no per-request identity to filter by here.
+// Uses permissions.SystemViewer (ADR-049) rather than an empty userID, so
+// this trusted listing can never be confused with a request-derived
+// (possibly anonymous) viewer. The trust itself is justified because this
+// surface is Scribe-gated at the route and there is no per-request identity
+// to filter by here.
 func (w *timelineWidgetType) ListInstances(ctx context.Context, campaignID string, role int) ([]widgetbindings.InstanceRef, error) {
 	tls, err := w.svc.ListTimelines(ctx, campaignID, permissions.SystemViewer(role))
 	if err != nil {
@@ -113,10 +108,10 @@ func (w *timelineWidgetType) CreateInstance(ctx context.Context, campaignID stri
 	return t.ID, nil
 }
 
-// RenderBlock re-renders the entity timeline block for an in-place HTMX swap
-// (C-WIDGET-BINDING-P4b). The timeline-viz mount is a data-widget (boot.js
-// re-mounts it on htmx:afterSettle), so the swapped block self-fetches and
-// renders cleanly. Wrapped in BlockHost for the stable swap target.
+// RenderBlock re-renders the entity timeline block for an in-place HTMX
+// swap. The timeline-viz mount is a data-widget (boot.js re-mounts it on
+// htmx:afterSettle), so the swapped block self-fetches and renders cleanly.
+// Wrapped in BlockHost for the stable swap target.
 func (w *timelineWidgetType) RenderBlock(ctx context.Context, rc widgetbindings.BlockRenderContext) templ.Component {
 	isScribe := rc.Role >= int(campaigns.RoleScribe)
 	inner := BlockTimeline(rc.CC, rc.Resolution.InstanceID, rc.HostID, rc.Resolution.Source, isScribe)

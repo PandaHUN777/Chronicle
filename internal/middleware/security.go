@@ -19,14 +19,12 @@ func SecurityHeaders() echo.MiddlewareFunc {
 			// 'self' allows resources from the same origin only.
 			//
 			// SECURITY TRADEOFF: 'unsafe-inline' and 'unsafe-eval' are required by
-			// Alpine.js (x-* attribute expressions). This weakens XSS protection since
+			// Alpine.js (x-* attribute expressions), weakening XSS protection since
 			// inline scripts can execute. Mitigated by server-side HTML sanitization
-			// (bluemonday) on all user-generated content. Future improvement: migrate
-			// to nonce-based CSP or replace Alpine.js with a CSP-compatible alternative.
+			// (bluemonday) on all user-generated content.
 			//
-			// Google Fonts + Font Awesome CDN are explicitly allowed.
-			// All scripts are self-hosted (vendored). No external script CDNs needed.
 			// Google Fonts + Font Awesome CDN are explicitly allowed for fonts/styles.
+			// All scripts are self-hosted (vendored); no external script CDNs needed.
 			h.Set("Content-Security-Policy",
 				"default-src 'self'; "+
 					"script-src 'self' 'unsafe-inline' 'unsafe-eval'; "+
@@ -40,9 +38,8 @@ func SecurityHeaders() echo.MiddlewareFunc {
 			)
 
 			// Cross-Origin-Opener-Policy: isolate the browsing context from
-		// cross-origin popups. Mitigates Spectre-class side-channel attacks
-		// and XS-Leaks. Safe for same-origin self-hosted apps.
-		// NOTE: We do NOT set Cross-Origin-Resource-Policy because external
+		// cross-origin popups (mitigates Spectre-class side-channel attacks).
+		// NOTE: Cross-Origin-Resource-Policy is NOT set because external
 		// clients (Foundry VTT) make cross-origin API requests via CORS.
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 

@@ -13,15 +13,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// (FoundryPresenceLookup interface + foundryPresence field +
-// SetFoundryPresence setter + resolveFoundryPresence helper +
-// FoundryPresenceView type all removed in NW-2.2 Chunk D2-cleanup.
-// The map detail page lazy-loads /foundry-vtt/presence-pill-fragment
-// from foundry_vtt, which owns the presence-pill UI now. The maps
-// plugin no longer needs WS-hub presence access. The campaigns-side
-// FoundryPresenceLookup remains in place — that one backs the live
-// GET /campaigns/:id/foundry-presence diagnostic endpoint and is
-// not part of this cleanup.)
+// The map detail page lazy-loads /foundry-vtt/presence-pill-fragment from
+// foundry_vtt, which owns the presence-pill UI; this plugin has no WS-hub
+// presence access.
 
 // Handler processes HTTP requests for the maps plugin.
 type Handler struct {
@@ -198,8 +192,8 @@ func (h *Handler) UpdateMapAPI(c echo.Context) error {
 	}
 
 	// PARTIAL update: absent preserves, explicit null clears, a present
-	// value replaces (sweep R4 / ADR-054 #4). Before this, a rename-only
-	// PUT unlinked the map's image and wiped its description.
+	// value replaces (.ai/conventions.md). A rename-only PUT must not
+	// unlink the map's image or wipe its description.
 	var req struct {
 		Name        string              `json:"name"`
 		Description patch.Field[string] `json:"description"`
@@ -347,14 +341,13 @@ func (h *Handler) UpdateMarkerAPI(c echo.Context) error {
 	}
 
 	// PARTIAL update: absent preserves, explicit null clears, a present value
-	// replaces (sweep R4). The edit form and the drag-end PUT each send a
-	// subset, and before this every key they omitted was a WRITE — which is
-	// how a drag erased pin_category and per-player visibility_rules.
+	// replaces (.ai/conventions.md). The edit form and the drag-end PUT each
+	// send only a subset of fields.
 	//
-	// foundry_id is deliberately NOT a member here. A browser form has no
-	// business setting or clearing a sync pairing key; absent-preserve is
-	// what stops the web edit NULLing it, and syncapi keeps the ability to
-	// clear one by sending an explicit null.
+	// foundry_id is deliberately NOT a member here: a browser form has no
+	// business setting or clearing a sync pairing key. Absent-preserve stops
+	// the web edit from nulling it; syncapi still clears one via an explicit
+	// null.
 	var req struct {
 		Name              patch.Field[string]  `json:"name"`
 		Description       patch.Field[string]  `json:"description"`
@@ -422,8 +415,8 @@ func (h *Handler) DeleteMarkerAPI(c echo.Context) error {
 // GetMapMetaAPI returns the public-capable JSON the embeddable map widget needs
 // (image id + dimensions + visibility-filtered markers) so map-widget /
 // entity-map blocks render on public campaigns without the /api/v1 (Foundry /
-// API-key) path. cordinator#39 finding 4. Role/visibility filtering matches
-// ListMarkersAPI and is empty-userID safe (anonymous public visitors).
+// API-key) path. Role/visibility filtering matches ListMarkersAPI and is
+// empty-userID safe (anonymous public visitors).
 // GET /campaigns/:id/maps/:mid/meta
 func (h *Handler) GetMapMetaAPI(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
@@ -487,12 +480,12 @@ func (h *Handler) ListMarkersAPI(c echo.Context) error {
 	return c.JSON(http.StatusOK, markers)
 }
 
-// MarkerIconsAPI returns Chronicle's canonical map-marker icon vocabulary
-// (C-MAPS-EDITOR-PIN-AND-ICON-PARITY Part A). Chronicle is authoritative for
-// the icon set; this endpoint is the contract the Foundry sync module reads to
-// align its translation table, so the same icon ID renders the same concept on
-// both sides. Static catalog (no per-campaign state) but campaign-scoped +
-// Player-gated to match the rest of the maps API surface.
+// MarkerIconsAPI returns Chronicle's canonical map-marker icon vocabulary.
+// Chronicle is authoritative for the icon set; this endpoint is the contract
+// the Foundry sync module reads to align its translation table, so the same
+// icon ID renders the same concept on both sides. Static catalog (no
+// per-campaign state) but campaign-scoped + Player-gated to match the rest
+// of the maps API surface.
 func (h *Handler) MarkerIconsAPI(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"default": DefaultMarkerIcon,

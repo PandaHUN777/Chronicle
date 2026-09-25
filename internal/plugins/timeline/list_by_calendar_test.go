@@ -1,6 +1,6 @@
-// list_by_calendar_test.go — C-APPS-CAL-DASH-W1. The cross-plugin
-// "timelines for this calendar" read the Calendars dashboard consumes:
-// repo filter + the same role/visibility filtering as ListTimelines.
+// Pins the cross-plugin "timelines for this calendar" read the Calendars
+// dashboard consumes: repo filter plus the same role/visibility filtering
+// as ListTimelines.
 package timeline
 
 import (

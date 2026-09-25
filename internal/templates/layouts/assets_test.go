@@ -94,9 +94,8 @@ func TestRegisterAssetFS_RejectsNonStaticPrefixes(t *testing.T) {
 	}
 }
 
-// TestTemplatesUseAssetURL is the C-ASSET-VERSIONING contract test the dispatch
-// asks for: no .templ file may emit a bare /static/ URL. A single missed
-// conversion is exactly how the stale-asset class comes back.
+// TestTemplatesUseAssetURL pins that no .templ file may emit a bare /static/
+// URL — a single missed conversion reintroduces stale-asset caching.
 func TestTemplatesUseAssetURL(t *testing.T) {
 	root := repoRoot(t)
 	var offenders []string

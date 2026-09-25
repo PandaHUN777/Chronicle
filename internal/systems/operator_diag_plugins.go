@@ -3,28 +3,19 @@
 // host.assets/host.embedded say which BYTES it serves; these two say which
 // PLUGINS that binary registered and which WIDGET assets it is serving.
 //
-// WHY it exists. The operator's actual words on 2026-08-11 were "calendar (and
-// other widget) versions" — and Chronicle could not answer that question in any
-// form. It could fingerprint every installed system PACKAGE down to the sha256
-// of each served file, and could say nothing at all about its own widgets or
-// its own plugins.
-//
-// Two things about that question have to be said out loud rather than assumed,
-// because guessing at either one is how the original hour was lost:
+// Two things about widget versioning have to be said out loud:
 //
 //   - **Widgets have no version number.** Nothing declares one, nothing stores
 //     one, and there is no server-side widget registry to consult: a widget is a
 //     JS file that registers itself with boot.js when the browser mounts a
-//     `data-widget` element. So the honest answer to "what version is the
-//     calendar widget?" is a CONTENT FINGERPRINT plus a build time, and this
-//     file says so in the Desc rather than inventing a number that would look
-//     authoritative and mean nothing.
+//     `data-widget` element. So the honest answer to "what version is this
+//     widget?" is a CONTENT FINGERPRINT plus a build time, and this file says
+//     so in the Desc rather than inventing a number that would mean nothing.
 //
-//   - **Widget assets live in two unrelated places**, and the calendar widget in
-//     particular lives only in the one a shell cannot see. `static/js/widgets/`
-//     is on disk; each plugin's `js/` is `//go:embed`-ed into the executable.
-//     Grepping the container filesystem for the calendar widget returns nothing
-//     and always will. That empty grep was read as missing code once already.
+//   - **Widget assets live in two unrelated places.** `static/js/widgets/` is
+//     on disk; each plugin's `js/` is `//go:embed`-ed into the executable, so
+//     grepping the container filesystem for a plugin widget can return
+//     nothing while it is still served.
 //
 // And "is this plugin even loaded?" has a trap of its own: Chronicle has no
 // plugin LOADER. Every plugin is compiled in and its routes are registered

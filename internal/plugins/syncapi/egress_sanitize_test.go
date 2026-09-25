@@ -1,10 +1,9 @@
-// Tests for the egress sanitize helpers. Each helper takes the
-// model the corresponding /api/v1/* GET handler returns, with a
-// polluted HTML field, and is expected to strip dangerous content
-// before serialization. Mirrors the dispatch's per-handler
-// polluted-DB-row test: load malicious HTML into the model, run the
-// helper, assert no script tag remains. Encoded via json.Marshal to
-// match the on-the-wire shape clients see.
+// Tests for the egress sanitize helpers. Each helper takes the model the
+// corresponding /api/v1/* GET handler returns, with a polluted HTML field,
+// and is expected to strip dangerous content before serialization: load
+// malicious HTML into the model, run the helper, assert no script tag
+// remains. Encoded via json.Marshal to match the on-the-wire shape clients
+// see.
 package syncapi
 
 import (
@@ -104,12 +103,9 @@ func TestSanitizeEntityHTMLForEgress_NilSafe(t *testing.T) {
 	}
 }
 
-// TestSanitizeEntityHTMLForEgress_DoesNotMutateOriginalString proves
-// the sanitize.HTMLPtr contract: the original *string's referent is
-// not edited. The egress helper hands back a fresh pointer to a
-// fresh string. Matters because the DB-fresh model could be re-
-// referenced upstream (caching, downstream handler chaining); only
-// the response copy should change.
+// TestSanitizeEntityHTMLForEgress_DoesNotMutateOriginalString pins the
+// sanitize.HTMLPtr contract: the original *string's referent is not
+// edited, only a fresh pointer to a fresh string is returned.
 func TestSanitizeEntityHTMLForEgress_DoesNotMutateOriginalString(t *testing.T) {
 	original := polluted
 	e := &entities.Entity{EntryHTML: &original}
@@ -160,7 +156,7 @@ func TestSanitizeNoteHTMLForEgress_NilSafe(t *testing.T) {
 // the sanitizers and the handlers; TestEgressSanitize_HandlersInvokeHelpers
 // below fires the moment the handlers stop being placeholders.
 
-// --- inline-secret redaction (P0: DM-secret egress) ---
+// --- inline-secret redaction (DM-secret egress) ---
 
 // secretHTML is a representative rendered-HTML payload carrying an
 // inline GM secret span alongside player-visible prose. StripSecretsHTML
@@ -314,18 +310,13 @@ func derefForTest(p *string) string {
 	return *p
 }
 
-// TestEntityEgress_SanitizeThenStrip_OrderingSafe pins the load-bearing
-// interaction between the two egress transforms the entity handlers run
-// in sequence: the role-agnostic XSS sanitize (sanitizeEntityHTMLForEgress)
-// FIRST, then the role-aware secret strip (stripEntitySecretsForEgress).
-//
-// The risk: if bluemonday stripped the data-secret attribute, the
-// subsequent StripSecretsHTML regex (which matches <span data-secret>)
-// would no longer fire and the secret PROSE would ship. The sanitize
-// policy deliberately allow-lists data-secret on <span> exactly so the
-// downstream strip can find it. This test runs the handler's two-step
-// order and proves a below-bar caller still gets no secret, while the
-// surrounding public prose survives.
+// TestEntityEgress_SanitizeThenStrip_OrderingSafe pins the required order:
+// the role-agnostic XSS sanitize (sanitizeEntityHTMLForEgress) FIRST, then
+// the role-aware secret strip (stripEntitySecretsForEgress). If bluemonday
+// stripped the data-secret attribute, the subsequent StripSecretsHTML
+// regex (which matches <span data-secret>) would no longer fire and the
+// secret PROSE would ship — the sanitize policy deliberately allow-lists
+// data-secret on <span> so the downstream strip can find it.
 func TestEntityEgress_SanitizeThenStrip_OrderingSafe(t *testing.T) {
 	e := newSecretEntity()
 	// Same order the handler applies them.
@@ -340,23 +331,12 @@ func TestEntityEgress_SanitizeThenStrip_OrderingSafe(t *testing.T) {
 	}
 }
 
-// TestEgressSanitize_HandlersInvokeHelpers is the load-bearing
-// structural pin: every /api/v1/* GET handler that emits HTML must
-// call the corresponding sanitize-for-egress helper inside its
-// function body. Walks the handler file's AST to find the named
-// handler method and asserts the helper identifier appears in its
-// body.
-//
-// Why a structural test instead of a wired-up integration test:
-// stubbing the full EntityService / NoteService / CalendarService
-// interface surface (30+ methods each) for one egress assertion is
-// disproportionate. The egress helper itself is unit-tested above;
-// this pins the wiring at the handler.
-//
-// Failure mode this catches: a future refactor that drops the
-// helper call from a handler (or adds a new HTML-emitting handler
-// without wiring the helper). Update the case table below when a
-// new HTML-emitting GET handler lands on /api/v1/*.
+// TestEgressSanitize_HandlersInvokeHelpers pins that every /api/v1/* GET
+// handler that emits HTML calls the corresponding sanitize-for-egress
+// helper. Walks the handler file's AST rather than standing up the full
+// EntityService / NoteService / CalendarService interfaces (30+ methods
+// each) for one egress assertion. Update the case table below when a new
+// HTML-emitting GET handler lands on /api/v1/*.
 func TestEgressSanitize_HandlersInvokeHelpers(t *testing.T) {
 	cases := []struct {
 		file       string
@@ -365,21 +345,18 @@ func TestEgressSanitize_HandlersInvokeHelpers(t *testing.T) {
 	}{
 		{"api_handler.go", "GetEntity", "sanitizeEntityHTMLForEgress"},
 		{"api_handler.go", "ListEntities", "sanitizeEntitiesHTMLForEgress"},
-		// P0 DM-secret egress redaction (C-SYNCAPI-PRELAUNCH-HARDENING):
-		// the entity read handlers must ALSO invoke the role-aware
-		// secret stripper, or a player-role caller reads raw GM prose.
+		// The entity read handlers must ALSO invoke the role-aware secret
+		// stripper, or a player-role caller reads raw GM prose.
 		{"api_handler.go", "GetEntity", "stripEntitySecretsForEgress"},
 		{"api_handler.go", "ListEntities", "stripEntitiesSecretsForEgress"},
 		{"note_api_handler.go", "GetNote", "sanitizeNoteHTMLForEgress"},
 		{"note_api_handler.go", "ListNotes", "sanitizeNotesHTMLForEgress"},
 	}
-	// CALV5-PLACEHOLDER: the two calendar cases —
+	// CALV5-PLACEHOLDER: V5 must restore the two calendar cases —
 	//   {"calendar_api_handler.go", "GetEvent",   "sanitizeCalendarEventHTMLForEgress"}
 	//   {"calendar_api_handler.go", "ListEvents", "sanitizeCalendarEventsHTMLForEgress"}
-	// — are lifted out while those handlers answer 503 and emit no HTML. The
-	// sub-test below pins that placeholder state so the pair comes BACK the
-	// moment real handlers do: restoring an HTML-emitting calendar read without
-	// its egress sanitizer is exactly the regression this table exists to stop.
+	// — to the table above, in the same change that gives those handlers real
+	// bodies; the sub-test below pins the placeholder state until then.
 	t.Run("calendar handlers are still placeholders", func(t *testing.T) {
 		for _, fn := range []string{"GetEvent", "ListEvents"} {
 			body := readHandlerBody(t, "calendar_api_handler.go", fn)

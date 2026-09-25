@@ -110,19 +110,11 @@ func NewInternal(err error) *AppError {
 	}
 }
 
-// NewInternalMessage is NewInternal with a message the caller writes.
-//
-// NewInternal's "An unexpected error occurred" is honest and useless in a toast:
-// the user learns only that SOMETHING failed, not which of their actions did not
-// take effect. Where the failing operation is known and naming it leaks nothing
-// (a preference that could not be saved, a job that could not be queued), say
-// so — a control that reports its own failure is a control the user can retry,
-// and one that reports nothing reads as an inert control, which is how a real
-// 500 spent months looking like a dead switch.
+// NewInternalMessage is NewInternal with a caller-supplied message, for when
+// naming the failing operation helps the user retry without leaking internals.
 //
 // The message must stay user-safe: no table names, no query text, no driver
-// output. The real error travels in Internal for the log, exactly as with
-// NewInternal, and is never rendered.
+// output. The real error travels in Internal for the log and is never rendered.
 func NewInternalMessage(message string, err error) *AppError {
 	return &AppError{
 		Code:     http.StatusInternalServerError,

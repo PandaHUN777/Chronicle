@@ -56,11 +56,9 @@ func (v ViewerContext) CanSeeDMScribe() bool {
 	return v.IsOwner || v.IsScribe || v.IsDMGranted
 }
 
-// CanSeeDMOnly reports whether the viewer's role/grants admit
-// `dm_only` notes. Scribe alone does NOT qualify — you have to be
-// the Owner or be explicitly DM-granted. Per the docstring on
-// campaigns.IsDmGranted, the flag's whole purpose is "dm_only
-// visibility without role promotion."
+// CanSeeDMOnly reports whether the viewer's role/grants admit `dm_only`
+// notes. Scribe alone does not qualify — must be the Owner or explicitly
+// DM-granted.
 func (v ViewerContext) CanSeeDMOnly() bool {
 	return v.IsOwner || v.IsDMGranted
 }
@@ -69,19 +67,15 @@ const noteColumns = `id, entity_id, campaign_id, author_user_id, audience,
 	shared_with, title, body, body_html, pinned, created_at, updated_at`
 
 // noteACLFilter is the WHERE-fragment that enforces audience visibility.
-// Five parameters follow whatever WHERE prefix the caller provides:
-//   1. viewer's user_id (matches author_user_id for "own notes" branch)
-//   2. viewer's user_id (matches JSON_CONTAINS for `custom` audience)
-//   3. viewer.CanSeeDMScribe() boolean
-//   4. viewer.CanSeeDMOnly()   boolean
+// Four parameters follow whatever WHERE prefix the caller provides:
+//  1. viewer's user_id (matches author_user_id for "own notes" branch)
+//  2. viewer's user_id (matches JSON_CONTAINS for `custom` audience)
+//  3. viewer.CanSeeDMScribe() boolean
+//  4. viewer.CanSeeDMOnly()   boolean
 //
-// The order matters — read it once, then never reorder without updating
-// every call site. The pure-Go mirror NotePassesACL pins the same logic
-// in service_test.go so a regression in EITHER the SQL or the Go code
-// (someone editing this filter without updating the helper, or vice
-// versa) can be caught by `go test`. Without that mirror, the headline
-// privacy invariant ("Owner cannot read another user's private note")
-// has no automated test — manual MariaDB checks don't survive refactors.
+// The order matters — never reorder without updating every call site. Its
+// pure-Go mirror, NotePassesACL, pins the same logic so a regression in
+// either the SQL or the Go code is caught by `go test`.
 const noteACLFilter = `(
     author_user_id = ?
     OR audience = 'everyone'
@@ -90,15 +84,11 @@ const noteACLFilter = `(
     OR (audience = 'dm_only'   AND ?)
 )`
 
-// NotePassesACL is the pure-Go mirror of noteACLFilter. The repo's SQL
-// is the production filter; this function exists so tests can exercise
-// the audience matrix in process. The two MUST stay in lockstep — any
-// change to the SQL must be reflected here, and vice versa.
-//
-// Used by service_test.go's full audience×viewer matrix. If you're
-// reading this because a security review caught a leak, check that
-// the SQL and this function still tell the same story for every
-// (audience, author, viewer-flags) combination.
+// NotePassesACL is the pure-Go mirror of noteACLFilter. The repo's SQL is
+// the production filter; this exists so tests can exercise the audience
+// matrix in process. The two must stay in lockstep — any change to the SQL
+// must be reflected here, and vice versa (see service_test.go's full
+// audience×viewer matrix).
 func NotePassesACL(note *Note, viewer ViewerContext) bool {
 	if note == nil {
 		return false

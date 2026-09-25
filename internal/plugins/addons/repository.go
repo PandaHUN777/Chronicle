@@ -31,13 +31,10 @@ type AddonRepository interface {
 	DisableForCampaign(ctx context.Context, campaignID string, addonID int) error
 	IsEnabledForCampaign(ctx context.Context, campaignID string, addonSlug string) (bool, error)
 	// HasCampaignAddonRecord reports whether a campaign_addons row exists for
-	// this campaign + addon slug REGARDLESS of its enabled value — i.e.
-	// "has anyone ever made a decision about this addon for this campaign?".
-	// IsEnabledForCampaign cannot answer that: it returns false both for
-	// "never configured" and for "explicitly switched off", and a backfill
-	// that cannot tell those apart would keep resurrecting a toggle the
-	// owner deliberately turned off. See ReconcileAddonEnablement in the
-	// syncapi plugin, the only caller today.
+	// this campaign + addon slug regardless of enabled value. Unlike
+	// IsEnabledForCampaign, it distinguishes "never configured" from
+	// "explicitly switched off", so a backfill (see ReconcileAddonEnablement
+	// in syncapi) does not resurrect a toggle the owner turned off.
 	HasCampaignAddonRecord(ctx context.Context, campaignID string, addonSlug string) (bool, error)
 	CountCampaignsUsingAddon(ctx context.Context, addonSlug string) (int, error)
 	// ListCampaignsUsingAddon returns the IDs of every campaign that has the
@@ -166,20 +163,14 @@ func (r *addonRepository) Create(ctx context.Context, addon *Addon) error {
 	return nil
 }
 
-// Upsert inserts a new addon or updates an existing one matched by slug.
-// Used during startup to register all built-in addons without requiring
-// separate SQL migrations for each addon.
+// Upsert inserts a new addon or updates an existing one matched by slug, used
+// at startup to register built-in addons without a migration per addon.
 //
-// `status` IS included in the UPDATE clause because the in-code definition
-// (builtinAddons in service.go) is the source of truth — when an addon flips
-// from StatusPlanned to StatusActive in a release, the next deploy MUST
-// propagate that to the DB. Without `status` in the update list, existing
-// rows kept their old status forever and EnableForCampaign rejected with
-// "only active addons can be enabled" — silently breaking the addon for
-// any campaign that tried to enable it post-flip.
-//
-// `category` is also included so a corrected category (e.g., a widget that
-// was mis-seeded as a plugin) propagates the same way.
+// `status` and `category` are included in the UPDATE clause because
+// builtinAddons (service.go) is the source of truth for them — without
+// `status` in particular, a row that flips from StatusPlanned to StatusActive
+// in code would keep its stale DB status and EnableForCampaign would reject
+// it as not-yet-active.
 func (r *addonRepository) Upsert(ctx context.Context, addon *Addon) error {
 	query := `INSERT INTO addons (slug, name, description, version, category, status, icon, author)
 	          VALUES (?, ?, ?, ?, ?, ?, ?, ?)

@@ -14,18 +14,12 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/widgets/notes"
 )
 
-// --- note ownership regression (syncapi IDOR) ---
+// --- note ownership (syncapi IDOR gate) ---
 //
-// GET/PUT/DELETE /api/v1/campaigns/:id/notes/:noteID address a note by its ID.
-// The middleware chain (RequireAuthOrAPIKey -> RequireCampaignMatch ->
-// RequirePermission) only proves the caller is a member of the campaign in the
-// URL holding the role-derived read/write permission; it knows nothing about
-// who owns the note. The notes service and repository address the single
-// resource by bare `WHERE id = ?` with no user predicate at any layer, so the
-// handler is the only ownership gate. Before the fix these three handlers
-// checked campaign membership of the note and stopped there, so any member read
-// any other member's private journal and any Scribe overwrote or deleted it —
-// while the web routes over the identical caller population 404 both callers.
+// GET/PUT/DELETE /api/v1/campaigns/:id/notes/:noteID address a note by ID.
+// The middleware chain only proves campaign membership; the notes service and
+// repository address the resource by bare `WHERE id = ?` with no user
+// predicate at any layer, so the handler is the only ownership gate.
 //
 // These tests pin the gate: a non-owner must 404 on an unshared note and must
 // not reach the service, the owner and share recipients keep working, and a

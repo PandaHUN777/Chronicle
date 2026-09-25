@@ -1,21 +1,8 @@
-// ai_workspace_prompt_route_test.go pins the owner-only access
-// control on GET /campaigns/:id/ai-workspace/prompt/generate via
-// AST inspection.
-//
-// Companion to ai_export_route_test.go — same shape, different
-// route. Both routes live inside the ai_workspace plugin's
-// RegisterOwnerRoutes, mounted with the requireOwner middleware
-// parameter (which app/routes.go constructs as
-// campaigns.RequireRole(campaigns.RoleOwner)).
-//
-// A future refactor that silently drops the gate would expose the
-// prompt builder — which can include DM-only campaign content in
-// Permitted/Everything modes — to non-owner roles. This pin catches
-// the regression.
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §5 acceptance invariants (owner-scoped).
+// ai_workspace_prompt_route_test.go pins the owner-only access control on
+// GET /campaigns/:id/ai-workspace/prompt/generate via AST inspection. The
+// prompt builder can include DM-only campaign content in Permitted/
+// Everything modes, so a silently dropped gate would expose it to
+// non-owner roles.
 
 package wire
 

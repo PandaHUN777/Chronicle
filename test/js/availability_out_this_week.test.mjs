@@ -1,5 +1,5 @@
-// availability_out_this_week.test.mjs — C-SCHED-OUT-THIS-WEEK: the one-click
-// "Out this week ✈" quick action on the player's own availability view.
+// availability_out_this_week.test.mjs — the one-click "Out this week ✈" quick
+// action on the player's own availability view.
 //
 // Covers: firing writes exactly the 7 dates of the current real week as
 // full-day 'unavailable' exceptions; a date that already carries a

@@ -112,29 +112,18 @@ func (r *timelineRepo) GetByID(ctx context.Context, id string) (*Timeline, error
 // List returns all timelines for a campaign, filtered by role-based visibility.
 // Owners see dm_only timelines; others see only 'everyone'.
 //
-// EventCount visibility (C-CALV4-TIEFIX-PB Bug 2, PARTIAL FIX): the two COUNT
-// subqueries used to be unconditional, so a player could see e.g. "12 events"
-// from this list while ListEventLinks/ListStandaloneEvents (the actual row
-// reads) returned only 9 — the difference being the number of hidden events,
-// a count that differences into knowledge the player shouldn't have. Folding
-// the SAME dm_only visibility predicate those two methods already apply
-// (linkedEventVisFilter mirrors ListEventLinks' `ce.visibility` fragment;
-// standaloneVisFilter mirrors ListStandaloneEvents' `te.visibility` fragment)
-// into these subqueries closes that delta.
+// EventCount visibility: the two COUNT subqueries apply the same dm_only
+// visibility predicate ListEventLinks/ListStandaloneEvents apply on the row
+// path (linkedEventVisFilter mirrors `ce.visibility`; standaloneVisFilter
+// mirrors `te.visibility`), including the link-level visibility_override —
+// COALESCE(NULLIF(tel.visibility_override, ''), ce.visibility) mirrors
+// EventLink.EffectiveVisibility() — so a hidden event's count can't leak
+// through even when its row is filtered out.
 //
-// C-CALV4-SEAM-P5 §7: the linked fragment ALSO folds in the link-level
-// visibility_override — COALESCE(NULLIF(tel.visibility_override, ''),
-// ce.visibility) is the SQL mirror of EventLink.EffectiveVisibility(), which
-// the service's ListTimelineEvents enforces on the row path. Without it a
-// link the GM overrode to dm_only was hidden from a player's rows but still
-// counted: the same oracle, one column over.
-//
-// It does NOT close the delta entirely: links/events carrying
-// visibility_rules ({allowed_users, denied_users}) are resolved in Go by
-// canUserView (service.go's ListTimelineEvents), which SQL cannot see, so a
-// residual difference survives for those. Do not describe this as closing
-// the oracle — only the dm_only deltas (event visibility + link override)
-// are closed.
+// This does NOT close the gap for per-user visibility_rules (allowed_users/
+// denied_users): those are resolved in Go by canUserView (service.go's
+// ListTimelineEvents), which SQL cannot see, so a residual count difference
+// can still survive for those.
 func (r *timelineRepo) List(ctx context.Context, campaignID string, role int) ([]Timeline, error) {
 	// CALV5-PLACEHOLDER: linkedEventVisFilter (the `ce.visibility` +
 	// visibility_override fragment) went with the calendar_events join; V5
@@ -176,14 +165,12 @@ func (r *timelineRepo) List(ctx context.Context, campaignID string, role int) ([
 }
 
 // ListByCalendar returns the timelines bound to a specific calendar
-// (timelines.calendar_id), role-filtered like List. Backs the cross-plugin
-// "timelines for this calendar" read the Calendars dashboard consumes via a
-// service interface (C-APPS-CAL-DASH-W1) — no new columns, no migration.
+// (timelines.calendar_id), role-filtered like List, and backs the
+// cross-plugin "timelines for this calendar" read the Calendars dashboard
+// consumes via a service interface.
 //
-// EventCount visibility: same PARTIAL fix as List above (C-CALV4-TIEFIX-PB
-// Bug 2 + the C-CALV4-SEAM-P5 §7 visibility_override fold-in) — see that
-// function's doc comment for the full rationale and the residual
-// visibility_rules gap that is NOT closed by this change.
+// EventCount visibility uses the same partial fix as List (see its doc
+// comment): the residual visibility_rules gap is not closed here either.
 func (r *timelineRepo) ListByCalendar(ctx context.Context, calendarID string, role int) ([]Timeline, error) {
 	// CALV5-PLACEHOLDER: linkedEventVisFilter (the `ce.visibility` +
 	// visibility_override fragment) went with the calendar_events join; V5
@@ -247,17 +234,12 @@ func (r *timelineRepo) Delete(ctx context.Context, id string) error {
 // --- Search ---
 
 // Search returns timelines matching a name query, filtered by role-based
-// (dm_only) visibility ONLY — the same SQL-expressible half List narrows on
-// (see List's doc comment). It does NOT and cannot apply the per-user
-// visibility_rules allow/deny list; that requires the row's parsed rules and
-// the caller's user id, neither of which SQL can decide. The caller
-// (service.go's SearchTimelines) is responsible for running the result
-// through filterTimelinesByUser afterward, exactly as ListTimelines does for
-// List — it used not to (2026-09-12 audit finding 4 follow-up), which let a
-// restricted timeline's NAME reach a viewer the allow-list excludes, down to
-// an anonymous one. Do not "fix" that here by hand-rolling the allow/deny
-// check into SQL: it is already implemented once, in canUserView, and ADR-058
-// is exactly the rule against a second copy.
+// (dm_only) visibility only — it cannot apply the per-user visibility_rules
+// allow/deny list, which needs the row's parsed rules plus the caller's user
+// id. The caller (service.go's SearchTimelines) MUST run the result through
+// filterTimelinesByUser afterward, exactly as ListTimelines does for List.
+// Do not hand-roll the allow/deny check into SQL: it is already implemented
+// once, in canUserView, and ADR-058 is the rule against a second copy.
 func (r *timelineRepo) Search(ctx context.Context, campaignID, query string, role int) ([]Timeline, error) {
 	visFilter := "AND t.visibility = 'everyone'"
 	if permissions.CanSeeDmOnly(role) {
@@ -297,27 +279,16 @@ func (r *timelineRepo) Search(ctx context.Context, campaignID, query string, rol
 // --- Event Links ---
 
 // CALV5-PLACEHOLDER: the event-link read path is dark while the calendar is
-// rebuilt (V5). What stood here: eventLinkCols / eventLinkJoins / scanEventLink
-// and a ListEventLinks that SELECTed ce.name, ce.year, ce.month, ce.day,
-// ce.category, ce.visibility and ce.entity_id through
-// `JOIN calendar_events ce ON ce.id = tel.event_id`, ordered by the event's
-// in-world date and role-filtered on ce.visibility (folding in
-// tel.visibility_override via EffectiveVisibility).
-//
-// It is dark rather than merely empty because that JOIN was a direct read of
-// another plugin's table — Chronicle rule 8 — and the calendar tables are
-// dropped, so the query would fail at RUNTIME (not compile time) with the
-// caller free to swallow it. Returning no links, honestly, is the safe state.
-//
-// V5 restores this through a calendar SERVICE INTERFACE, never a JOIN: the
-// calendar plugin exposes "events by id, role-filtered" and this repository
-// asks for them. Until then timeline shows standalone events only and says so.
+// rebuilt. Returning no links (rather than joining a dropped calendar table)
+// is the safe state. V5 must restore this through a calendar service
+// interface, not a direct cross-plugin join; until then timeline shows
+// standalone events only.
 
 // ListEventLinks returns the timeline's calendar-event links.
 //
-// CALV5-PLACEHOLDER: always returns none — see the note above. The signature,
-// the role parameter and every caller are left intact so V5 re-attaches here
-// without touching the service or the handler.
+// CALV5-PLACEHOLDER: always returns none. The signature, the role parameter
+// and every caller are left intact so V5 re-attaches here without touching
+// the service or the handler.
 func (r *timelineRepo) ListEventLinks(ctx context.Context, timelineID string, role int) ([]EventLink, error) {
 	_ = ctx
 	_ = timelineID

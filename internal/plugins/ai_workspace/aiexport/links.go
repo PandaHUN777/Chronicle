@@ -39,15 +39,10 @@ func slugify(name string) string {
 	return strings.TrimRight(b.String(), "-")
 }
 
-// wikilink renders a "[Name](#slug)" reference. Used for cross-entity
-// links inside relations / session linked-entities / calendar event
-// entity links / timeline event entity links. The fragment is
-// document-local so it resolves inside the single-file export the
-// owner pastes into Claude/ChatGPT.
-//
-// In a future v2 zip-with-INDEX mode, the resolver would map to
-// `entities.md#slug` rather than `#slug`; deferred per the scoping
-// report §3.5.
+// wikilink renders a "[Name](#slug)" reference for cross-entity links. The
+// fragment is document-local so it resolves inside the single-file export
+// the owner pastes into an AI chat. A future zip-with-index export mode
+// would need this to resolve to `entities.md#slug` instead.
 func wikilink(name string) string {
 	if name == "" {
 		return ""

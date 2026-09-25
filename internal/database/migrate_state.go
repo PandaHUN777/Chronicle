@@ -1,11 +1,11 @@
 package database
 
 // migrate_state.go holds the migration-state helpers and the boot-time
-// orchestration that makes migrating robust for self-hosters: it backs up only
-// when a migration is actually pending, and it tolerates a database that is
-// AHEAD of this build's migration set (a downgrade/rollback, or an
-// accidentally-deleted-but-applied migration) by logging and continuing instead
-// of crash-looping. See ADR-044 + the 000030 incident.
+// orchestration that makes migrating robust for self-hosters: it backs up
+// only when a migration is actually pending, and it tolerates a database
+// that is AHEAD of this build's migration set (a rollback, or an
+// accidentally-deleted-but-applied migration) by logging and continuing
+// instead of crash-looping. See ADR-044.
 
 import (
 	"database/sql"
@@ -53,12 +53,11 @@ func HighestSourceVersion(migrationsPath string) (uint, error) {
 }
 
 // DBMigrationVersion reads the current migration version + dirty flag from
-// schema_migrations. Returns (0, false, nil) when the table is empty. It reads
-// cleanly even when the on-disk migration file for that version is missing —
-// that property is exactly what lets MigrateWithBackup detect a DB-ahead state
-// BEFORE golang-migrate's Up() would hard-error on it. A genuine query failure
-// (e.g. the table doesn't exist yet on a brand-new DB) is returned as an error
-// for the caller to interpret.
+// schema_migrations. Returns (0, false, nil) when the table is empty. It
+// reads cleanly even when the on-disk migration file for that version is
+// missing, which lets MigrateWithBackup detect a DB-ahead state before
+// golang-migrate's Up() would hard-error on it. A genuine query failure
+// (e.g. the table doesn't exist yet) is returned as an error.
 func DBMigrationVersion(db *sql.DB) (version uint, dirty bool, err error) {
 	if db == nil {
 		return 0, false, nil
@@ -78,23 +77,17 @@ func DBMigrationVersion(db *sql.DB) (version uint, dirty bool, err error) {
 	return uint(v.Int64), d.Bool, nil
 }
 
-// MigrateWithBackup is the boot-time migration orchestration. It computes the
-// DB version and the highest available migration ONCE and then:
+// MigrateWithBackup is the boot-time migration orchestration. It computes
+// the DB version and the highest available migration once and then:
 //
-//   - DB AHEAD of code (dbVer > srcMax): logs a loud, actionable warning and
-//     starts ANYWAY (skips both backup and Up()). golang-migrate's Up() would
-//     otherwise hard-error ("no migration found for version N"); since
-//     migrations are additive, an older binary runs fine on a newer schema. The
-//     startup health checks backstop the rare destructive-rollback edge. This is
-//     the fix for the 000030 crash-loop and for ordinary image rollbacks.
-//   - Up to date (dbVer == srcMax, not dirty): skips BOTH the backup and Up().
-//     A backup's purpose is to capture state before a schema change; with
-//     nothing pending there is nothing to protect. This stops the
-//     backup-on-every-restart storm.
+//   - DB AHEAD of code (dbVer > srcMax): logs an actionable warning and
+//     starts anyway (skips both backup and Up()), since migrations are
+//     additive and an older binary runs fine on a newer schema. Startup
+//     health checks backstop the rare destructive-rollback edge.
+//   - Up to date (dbVer == srcMax, not dirty): skips both backup and Up() —
+//     nothing pending, nothing to protect.
 //   - Pending (or dirty): runs the pre-migration backup, then RunMigrations.
 //
-// It replaces the previous unconditional "PreMigrationBackup then RunMigrations"
-// boot sequence.
 // The bool reports whether a backup was actually captured on this call, so
 // the plugin-migration backup gate in main.go can skip a redundant second
 // snapshot when the core path already took one this boot.

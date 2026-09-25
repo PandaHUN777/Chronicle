@@ -1,18 +1,13 @@
 // widget_mount_unmatched_warning.test.mjs — contract for boot.js's
 // unmatched-widget diagnostic (warnUnmatchedWidgets / scheduleUnmatchedWidgetScan).
 //
-// Regression guard for C-SWEEP-R3 "dead widget mounts never loaded". boot.js
-// mounts a widget by looking its data-widget name up in the registry that
-// Chronicle.register() fills, and mountElement() bails SILENTLY on a miss —
-// legitimately, because registration races the scan. The cost of that silence
-// is that "this widget has not registered YET" and "this widget's JS file is
-// shipped on no page in the product" have the identical observable: an empty
-// div, an empty console, and a page that looks finished. Three real widgets
-// (aliases, inventory, transaction_log) sat permanently blank on entity pages
-// that way — full backend, full REST routes, full widget JS, in no <script src>
-// anywhere — and nothing ever said a word.
+// boot.js mounts a widget by looking its data-widget name up in the registry
+// Chronicle.register() fills, and mountElement() bails silently on a miss
+// (legitimately, since registration races the scan) — so a widget that never
+// registers at all (dead mount, missing <script src>) looks identical to one
+// still loading: an empty div, an empty console.
 //
-// The fix keeps the silent bail during mounting and adds ONE console.warn per
+// The fix keeps the silent bail during mounting and adds one console.warn per
 // unmatched name, emitted only after the load has settled (a setTimeout(…, 0)
 // after DOMContentLoaded / htmx:afterSettle), so a widget that registers later
 // in document order is counted as present rather than reported as missing.

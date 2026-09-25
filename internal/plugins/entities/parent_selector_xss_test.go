@@ -1,10 +1,10 @@
-// parent_selector_xss_test.go — regression pin for C-SEC-XSS-JSATTR-SWEEP-R1
-// sink 1: a parent entity's free-text Name flowed verbatim into the
-// parentSelector Alpine `x-data` expression (`selectedName: '%s'`), so any
-// member who could rename an entity to `');<payload>//` and set it as another
-// entity's parent planted stored JS that executed in the edit form of every
-// member who opened the child. The fix routes the name through the entities
-// plugin's jsEsc helper at the sink.
+// parent_selector_xss_test.go pins that a parent entity's free-text Name is
+// escaped before it flows into the parentSelector Alpine `x-data` expression
+// (`selectedName: '%s'`) — unescaped, a member could rename an entity to
+// `');<payload>//`, set it as another entity's parent, and plant stored JS
+// that executes in the edit form of every member who opens the child. The
+// fix routes the name through the entities plugin's jsEsc helper at the
+// sink.
 //
 // Why the assertions look the way they do: templ HTML-escapes the attribute
 // value with html.EscapeString, so every `'` renders as `&#39;` and the

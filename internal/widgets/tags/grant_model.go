@@ -2,11 +2,11 @@ package tags
 
 import "time"
 
-// TagPermission is a visibility grant carried by a tag (C-PERM-W1-TAG-GRANTS).
-// An entity bearing a tag that has grants becomes visible to the grant's
-// subjects EVEN IF it would otherwise be hidden (dm_only / custom-without-you).
-// Grants are additive only — a tag can widen visibility, never narrow it.
-// Untag the entity or revoke the grant and the entity re-hides.
+// TagPermission is a visibility grant carried by a tag. An entity bearing a
+// tag that has grants becomes visible to the grant's subjects even if it
+// would otherwise be hidden (dm_only / custom-without-you). Grants are
+// additive only — a tag can widen visibility, never narrow it. Untag the
+// entity or revoke the grant and the entity re-hides.
 type TagPermission struct {
 	ID          int       `json:"id"`
 	TagID       int       `json:"tagId"`
@@ -16,10 +16,9 @@ type TagPermission struct {
 	CreatedAt   time.Time `json:"createdAt"`
 }
 
-// Grant subject types. These deliberately mirror the entities plugin's
-// entity_permissions subject vocabulary so the visibility filter treats both
-// grant tables identically. 'custom_role' is intentionally absent (W2 adds it
-// additively, both in the ENUM and here).
+// Grant subject types. These mirror the entities plugin's entity_permissions
+// subject vocabulary so the visibility filter treats both grant tables
+// identically.
 const (
 	// SubjectRole grants the tag's entities to all members at or above a role
 	// level (subject_id is the role int as text: "1"=Player, "2"=Scribe).
@@ -30,9 +29,8 @@ const (
 	// group int as text).
 	SubjectGroup = "group"
 	// SubjectPublic grants to EVERYONE, including logged-out/anonymous visitors
-	// on a public campaign. It is the explicit "reveal to the public" target,
-	// strictly wider than SubjectRole "1" (Player = authenticated members).
-	// subject_id is unused and normalized to "" (C-PERM-ANON-IDENTITY).
+	// on a public campaign — strictly wider than SubjectRole "1" (Player =
+	// authenticated members). subject_id is unused and normalized to "".
 	SubjectPublic = "public"
 )
 

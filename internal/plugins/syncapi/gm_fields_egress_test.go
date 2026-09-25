@@ -13,10 +13,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/entities"
 )
 
-// GM-field egress tests (audit M-1 / C-FIELDS-GM-FILTER). Pin that a gm_only
-// field's VALUE is stripped from fields_data for non-GM SESSION callers on
-// both GetEntity and ListEntities, while GM/owner sessions and Foundry Bearer
-// callers keep full data.
+// GM-field egress tests: pin that a gm_only field's VALUE is stripped from
+// fields_data for non-GM session callers on both GetEntity and ListEntities,
+// while GM/owner sessions and Foundry Bearer callers keep full data.
 
 type stubEntityServiceForGM struct {
 	entities.EntityService // embed: unimplemented methods panic if hit
@@ -69,8 +68,8 @@ func (s *stubCampaignSvcForGM) GetMember(_ context.Context, _, _ string) (*campa
 
 // IsUserDmGranted: none of this file's fixtures are DM-granted. Explicit
 // (rather than relying on the embedded campaigns.CampaignService, which
-// would panic on a nil-interface call) because ADR-057 slice 1 made
-// GetEntity's CheckEntityAccess call check this for any role<Owner caller.
+// would panic on a nil-interface call) because GetEntity's CheckEntityAccess
+// checks this for any role<Owner caller (ADR-057).
 func (s *stubCampaignSvcForGM) IsUserDmGranted(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
 }

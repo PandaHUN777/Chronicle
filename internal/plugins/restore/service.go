@@ -3,16 +3,11 @@
 // package shells out to it under a timeout and a single-flight lock.
 //
 // Restore is the highest-blast-radius endpoint chronicle exposes: it
-// reaches into MariaDB and overwrites every table, replaces the media
-// tree on disk, and (if the backup includes one) reloads the Redis
-// snapshot. ADR-035 originally deferred restore-via-UI for that reason;
-// this package and ADR-036 reverse that decision in exchange for a
-// confirmation flow on top of the standard auth + CSRF gates.
-//
-// Confirmation contract: callers POST a `confirm` form field whose value
-// must equal the literal string "RESTORE". The shell script also
-// supports an interactive RESTORE confirmation; we pass --yes to skip
-// that one because we own the prompt now, and --force because the live
+// overwrites every MariaDB table, replaces the media tree on disk, and
+// (if the backup includes one) reloads the Redis snapshot (ADR-036).
+// Callers POST a `confirm` form field that must equal the literal string
+// "RESTORE"; --yes skips the script's own interactive prompt since we
+// already confirmed via the form, and --force is needed because the live
 // chronicle process owns a non-empty target by definition.
 package restore
 
@@ -114,12 +109,8 @@ func NewService(cfg Config) Service {
 }
 
 // RunRestore validates the manifest filename, then shells out to
-// scripts/restore.sh --manifest <full path> --yes --force.
-//
-// --yes skips the script's interactive RESTORE prompt; we already
-// confirmed via the form. --force allows restoring over a non-empty
-// target; chronicle is alive against the database, so the target is
-// always non-empty.
+// scripts/restore.sh --manifest <full path> --yes --force. See the
+// package doc comment for what --yes/--force mean here.
 func (s *service) RunRestore(ctx context.Context, manifestName string) (*RunResult, error) {
 	manifestPath, err := ResolveManifestPath(s.cfg.BackupDir, manifestName)
 	if err != nil {

@@ -6,8 +6,8 @@ import (
 	"time"
 )
 
-// C-SCHED-P2 0d: AddMyException must bound the date to today ±1 year and cap the
-// per-user exception count.
+// AddMyException must bound the date to today ±1 year and cap the per-user
+// exception count.
 
 func TestAddMyException_DateBound(t *testing.T) {
 	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
@@ -33,7 +33,7 @@ func TestAddMyException_PerUserCap(t *testing.T) {
 	}
 }
 
-// C-SCHED-P2 0c: the day-replace forwards the composed set atomically.
+// The day-replace forwards the composed set atomically.
 
 func TestReplaceMyDayExceptions_ForwardsComposedDay(t *testing.T) {
 	var gotOnDate string
@@ -78,13 +78,11 @@ func TestReplaceMyDayExceptions_PerDayBlockCap(t *testing.T) {
 	}
 }
 
-// C-SCHED-OUT-THIS-WEEK item 4 pin: the "Out this week" quick action writes at
-// most ONE new exception row per previously-empty day (a single 0–1440
-// full-day block), so firing it every week for a year stays under the
-// per-user cap with real headroom. If maxExceptionsPerUser ever shrinks (or
-// the quick action ever grows to write more than one row per day) without
-// revisiting this math, this test catches the drift before a player bricks
-// mid-year on the cap.
+// The "Out this week" quick action writes at most ONE new exception row per
+// previously-empty day (a single 0-1440 full-day block), so firing it every
+// week for a year must stay under the per-user cap with headroom. Catches the
+// drift if maxExceptionsPerUser shrinks or the quick action starts writing
+// more than one row per day.
 func TestOutThisWeekCapMath_ToleratesAYearOfWeeklyUse(t *testing.T) {
 	const rowsPerFire = 7 // one full-day row per day of the week, worst case (no pre-existing exceptions to skip)
 	const weeksPerYear = 52
@@ -100,10 +98,10 @@ func TestOutThisWeekCapMath_ToleratesAYearOfWeeklyUse(t *testing.T) {
 	}
 }
 
-// C-SCHED-P2 0c behavioral pin: a composed day (recurring minus one busy hour)
-// leaves the day's other hours VISIBLE in the overlay rather than erasing them.
-// The exception rows are the composed available blocks; the overlay renders them
-// as the effective day (replace-day semantics, composed input).
+// A composed day (recurring minus one busy hour) leaves the day's other hours
+// visible in the overlay rather than erasing them: the exception rows are the
+// composed available blocks, and the overlay renders them as the effective
+// day (replace-day semantics).
 func TestBuildWeekOverlay_ComposedDayKeepsOtherHours(t *testing.T) {
 	ny := mustLoc(t, "America/New_York")
 	members := []overlayMemberInput{{UserID: "u1", Name: "Alex"}}

@@ -6,67 +6,41 @@ import (
 	"log/slog"
 )
 
-// AutoPinMigrationSettingKey is the settings.SettingsRepository key
-// that tracks whether the one-time C-FMC-6 auto-pin migration has
-// completed. Value is the version string that was used as the pin
-// target — present means the migration ran; absent means it hasn't.
-//
-// Stored in the existing settings table so the check survives
-// process restarts and doesn't need a new schema row.
+// AutoPinMigrationSettingKey tracks whether the one-time auto-pin
+// migration has completed. Value is the version string used as the
+// pin target; present means the migration ran, absent means it hasn't.
 const AutoPinMigrationSettingKey = "foundry_vtt.autopin_migration_completed_for_version"
 
 // SettingsKVStore is the narrow contract AutoPinMigrate needs:
-// just Get/Set on string keys. Implemented by settings.SettingsRepository
-// in production. Kept here as a local interface so the migration
-// can be tested without importing settings.
+// Get/Set on string keys. Implemented by settings.SettingsRepository
+// in production; kept local so the migration can be tested without
+// importing settings.
 type SettingsKVStore interface {
 	Get(ctx context.Context, key string) (string, error)
 	Set(ctx context.Context, key, value string) error
 }
 
-// AutoPinMigrate runs the one-time C-FMC-6 auto-pin migration:
-// every campaign with an empty foundry_module_pin is pinned to
-// the currently-installed foundry-module version, so the next
-// install triggers the AutoPinHook flow (which preserves state +
-// notifies admin) instead of silently bumping them.
+// AutoPinMigrate runs a one-time migration: every campaign with an
+// empty foundry_module_pin is pinned to the currently-installed
+// foundry-module version, so the next install triggers the
+// AutoPinHook flow (preserves state, notifies admin) instead of
+// silently bumping them.
 //
-// Idempotency: stores the version it pinned to under
-// AutoPinMigrationSettingKey. Subsequent calls read that key and
-// return immediately. If the operator manually clears the key,
-// the migration re-runs (intentional escape hatch).
+// Idempotent via AutoPinMigrationSettingKey; clearing that key
+// manually re-runs the migration. Must run after plugin migrations
+// (schema must exist) and before the HTTP server accepts traffic.
 //
-// Called from cmd/server/main.go AFTER plugin migrations have run
-// (so foundry_vtt's schema exists) but BEFORE the HTTP server
-// starts accepting traffic (so the migration completes before any
-// campaign loads its settings page).
-//
-// No-op cases (return nil without setting the flag, so future
-// boots retry the migration once data is available):
-//   - No foundry-module package registered yet
-//   - Foundry-module package has no InstalledVersion
-//
-// Failure cases (return error, abort startup):
-//   - Settings store read/write fails (DB connectivity)
-//   - CampaignsWithEmptyPin query fails
-//
-// Per-campaign pin failures are logged + skipped — one bad campaign
-// doesn't abort the migration for the rest. The flag is set on
-// completion regardless of per-campaign failures (the migration
-// is best-effort; missed campaigns can be re-pinned manually via
-// the admin UI).
+// Returns nil without setting the flag (retries next boot) if no
+// foundry-module package is registered or it has no installed
+// version. Returns an error (aborts startup) on settings or query
+// failure. Per-campaign pin failures are logged and skipped; the
+// flag is still set on completion since the migration is best-effort
+// and missed campaigns can be re-pinned via the admin UI.
 func AutoPinMigrate(ctx context.Context, svc Service, settings SettingsKVStore) error {
-	// Idempotency check: skip if flag is set.
-	// settings.Get returns ("", *apperror.AppError{Type:"not_found"})
-	// when the key doesn't exist. We treat that as "first-time
-	// migration, proceed". Any non-empty value means a previous
-	// migration completed → skip.
-	//
-	// On other DB errors (connection lost, etc.) settings.Get
-	// returns a different apperror Type; we'd rather proceed than
-	// abort startup over a stale-check failure (worst case: the
-	// migration runs again, which is effectively a no-op for
-	// already-pinned campaigns since CampaignsWithEmptyPin returns
-	// only un-pinned rows).
+	// settings.Get returns "" both when the key is absent and on a
+	// read error; either way we proceed rather than abort startup —
+	// worst case the migration re-runs, which is a no-op since
+	// CampaignsWithEmptyPin only returns un-pinned rows.
 	existing, _ := settings.Get(ctx, AutoPinMigrationSettingKey)
 	if existing != "" {
 		slog.Info("foundry_vtt autopin migration: already completed",
@@ -74,9 +48,8 @@ func AutoPinMigrate(ctx context.Context, svc Service, settings SettingsKVStore) 
 		return nil
 	}
 
-	// Find the foundry-module package + its currently-installed
-	// version. No-op if absent — operator hasn't set up the
-	// foundry-module package yet, so there's no version to pin TO.
+	// No-op if the foundry-module package isn't registered yet or has
+	// no installed version: there's nothing to pin campaigns to.
 	pkg, err := svc.FindFoundryPackage(ctx)
 	if err != nil {
 		return fmt.Errorf("foundry_vtt.AutoPinMigrate: find foundry package: %w", err)
@@ -90,15 +63,10 @@ func AutoPinMigrate(ctx context.Context, svc Service, settings SettingsKVStore) 
 		return nil
 	}
 
-	// Pin every empty-pin campaign to the currently-installed
-	// version. Distinct from AutoPinOnInstall because:
-	//   - AutoPinOnInstall short-circuits on previous==new (defensive
-	//     against InstallVersion re-firing on a no-op install).
-	//   - The migration's whole point is to make an effective state
-	//     explicit; the same-version pin IS the operation.
-	//   - Migration events use a different type
-	//     (EventModuleAutoPinMigration) so the audit log distinguishes
-	//     the one-time bootstrap from the per-install variant.
+	// Unlike AutoPinOnInstall, this pins even when previous==new: the
+	// migration's job is to make the effective pin explicit for every
+	// campaign, and it logs under EventModuleAutoPinMigration so the
+	// audit trail distinguishes it from a per-install auto-pin.
 	count, err := svc.MigrateAutoPinToVersion(ctx, pkg.InstalledVersion)
 	if err != nil {
 		return fmt.Errorf("foundry_vtt.AutoPinMigrate: iterate campaigns: %w", err)

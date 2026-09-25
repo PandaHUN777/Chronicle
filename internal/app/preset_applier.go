@@ -48,9 +48,9 @@ func (p *presetApplier) ApplySystemPresets(ctx context.Context, campaignID, syst
 	}
 
 	// Index existing types by preset category and by (lowercased) name so each
-	// preset can find its already-created type — either to upgrade it in place
-	// (WS-5) or to know it must create a new one. Name indexing catches types
-	// created before preset_category existed, or made manually by the user.
+	// preset can find its already-created type to upgrade in place, or know it
+	// must create a new one. Name indexing catches types created before
+	// preset_category existed, or made manually by the user.
 	existingByCategory := make(map[string]*entities.EntityType)
 	existingByName := make(map[string]*entities.EntityType, len(existingTypes))
 	for i := range existingTypes {
@@ -75,8 +75,8 @@ func (p *presetApplier) ApplySystemPresets(ctx context.Context, campaignID, syst
 			match = existingByName[strings.ToLower(preset.Name)]
 		}
 
-		// Upgrade path (WS-5): the type exists, so don't recreate it — just add
-		// any newly-declared fields it's missing. Idempotent: no-ops once the
+		// Upgrade path: the type exists, so don't recreate it — just add any
+		// newly-declared fields it's missing. Idempotent: no-ops once the
 		// type already carries every declared field.
 		if match != nil {
 			added, err := p.entityService.ReconcileEntityTypeFields(ctx, match.ID, declared)
@@ -160,13 +160,11 @@ func mapPresetFields(fields []systems.FieldDef) []entities.FieldDefinition {
 			Key:   f.Key,
 			Label: f.Label,
 			Type:  mapPresetFieldType(f.Type),
-			// Carry the GM-only marker onto the stored field def so the
-			// egress filter can strip GM secrets for non-GM callers
-			// (C-FIELDS-GM-FILTER / M-1).
+			// Carried onto the stored field def so the egress filter can
+			// strip GM secrets from non-GM callers.
 			GMOnly: f.GMOnly,
-			// Carry the owner-only marker so the egress filter can strip
-			// player-private content (e.g. backstory) from viewers who
-			// aren't the entity's claimed owner (C-FIELDS-OWNER-FILTER).
+			// Carried so the egress filter can strip player-private content
+			// (e.g. backstory) from viewers who aren't the entity's owner.
 			OwnerOnly: f.OwnerOnly,
 		})
 	}
@@ -231,18 +229,17 @@ func buildGMFlagsByCategory() map[string]map[string]bool {
 }
 
 // buildOwnerOnlyFlagsByCategory is buildFlagsByCategory specialized to the
-// owner_only annotation (C-FIELDS-OWNER-FILTER). See buildFlagsByCategory.
+// owner_only annotation. See buildFlagsByCategory.
 func buildOwnerOnlyFlagsByCategory() map[string]map[string]bool {
 	return buildFlagsByCategory(func(f systems.FieldDef) bool { return f.OwnerOnly })
 }
 
 // reconcileFieldGMFlags stamps the gm_only field flags declared by installed
-// system manifests onto existing entity types (audit M-1 convergence). This
-// is what makes the GM-field egress filter effective for characters created
-// BEFORE the system's manifest carried gm_only — the flag isn't on their
-// stored field defs until this runs. Idempotent; safe at boot and after a
-// system package install/update. Best-effort: logs and returns on error so a
-// reconcile hiccup never blocks boot or an install.
+// system manifests onto existing entity types, making the GM-field egress
+// filter effective for characters created before their type's manifest
+// carried gm_only. Idempotent; safe at boot and after a system package
+// install/update. Best-effort: logs and returns on error rather than
+// blocking boot or an install.
 func reconcileFieldGMFlags(ctx context.Context, entityService entities.EntityService) {
 	flags := buildGMFlagsByCategory()
 	if len(flags) == 0 {
@@ -259,8 +256,7 @@ func reconcileFieldGMFlags(ctx context.Context, entityService entities.EntitySer
 }
 
 // reconcileFieldOwnerOnlyFlags is reconcileFieldGMFlags's counterpart for the
-// owner_only annotation (C-FIELDS-OWNER-FILTER convergence) — same
-// idempotent, best-effort contract, different flag.
+// owner_only annotation — same idempotent, best-effort contract, different flag.
 func reconcileFieldOwnerOnlyFlags(ctx context.Context, entityService entities.EntityService) {
 	flags := buildOwnerOnlyFlagsByCategory()
 	if len(flags) == 0 {

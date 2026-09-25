@@ -1,12 +1,9 @@
 package syncapi
 
-// calendar_date_beacon_test.go — C-SYNC-DATE-BEACON. Pins
-// RecordCalendarDateBeacon's write-throttle decision (skip iff the last
-// beacon is <60s old AND the date is unchanged; a changed date always
-// writes) and GetCalendarDateBeacon's plain passthrough. The
-// Bearer-vs-session auth gate itself is tested at the handler layer
-// (calendar_api_handler_test.go), since that decision reads GetAPIKey(c)
-// off the Echo context, not anything in this service.
+// calendar_date_beacon_test.go pins RecordCalendarDateBeacon's write-throttle
+// decision (skip iff the last beacon is <60s old AND the date is unchanged;
+// a changed date always writes) and GetCalendarDateBeacon's plain
+// passthrough.
 
 import (
 	"context"

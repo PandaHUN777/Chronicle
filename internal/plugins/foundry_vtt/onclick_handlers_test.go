@@ -1,22 +1,11 @@
-// Contract tests for the inline-IIFE onclick handlers.
-//
-// These tests pin the C-FMC-8 architectural rule: every onclick
-// handler inside an HTMX-swapped fragment is a self-contained IIFE,
-// NOT a templ `script` helper reference. Three regression checks
-// per handler:
-//
-//  1. The Call body starts with `(function(`. Confirms it's an IIFE,
-//     not a function reference.
-//  2. The Call body contains NO double-quote character ("). Templ
-//     writes Call directly into onclick="..." without HTML-escaping,
-//     so any literal " would prematurely close the attribute.
-//  3. The Call body contains NO `__templ_` substring. That prefix
-//     would indicate a regression to the templ-script pattern that
-//     caused the production "ReferenceError" bugs.
-//
-// If any of these fail, the onclick attribute breaks at runtime —
-// either with an HTML-parse error (broken attribute) or a JS
-// ReferenceError (re-introduced templ-script reference).
+// Contract tests for the inline-IIFE onclick handlers: every onclick
+// handler inside an HTMX-swapped fragment must be a self-contained
+// IIFE, not a templ `script` helper reference. Checks per handler:
+// the Call body starts with `(function(` (it's an IIFE); contains no
+// literal `"` (templ writes Call into onclick="..." unescaped, so a
+// quote would break the attribute); and contains no `__templ_`
+// (a regression to the templ-script pattern that caused runtime
+// ReferenceErrors).
 package foundry_vtt
 
 import (
@@ -61,10 +50,9 @@ func TestOnClick_HandlersAreInlineIIFE(t *testing.T) {
 }
 
 // TestOnClick_NoEmptyScriptFunction confirms the ComponentScript's
-// Function field is empty so no <script> tag gets emitted. Templ's
-// RenderScriptItems is a no-op when Function is empty; if a future
-// edit fills Function in, the script-tag race window we explicitly
-// chose to avoid would come back.
+// Function field is empty so no <script> tag gets emitted (templ's
+// RenderScriptItems is a no-op when Function is empty). A non-empty
+// value would reintroduce the script-tag race with hx-swap.
 func TestOnClick_NoEmptyScriptFunction(t *testing.T) {
 	cases := []struct {
 		name   string
@@ -89,11 +77,10 @@ func TestOnClick_NoEmptyScriptFunction(t *testing.T) {
 	}
 }
 
-// TestOnClick_JSEscapesInterpolatedValues — defensive: if a campaign
-// ID or version contains characters that could close the JS string
-// (apostrophe, backslash), the handler must emit \uXXXX escapes
-// rather than letting the literal break out. Specifically pins the
-// jsStr helper's contract.
+// TestOnClick_JSEscapesInterpolatedValues pins the jsStr helper's
+// contract: a campaign ID or version containing characters that could
+// close the JS string (apostrophe, backslash) must be escaped, not
+// embedded raw.
 func TestOnClick_JSEscapesInterpolatedValues(t *testing.T) {
 	// Campaign ID with embedded apostrophe — would close the
 	// surrounding '' if not escaped.
@@ -102,14 +89,9 @@ func TestOnClick_JSEscapesInterpolatedValues(t *testing.T) {
 		t.Error("interpolated campaign ID with apostrophe should be JS-escaped, " +
 			"not embedded raw (would break out of the surrounding JS string literal)")
 	}
-	// SOME form of JS escape must be present. text/template's
-	// JSEscapeString uses backslash-apostrophe (`\'`) which is
-	// valid inside a JS single-quoted string. We don't pin the
-	// exact form (the stdlib might change between releases); we
-	// just confirm the apostrophe is NOT raw, by re-checking the
-	// "doesn't terminate string early" property at the JS level —
-	// look for the escaping backslash directly before the
-	// apostrophe.
+	// Don't pin the exact escape form (text/template's JSEscapeString
+	// could change between releases); just confirm the apostrophe is
+	// preceded by an escaping backslash rather than left raw.
 	if !strings.Contains(got, `\'evil`) {
 		t.Errorf("apostrophe should appear with a preceding escape; got:\n%s", got)
 	}

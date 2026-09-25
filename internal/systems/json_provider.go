@@ -32,7 +32,7 @@ func NewJSONProvider(moduleID, dataDir string) (*JSONProvider, error) {
 // receives one aggregated diagnostic per skipped-item file (see
 // normalizeReferenceItems); pass nil to suppress diagnostics entirely, as
 // preview/dry-run paths must not mutate the global admin-diagnostics ring
-// as a side effect of inspecting a package (C-SYSTEMS-REF-SLUG-FIX-R2).
+// as a side effect of inspecting a package.
 func newJSONProvider(moduleID, dataDir string, sink func(LoadEvent)) (*JSONProvider, error) {
 	p := &JSONProvider{
 		moduleID: moduleID,
@@ -90,28 +90,22 @@ func newJSONProvider(moduleID, dataDir string, sink func(LoadEvent)) (*JSONProvi
 
 // normalizeReferenceItems stamps each item with moduleID/category and
 // normalizes ID: prefer the source's own "id" when set, else fall back to
-// "slug" (the documented data contract — see Chronicle-Draw-Steel
-// docs/DATA-SCHEMA.md — keys reference items by slug and never sets "id").
-// This is the single normalization point shared by the on-disk loader
-// (NewJSONProvider) and ZIP preview (readItemsFromZipFile); Get() and every
-// other read site consume the normalized ID only. (C-SYSTEMS-REF-SLUG-FIX)
+// "slug" (data contract in Chronicle-Draw-Steel docs/DATA-SCHEMA.md; source
+// data keys items by slug and never sets "id"). Shared by the on-disk loader
+// and ZIP preview; Get() consumes the normalized ID only.
 //
-// Two classes of item are dropped rather than kept:
-//   - An item with neither id nor slug is unaddressable (Get() could never
-//     find it), so it's skipped rather than loaded with a blank ID that
-//     would silently collide with every other blank-ID item.
-//   - An item whose normalized ID was already seen in this category is
-//     skipped too: Get() is first-match-wins, so a later duplicate is
-//     already unreachable under its own ID — silently keeping it around
-//     would mean any link authored for it instead resolves to the FIRST
-//     item's content, with no indication anything went wrong.
-//     (C-SYSTEMS-REF-SLUG-FIX-R2)
+// Two classes of item are dropped rather than kept: one with neither id nor
+// slug is unaddressable, so it is skipped instead of loaded with a blank ID
+// that would collide with every other blank-ID item; one whose normalized ID
+// was already seen in this category is skipped too, since Get() is
+// first-match-wins and a silently-kept duplicate would resolve any link to
+// the wrong item's content.
 //
-// Skips are aggregated into a single sink call per invocation (one file, one
-// ZIP entry) with a count, rather than one call per skipped item — a single
-// badly-authored file could otherwise evict the entire fixed-capacity global
-// diagnostics ring. sink may be nil to suppress diagnostics entirely (used
-// by preview/dry-run paths, which must not mutate global state).
+// Skips are aggregated into one sink call per invocation (one file, one ZIP
+// entry) with a count, so a single badly-authored file can't evict the
+// entire fixed-capacity global diagnostics ring. sink may be nil to suppress
+// diagnostics (used by preview/dry-run paths, which must not mutate global
+// state).
 func normalizeReferenceItems(items []ReferenceItem, moduleID, category, source string, sink func(LoadEvent)) []ReferenceItem {
 	seen := make(map[string]bool, len(items))
 	var missing, duplicate int

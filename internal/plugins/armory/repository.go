@@ -2,17 +2,14 @@
 // existing entities + entity_types tables — no separate table is needed
 // because items are entities with entity types having preset_category = 'item'.
 //
-// SECURITY (finding 2, .ai/designs/2026-09-12-security-audit-findings.md):
-// this repository applies NO visibility predicate of its own. It used to
-// hand-roll one as `role < 2 AND e.is_private = false`, which never consulted
-// entities.visibility or entity_permissions — so an entity switched to
-// visibility='custom' (which does not clear is_private) stayed listed to
-// Players and to anonymous visitors. The fix moves the visibility decision to
-// the service layer, which narrows the ID list returned here through the
-// entities plugin's own canonical FilterViewableEntityIDs (via
-// EntityVisibilityFilter in service.go) instead of a second copy of that
-// predicate — see service.go's visibleItemIDs for the policy this repository
-// deliberately does not implement.
+// SECURITY: this repository applies NO visibility predicate of its own.
+// A hand-rolled `role < 2 AND e.is_private = false` check here never
+// consulted entities.visibility or entity_permissions, so a
+// visibility='custom' entity (which doesn't clear is_private) stayed
+// listed to Players and anonymous visitors. The visibility decision
+// belongs to the service layer, which narrows the ID list returned
+// here through the entities plugin's canonical FilterViewableEntityIDs
+// — see service.go's visibleItemIDs.
 package armory
 
 import (

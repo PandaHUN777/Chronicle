@@ -126,12 +126,10 @@ func (h *Handler) Login(c echo.Context) error {
 	ip := c.RealIP()
 	ua := c.Request().UserAgent()
 
-	// Post-login destination. The hidden form field is the live path (the query
-	// param does not survive the HTMX form POST); the query param is kept as a
-	// fallback for a plain GET-then-POST without the field. Both go through
-	// sanitizeRedirect, so "//evil.example" and "/\evil.example" — the
-	// protocol-relative open-redirect vectors — can never reach a Location
-	// header, whether they came from the form or were forged onto the request.
+	// Post-login destination. The form field is the live path; the query param
+	// is a fallback for a plain GET-then-POST. Both MUST go through
+	// sanitizeRedirect so a protocol-relative open-redirect ("//evil.example")
+	// can never reach a Location header.
 	redirect := sanitizeRedirect(c.FormValue("redirect"))
 	if redirect == "" {
 		redirect = sanitizeRedirect(c.QueryParam("redirect"))
@@ -625,16 +623,14 @@ func sessionCookieNameFor(req *http.Request) string {
 }
 
 // getSessionToken reads the session token, preferring the __Host- cookie over
-// HTTPS and falling back to the bare name only when no __Host- cookie is present.
-// This mirrors the CSRF cookie's dual-read (middleware/csrf.go): behind a
-// TLS-terminating proxy the scheme this codebase derives can differ between the
-// request that SET the cookie and a later request that READS it (the documented
-// C-AUTH-LOGIN-CSRF-FIX root cause), so a single-name read would silently drop
-// the session on a scheme flip. Preferring __Host- keeps the anti-forgery
-// property for logged-in users (their __Host- cookie always wins over a
-// subdomain-injected bare cookie); the bare fallback only applies pre-login or
-// to a pre-upgrade session, and login always rotates the token, so it does not
-// enable session fixation. Over plain HTTP only the bare name is read.
+// HTTPS and falling back to the bare name only when no __Host- cookie is
+// present. This mirrors the CSRF cookie's dual-read (middleware/csrf.go):
+// behind a TLS-terminating proxy the derived scheme can differ between the
+// request that set the cookie and one that reads it, so a single-name read
+// can silently drop the session on a scheme flip. Preferring __Host- keeps
+// its anti-forgery property (it always wins over a subdomain-injected bare
+// cookie); the bare fallback does not enable session fixation because login
+// always rotates the token. Over plain HTTP only the bare name is read.
 func getSessionToken(c echo.Context) string {
 	return readSessionToken(c.Request())
 }

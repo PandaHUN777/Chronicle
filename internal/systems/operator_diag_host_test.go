@@ -190,15 +190,9 @@ func TestRenderHostBuildDegradedPaths(t *testing.T) {
 				"working tree at build: clean",
 				"revision: ``",
 				"commit time: \n",
-				// REGRESSION GUARD, and the reason this list exists at all.
-				// Stages 1-4 wrote "Chronicle's builder has no git, install it"
-				// into the operator-facing text; stage 5 then installed git in
-				// the Dockerfile, and the assertion that used to live in
-				// `contains` above went on pinning the claim after it became
-				// false. A diagnostic that prints a real revision and then says
-				// the builder cannot produce one is worse than silence — it is
-				// the exact "reason from a stale claim instead of from
-				// evidence" failure this whole workstream exists to prevent.
+				// REGRESSION GUARD: a diagnostic that prints a real revision
+				// and then says the builder cannot produce one is worse than
+				// silence.
 				"there is no `git`",
 				"apk add --no-cache git",
 				"which is Chronicle's builder today",
@@ -387,10 +381,8 @@ func TestRenderHostBuildNeverPrintsAnEmptyValue(t *testing.T) {
 	}
 }
 
-// TestRenderHostBuildNamesTheDockerLabelTrap pins the note that exists solely
-// so the next reader does not repeat the 2026-08-11 misdiagnosis: image labels
-// were read as evidence about the running binary. Deleting this note would
-// silently remove the only thing standing between a reader and that hour.
+// TestRenderHostBuildNamesTheDockerLabelTrap pins the note warning that
+// Docker image labels are not evidence about the running binary.
 func TestRenderHostBuildNamesTheDockerLabelTrap(t *testing.T) {
 	got := renderHostBuildFrom(unstampedBuild(), okExecutable(), "", okProcess(), testNow)
 	for _, want := range []string{

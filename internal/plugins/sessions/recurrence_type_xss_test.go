@@ -1,18 +1,12 @@
-// recurrence_type_xss_test.go — regression pins for C-SEC-XSS-JSATTR-SWEEP-R1
-// sink 2: a session's RecurrenceType flowed verbatim into the edit-session
-// modal's Alpine `x-data` expression (`recType: '%s'`), and — unlike
-// CreateSession — UpdateSession never validated it, while the JSON PUT handler
-// binds the body unchecked. So an attacker could persist `');<payload>//` as a
-// RecurrenceType; the edit modal (rendered for every isScribe viewer) then
-// executed it. Cross-user stored XSS.
-//
-// The fix is two layers, pinned here:
-//   1. Write path — UpdateSession rejects any non-nil RecurrenceType outside the
-//      legitimate enum set (service-level test below).
-//   2. Sink — jsEsc escapes the value in the edit modal, so even a hostile value
-//      that reached storage through some other path cannot break out (render
-//      test below). See parent_selector_xss_test.go for why the rendered
-//      discriminator is `\&#39;` (escaped) vs `&#39;&#39;` (broken out).
+// Pins the two layers that keep a session's RecurrenceType from breaking out
+// of the edit-session modal's Alpine `x-data` expression (`recType: '%s'`)
+// into stored XSS:
+//   1. Write path — UpdateSession rejects any non-nil RecurrenceType outside
+//      the legitimate enum set (service-level test below).
+//   2. Sink — jsEsc escapes the value in the edit modal, so a hostile value
+//      that reached storage through some other path still cannot break out
+//      (render test below). See parent_selector_xss_test.go for why the
+//      rendered discriminator is `\&#39;` (escaped) vs `&#39;&#39;` (broken out).
 
 package sessions
 

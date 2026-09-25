@@ -1,15 +1,7 @@
 // settings_tabs_test.go pins the SettingsTab registry's role-filter +
-// sort-order behavior. The refactor's load-bearing claim is "every
-// existing tab renders identically post-refactor" — these tests
-// enforce the per-tab MinRole + the canonical render order.
-//
-// If a future refactor flips a role gate (e.g. demoting AI Export to
-// RoleScribe) without updating the dispatch + this test, the test
-// fails with a clear pointer.
-//
-// Per cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §1.1 (registry recommendation) and §4 Phase 1 (the dispatch this
-// implements).
+// sort-order behavior: every built-in tab's MinRole and the canonical
+// render order. A future change that flips a role gate (e.g. demoting
+// AI Export to RoleScribe) fails here with a clear pointer.
 package campaigns
 
 import (
@@ -34,17 +26,15 @@ type builtInTabSpec struct {
 }
 
 // builtInTabs is the set of tabs the campaigns plugin owns directly.
-// The AI Export tab from V1-A was retired in C-AI-WORKSPACE-V1-B —
-// the renderer + tab content live in internal/plugins/ai_workspace/
-// now; the ai_workspace plugin registers its replacement at
-// SortOrder 55 via campaigns.RegisterSettingsTab. See
+// The AI Export tab's renderer + content live in
+// internal/plugins/ai_workspace/ now, which registers its replacement
+// at SortOrder 55 via campaigns.RegisterSettingsTab — see
 // TestRegisterSettingsTab_MergesAndSorts for the merged-order pin.
 //
-// C-EXT-HUB Phase 1 retired the "features" tab (slot 20) — per-
-// campaign feature toggles moved to the top-level Extensions hub
-// at /campaigns/:id/extensions. Slot 20 is intentionally vacant; a
-// regression pin (TestSettingsTabs_FeaturesTabRetired) catches
-// accidental re-registration.
+// The "features" tab (slot 20) is retired; per-campaign feature
+// toggles live on the top-level Extensions hub at
+// /campaigns/:id/extensions. Slot 20 is intentionally vacant; see
+// TestSettingsTabs_FeaturesTabRetired.
 var builtInTabs = []builtInTabSpec{
 	{"general", RolePlayer},
 	{"people", RolePlayer},
@@ -80,9 +70,8 @@ func TestSettingsTabs_OwnerSeesAllSixInOrder(t *testing.T) {
 	}
 }
 
-// TestSettingsTabs_PlayerSeesAllBuiltIns — after the Phase-1
-// retirement of the Features tab there are no owner-only built-in
-// tabs left, so a player viewer sees the same four built-ins as an
+// TestSettingsTabs_PlayerSeesAllBuiltIns — no built-in tab is
+// owner-only, so a player viewer sees the same four built-ins as an
 // owner viewer. Plugin-contributed tabs (e.g. AI Workspace) may still
 // gate on RoleOwner; those are tested separately.
 func TestSettingsTabs_PlayerSeesAllBuiltIns(t *testing.T) {
@@ -103,11 +92,9 @@ func TestSettingsTabs_PlayerSeesAllBuiltIns(t *testing.T) {
 	}
 }
 
-// TestSettingsTabs_FeaturesTabRetired is the C-EXT-HUB Phase 1
-// regression pin: the "features" tab must NOT appear in any viewer
-// role's tab list. If a future change accidentally re-adds it, the
-// Settings page would carry a duplicate of the Extensions hub's
-// per-campaign feature toggles — confusing and inconsistent.
+// TestSettingsTabs_FeaturesTabRetired pins that the "features" tab
+// must NOT appear in any viewer role's tab list — per-campaign
+// feature toggles live on the Extensions hub, not here.
 func TestSettingsTabs_FeaturesTabRetired(t *testing.T) {
 	h := &Handler{}
 	for _, role := range []Role{RolePlayer, RoleScribe, RoleOwner} {
@@ -123,9 +110,8 @@ func TestSettingsTabs_FeaturesTabRetired(t *testing.T) {
 }
 
 // TestRegisterSettingsTab_MergesAndSorts confirms plugin-contributed
-// tabs land in the right position by SortOrder. Phase 2's AI Workspace
-// plugin registers at SortOrder 55 — between AI Export (50) and
-// Activity (60) — so this test pins that specific landing.
+// tabs land in the right position by SortOrder — a tab registered at
+// 55 lands between integrations (40) and activity (60).
 func TestRegisterSettingsTab_MergesAndSorts(t *testing.T) {
 	h := &Handler{}
 	h.RegisterSettingsTab(func(*CampaignContext) SettingsTab {
@@ -141,9 +127,6 @@ func TestRegisterSettingsTab_MergesAndSorts(t *testing.T) {
 	cc := ctxWithRole(RoleOwner)
 	got := h.visibleSettingsTabs(cc, nil, nil, "csrf", nil, false)
 	gotIDs := tabIDs(got)
-	// "features" (slot 20) retired in C-EXT-HUB Phase 1; the merge
-	// still lands ai-workspace at 55, between integrations (40) and
-	// activity (60).
 	want := []string{"general", "people", "integrations", "ai-workspace", "activity"}
 	if len(gotIDs) != len(want) {
 		t.Fatalf("merged tabs len=%d, want %d: got %v want %v", len(gotIDs), len(want), gotIDs, want)

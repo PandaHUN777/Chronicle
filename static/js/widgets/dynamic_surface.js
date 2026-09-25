@@ -1,15 +1,15 @@
 /**
- * Chronicle Dynamic Surface — motion engine (Wave 1, part of the dynamic-surface frame).
+ * Chronicle Dynamic Surface — motion engine.
  *
- * The frame OWNS a library of named transition PRESETS; a System (via the surface
- * schema) NAMES which one fits a given box / card / action / overlay — it never
- * writes animation code. This realizes the operator's "a few options to choose
- * from, fitting the type of card" (see Cordinator design §12.7).
+ * The frame owns a library of named transition presets; a System (via the
+ * surface schema) names which one fits a given box / card / action / overlay
+ * — it never writes animation code.
  *
- * Presets are small Web-Animations-API routines built over the existing motion
- * tokens (`--ease-*`, `--dur-*`, `--elev-*`) and the dynamic-surface token
- * contract (`--surface-*`), so they stay theme-aware. Every preset collapses to a
- * quick fade / instant under the global `prefers-reduced-motion` guard.
+ * Presets are small Web-Animations-API routines built over the existing
+ * motion tokens (`--ease-*`, `--dur-*`, `--elev-*`) and the dynamic-surface
+ * token contract (`--surface-*`), so they stay theme-aware. Every preset
+ * collapses to a quick fade / instant under the global
+ * `prefers-reduced-motion` guard.
  *
  * Public API (mirrors the `Chronicle.tooltip` helper pattern):
  *   Chronicle.surface.play(name, el, opts) -> Animation | null

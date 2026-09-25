@@ -1,18 +1,11 @@
-// default_visibility_test.go — the resolution table for
-// CampaignSettings.DefaultVisibility.
+// default_visibility_test.go pins the shared resolution table for
+// CampaignSettings.DefaultVisibility, used by every entity-creation path
+// (web form, shop quick-create, REST POST /entities, batch-sync, bestiary
+// import) so a campaign's default visibility is honoured everywhere.
 //
-// The setting existed for months with exactly ONE consumer: the web
-// entity-creation form. Every other creation path in the repo — the shop
-// widget's quick-create, the REST POST /entities, the batch-sync create and
-// the bestiary creature import — built its CreateEntityInput without ever
-// reading it, so a DM who set "DM Only" still got PUBLIC entities from
-// Foundry sync, from the shop widget and from creature imports.
-//
-// This file pins the shared resolution those paths now share. The
-// three-state parameter is load-bearing: collapsing "absent" into "false" is
-// precisely how a private default got ignored, and collapsing "explicit
-// false" into "absent" would take a client's deliberate is_private:false and
-// override it.
+// The three-state parameter is load-bearing: collapsing "absent" into
+// "false" would silently ignore a private default, and collapsing "explicit
+// false" into "absent" would override a client's deliberate is_private:false.
 package campaigns
 
 import (

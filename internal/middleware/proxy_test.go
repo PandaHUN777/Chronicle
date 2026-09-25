@@ -7,13 +7,10 @@ import (
 	"testing"
 )
 
-// The extractor had NO test at all until 2026-09-08, while three things that
-// matter depend on it: the rate limiter keys its bucket on c.RealIP(), media
-// serving is limited per IP, and every audit row records it. The defect that
-// prompted this file was not in the code but in the LIST: a deployment whose
-// reverse proxy arrived from a mesh address, outside every range the literal
-// trusted, recorded every public visitor as the proxy. One shared rate bucket,
-// one address in every audit row.
+// Three things depend on the IP extractor: the rate limiter keys its bucket
+// on c.RealIP(), media serving is limited per IP, and every audit row
+// records it. A trusted-proxy list that doesn't cover the real reverse
+// proxy's address collapses all of these onto one shared bucket/address.
 
 // TestParseTrustedProxies_RejectsWhatItCannotParse pins the change from silent
 // skip to startup error. The old loop dropped an unparseable entry and carried

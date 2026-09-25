@@ -3,9 +3,9 @@
 // campaign data: metadata, entity types, entities, tags, relations, calendar,
 // timelines, sessions, maps, notes, and addon configuration.
 //
-// Media files are NOT embedded in the JSON. The export includes a media manifest
-// with file metadata so imports can remap image references. A future enhancement
-// could bundle media in a zip archive.
+// Media files are not embedded in the JSON itself; the export includes a
+// media manifest with file metadata, and ?include_media=1 bundles the actual
+// bytes alongside it in a zip (see export_handler.go).
 package campaigns
 
 import (

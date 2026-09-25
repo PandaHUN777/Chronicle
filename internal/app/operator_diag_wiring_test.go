@@ -11,29 +11,13 @@ import (
 	"testing"
 )
 
-// The operator diagnostics in internal/systems reach app-layer state through
-// dependency inversion: systems declares a `SetXProvider(fn)` setter and the app
-// injects the real implementation at startup. systems cannot import the app, so
-// the compiler cannot check that the injection ever happens — an unwired
-// provider builds, vets and unit-tests perfectly and then prints "Provider not
-// wired" forever in production.
-//
-// That failure is worse than a missing diagnostic, because it looks like an
-// answer. host.plugins would report no plugins, host.errors no errors, and each
-// render is one sentence away from being read as a finding. The renderers all
-// deny the misreading explicitly, but the real fix is to notice at CI time that
-// a setter exists with nobody calling it.
-//
-// This is a source-level check on purpose. Executing the wiring instead would
-// mean standing up RegisterRoutes, which needs a database, Redis and every
-// plugin's service — so it would be an integration test, skipped in exactly the
-// CI run where a forgotten wiring line would be introduced.
-//
-// It walks the AST rather than grepping the bytes. That is not fastidiousness:
-// the first version of this test used a regexp over raw source, and when the
-// wiring line was commented out to check the test could fail, IT STILL PASSED —
-// the commented-out call matched. Commenting out a line is the likeliest way
-// this wiring ever gets disabled, so the guard has to be blind to comments.
+// Pins that every `SetXProvider` setter internal/systems declares for its
+// app-layer dependency injection is really wired from RegisterRoutes: since
+// systems cannot import app, the compiler cannot catch a forgotten call, and
+// an unwired provider builds and unit-tests fine while permanently reporting
+// "provider not wired" in production. Source-level AST checks (not a running
+// server, not a comment-blind regexp) so the guard actually fails when the
+// wiring line is missing or commented out.
 
 // setProviderRe matches the provider-setter naming convention and captures the
 // middle: `SetSyncMappingProvider` → "SyncMapping".
@@ -41,11 +25,7 @@ var setProviderRe = regexp.MustCompile(`^Set([A-Za-z0-9_]+)Provider$`)
 
 // TestEveryDiagnosticProviderIsWiredInAppSource asserts that every provider
 // setter internal/systems declares is really called from non-test app source.
-//
-// It deliberately does NOT assert the call sits in a particular function: the
-// point is that a human wired it somewhere real, and pinning the location would
-// break on an ordinary refactor while catching nothing extra. The boot-path
-// question is the separate test below.
+// It does not check the call site's location; TestDiagnosticProviderCallsAreOnTheBootPath does.
 func TestEveryDiagnosticProviderIsWiredInAppSource(t *testing.T) {
 	declared := declaredProviders(t, filepath.Join("..", "systems"))
 	if len(declared) == 0 {
@@ -64,21 +44,15 @@ func TestEveryDiagnosticProviderIsWiredInAppSource(t *testing.T) {
 	}
 }
 
-// TestDiagnosticProviderCallsAreOnTheBootPath checks the wiring is reached from
-// RegisterRoutes, which cmd/server/main.go calls at startup.
-//
-// Separate from the test above because it fails for a different reason: a call
-// can exist in app source and still never run, sitting in a helper nothing
-// invokes. This resolves the call's enclosing function and requires it to be
-// RegisterRoutes itself or a method RegisterRoutes calls, so moving the wiring
-// into a helper stays legal as long as the helper is actually invoked.
+// TestDiagnosticProviderCallsAreOnTheBootPath checks that each provider call
+// is reached from RegisterRoutes (which cmd/server/main.go calls at startup),
+// not merely present somewhere in app source in a helper nothing invokes.
 func TestDiagnosticProviderCallsAreOnTheBootPath(t *testing.T) {
 	fset := token.NewFileSet()
 	files := parseAppFiles(t, fset, ".")
 
 	// Methods called from RegisterRoutes' body, plus RegisterRoutes itself.
-	// One level is enough today (all wiring is inline in RegisterRoutes) and a
-	// deeper walk would assert less clearly than it appears to.
+	// One level only: all wiring is inline in RegisterRoutes today.
 	bootFuncs := map[string]bool{"RegisterRoutes": true}
 	for _, f := range files {
 		for _, d := range f.Decls {
@@ -113,20 +87,12 @@ func TestDiagnosticProviderCallsAreOnTheBootPath(t *testing.T) {
 				continue
 			}
 			ast.Inspect(fn.Body, func(n ast.Node) bool {
-				// Do NOT descend into a function literal. A provider call inside
-				// one only runs if something invokes the literal, and the AST
-				// cannot tell us that anything does: `neverRun := func() { …
-				// systems.SetXProvider(…) … }` is indistinguishable from a
-				// callback the router really runs. Recording it as boot-path
-				// wiring would certify a call that never executes — the exact
-				// defect this guard exists to catch, and a mutation it was
-				// measured passing before this skip was added.
-				//
-				// This does not hide the shipped wiring, which PASSES literals
-				// as ARGUMENTS (the route-table closure, the package lister).
-				// ast.Inspect visits the CallExpr before its arguments, so the
-				// provider call is recorded on the way in and only its argument
-				// subtree is skipped.
+				// Do not descend into a function literal: a provider call inside
+				// one only runs if something invokes the literal, which the AST
+				// cannot confirm. This does not hide the shipped wiring, which
+				// passes literals as ARGUMENTS (route-table closure, package
+				// lister) — ast.Inspect visits the CallExpr before its
+				// arguments, so that call is still recorded.
 				if lit, ok := n.(*ast.FuncLit); ok {
 					ast.Inspect(lit.Body, func(m ast.Node) bool {
 						if name, ok := systemsProviderCall(m); ok {
@@ -219,11 +185,8 @@ func calledProviders(t *testing.T, dir string) map[string]bool {
 	return out
 }
 
-// parseAppFiles parses the non-test .go files directly inside dir.
-//
-// Test files are excluded deliberately: a provider wired only from a test is
-// precisely the bug being hunted, so counting a _test.go call site would make
-// this test certify the defect it exists to catch.
+// parseAppFiles parses the non-test .go files directly inside dir. Test files
+// are excluded: a provider wired only from a test is the bug being hunted.
 func parseAppFiles(t *testing.T, fset *token.FileSet, dir string) []*ast.File {
 	t.Helper()
 
@@ -239,8 +202,8 @@ func parseAppFiles(t *testing.T, fset *token.FileSet, dir string) []*ast.File {
 			continue
 		}
 		path := filepath.Join(dir, n)
-		// Parsing without ParseComments: comments are not part of the AST the
-		// walks above see, which is the whole point (see the file comment).
+		// No ParseComments: this walk must catch wiring disabled by commenting
+		// out the call, so comments must stay invisible to it.
 		f, err := parser.ParseFile(fset, path, nil, 0)
 		if err != nil {
 			t.Fatalf("parsing %s: %v", path, err)

@@ -132,10 +132,8 @@ templ EntityShowPage(cc *campaigns.CampaignContext, entity *Entity, entityType *
 				hx-swap="innerHTML"
 			></div>
 
-			// (The old auto-appended per-entity calendar-events list was retired
-			// in C-CAL-EMBED-CONVERGE-POLISH along with its HTMX route. A
-			// per-entity calendar is now opt-in via the `entity_calendar`
-			// page-template block — the worldstate band + #402 linked events.)
+			// A per-entity calendar is opt-in via the `entity_calendar`
+			// page-template block, not rendered automatically here.
 		</div>
 	}
 }
@@ -241,11 +239,9 @@ templ blockTitle(cc *campaigns.CampaignContext, entity *Entity, csrfToken string
 				>
 					<i class="fa-regular fa-star text-lg"></i>
 				</button>
-				// Effective-visibility glance (C-PERM-W1-TAG-GRANTS): the constant
-				// header badge. Reads the per-request glance the show handler
-				// injected (nil when none was computed). The DM-team gate lives
-				// inside visibilityGlance itself (ADR-057 slice 3) — not here —
-				// so a co-DM (Player + IsDmGranted) sees it like an Owner does.
+				// Effective-visibility badge, read from the per-request glance the
+				// show handler injected (nil when none was computed). The
+				// DM-team gate lives inside visibilityGlance itself (ADR-057).
 				@effectiveVisibilityBadge(cc, entity, GetEffectiveVisibility(ctx))
 			</div>
 			// Aliases widget: displays alternative names for this entity.
@@ -314,13 +310,10 @@ templ blockTitle(cc *campaigns.CampaignContext, entity *Entity, csrfToken string
 					<label class="block text-xs font-medium text-fg-body mb-1">Parent Page</label>
 					<input type="text" x-model="parentId" class="input w-full text-sm" placeholder="Parent entity ID (or leave empty)"/>
 				</div>
-				// DM-Only toggle removed in C-PERMISSIONS-INLINE-COMPONENT.
-				// Visibility editing now lives only in edit mode, via
-				// form.templ's inline permissions widget mount (ADR-057
-				// decision 5 — blockPermissions and its read-page mount were
-				// removed). The metadata PUT below no longer carries
-				// is_private; UpdateMetadataAPI's nil-preserving service call
-				// keeps the entity's current value.
+				// Visibility editing lives only in edit mode, via form.templ's
+				// inline permissions widget (ADR-057). The metadata PUT below
+				// carries no is_private; UpdateMetadataAPI's nil-preserving
+				// service call keeps the entity's current value.
 
 				<div class="flex items-center justify-end gap-3 pt-1">
 					<span x-show="saved" x-transition class="text-xs text-green-600">Saved!</span>
@@ -431,10 +424,8 @@ templ blockAttributes(cc *campaigns.CampaignContext, entity *Entity, entityType 
 	></div>
 }
 
-// blockDetails renders type badge, the shared visibility glance, and metadata
-// timestamps. Used to render its own privacy indicator with no role gate at
-// all — shown to Players (ADR-057 census row 3) — now replaced by
-// visibilityGlance, which gates itself.
+// blockDetails renders the type badge, the shared visibility glance
+// (visibilityGlance gates itself by role, ADR-057), and metadata timestamps.
 templ blockDetails(cc *campaigns.CampaignContext, entity *Entity) {
 	<div class="card p-4 space-y-4">
 		<!-- Type badge -->
@@ -875,11 +866,9 @@ templ blockSingletonDuplicateError(blockType string) {
 // blockUnavailablePlaceholder renders a clear, non-blank notice for a block
 // that's registered but can't render on this page — either a nil renderer
 // (e.g. a dashboard-only block dropped on an entity page) or a context
-// mismatch (template page hosting a dashboard-context block). Defense-in-depth
-// for C-CAL-ENTITY-PAGE-EMBED BUG FIX 2: a misplaced block must never render a
-// SILENT blank (which is what sent the calendar_preview investigation down a
-// wrong-surface chase). Only shown for REGISTERED blocks; unknown/removed
-// types still drop silently (intentional — e.g. the retired map_preview).
+// mismatch (template page hosting a dashboard-context block). A misplaced
+// block must never render a silent blank. Only shown for REGISTERED blocks;
+// unknown/removed types still drop silently (e.g. map_preview).
 templ blockUnavailablePlaceholder(blockType string) {
 	<div class="card p-3 border border-dashed border-edge text-fg-secondary">
 		<div class="flex items-start gap-2">

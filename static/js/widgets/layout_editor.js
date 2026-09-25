@@ -1,9 +1,9 @@
 /**
  * Unified Layout Editor Widget
  *
- * Single drag-and-drop layout editor replacing both dashboard_editor.js and
- * template_editor.js. Used by layout_studio.js to edit campaign dashboards,
- * owner dashboards, category dashboards, and page templates through one UI.
+ * Drag-and-drop layout editor used by layout_studio.js to edit campaign
+ * dashboards, owner dashboards, category dashboards, and page templates
+ * through one UI.
  *
  * Mount: data-widget="layout-editor"
  * Config:
@@ -1423,14 +1423,10 @@
             emptyOpt.value = '';
             emptyOpt.textContent = '— Select entity type —';
             input.appendChild(emptyOpt);
-            // Fetch entity types from the v1 JSON API. The web
-            // /campaigns/:id/entity-types route renders the entity-type
-            // MANAGEMENT PAGE — middleware.Render hard-sets
-            // "text/html; charset=utf-8" and never inspects Accept, so both
-            // its HTMX and full-page branches are HTML. Parsing that as JSON
-            // threw a SyntaxError the empty .catch() below used to swallow,
-            // leaving this dropdown permanently empty with nothing on the
-            // console. Same v1 hop the `map` case below takes.
+            // Fetch entity types from the v1 JSON API, not the web
+            // /campaigns/:id/entity-types route — that renders the
+            // entity-type management page as HTML regardless of Accept.
+            // Same v1 hop the `map` case below takes.
             if (self.campaignId) {
               Chronicle.apiFetch('/api/v1/campaigns/' + self.campaignId + '/entity-types')
                 .then(function (r) {
@@ -1459,13 +1455,9 @@
             break;
 
           case 'map':
-            // Renders the campaign's maps as a dropdown. Without this, the
-            // map_preview / map_full block configs had no map_id picker —
-            // the layout editor would skip the field, the renderer would
-            // get an empty map_id, and the map widget would fall through
-            // to the "Configure a map for this block. View all maps."
-            // placeholder. Hits the v1 JSON API (the web /maps endpoint
-            // is HTML-only).
+            // Renders the campaign's maps as a dropdown, the map_id picker
+            // for map_preview / map_full block configs. Hits the v1 JSON
+            // API (the web /maps endpoint is HTML-only).
             input = document.createElement('select');
             input.className = 'w-full px-3 py-1.5 text-sm border border-edge rounded bg-surface text-fg focus:outline-none focus:ring-1 focus:ring-accent';
             var mapEmptyOpt = document.createElement('option');
@@ -1794,11 +1786,9 @@
 
     save: function (callback) {
       var self = this;
-      // A Save click MUST always issue a write. Previously this returned
-      // silently when this.layout was null (the fresh/empty-dashboard case),
-      // so the button fired no PUT at all — the operator's "Save does
-      // nothing" bug. Ensure a layout object exists (an empty {rows:[]} is a
-      // valid "clear to default" save) and always proceed to the PUT.
+      // A Save click must always issue a write, even for a fresh/empty
+      // dashboard where this.layout is null — an empty {rows:[]} is a
+      // valid "clear to default" save.
       this._ensureLayout();
 
       var btn = this._findSaveBtn();
@@ -1814,9 +1804,8 @@
           if (!res.ok) {
             // Surface the server's specific message — ValidateLayout
             // returns operator-friendly text like "Only one Map Editor
-            // block is allowed per layout." Generic "Failed to save"
-            // hides that detail and was the source of multiple
-            // mystery-failure bug reports.
+            // block is allowed per layout." A generic "Failed to save"
+            // hides that detail.
             return res.json().then(
               function (body) {
                 var msg = (body && (body.message || body.error)) || ('Failed to save ' + label);

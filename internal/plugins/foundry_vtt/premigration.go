@@ -7,27 +7,15 @@ import (
 	"fmt"
 )
 
-// PreMigrationCheck verifies that the C-FMC-5c migration can run
-// safely BEFORE the migration runner applies the SQL. The check is:
-//
-//	If `foundry_module_versions` table exists AND has rows,
-//	REFUSE to migrate.
-//
-// Reasoning: 001_consolidate_foundry_modules.up.sql drops
-// foundry_module_versions unconditionally. The operator confirmed the
-// table is empty during planning, but a manual upload (via the
-// foundry_modules admin UI that PR #305 left intact) between then and
-// deploy would silently destroy data on migrate. Failing loudly here
-// gives the operator a chance to inspect, back up, or manually clear.
+// PreMigrationCheck verifies, before the migration runner applies its
+// SQL, that dropping `foundry_module_versions` (in
+// 001_consolidate_foundry_modules.up.sql) is safe: if the table exists
+// and has rows, it refuses rather than silently destroying data.
 //
 // Called from cmd/server/main.go right before
-// database.RunPluginMigrations. If it returns an error, server
-// startup aborts with the categorized message — the operator sees
-// exactly what to do.
-//
-// This check is idempotent and cheap (one SQL query against
-// information_schema + at most one SELECT COUNT). Re-running it after
-// the migration successfully completed returns nil — the table is gone.
+// database.RunPluginMigrations; a returned error aborts server
+// startup with a categorized message. Idempotent: once the migration
+// has applied, the table is gone and this returns nil.
 func PreMigrationCheck(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("foundry_vtt.PreMigrationCheck: nil db handle")

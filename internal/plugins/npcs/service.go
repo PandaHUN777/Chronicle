@@ -21,13 +21,9 @@ type EntityTypeFinder interface {
 // (role + userID) may see, applying the entities plugin's own canonical
 // visibility policy (default is_private, custom per-subject grants, tag
 // grants). Wraps entities.EntityService.FilterViewableEntityIDs — the SAME
-// method sessions and the relations widget already use — so the NPC gallery
-// never hand-rolls its own copy of that predicate. That hand-rolled copy
-// (`role < 2 AND is_private = false`) is finding 2 in
-// .ai/designs/2026-09-12-security-audit-findings.md: it never consulted
-// entities.visibility or entity_permissions, so a visibility='custom' NPC
-// (whose is_private is untouched by SetEntityPermissions) stayed listed to
-// Players and to anonymous visitors.
+// method sessions and the relations widget use — so the NPC gallery never
+// hand-rolls its own copy of that predicate: a `role < 2 AND is_private =
+// false` check would miss a visibility='custom' NPC.
 type EntityVisibilityFilter interface {
 	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
@@ -80,8 +76,8 @@ func (s *npcService) SetTagLister(tl TagLister) {
 // characters to what the viewer may see, and returns one page of cards.
 // Returns an empty list if no character entity type exists for the campaign.
 // The total is the size of that SAME narrowed set (see visibleNPCIDs), so a
-// filtered list and its count can never disagree — the failure mode finding 2
-// also covered (an inflated count is itself a leak under ADR-055 rule 3).
+// filtered list and its count can never disagree (ADR-055 rule 3: an
+// inflated count is itself a leak).
 func (s *npcService) ListNPCs(ctx context.Context, campaignID string, role int, userID string, opts NPCListOptions) ([]NPCCard, int, error) {
 	typeID, err := s.typeFinder.FindCharacterTypeID(ctx, campaignID)
 	if err != nil {
@@ -152,31 +148,20 @@ func (s *npcService) CountNPCs(ctx context.Context, campaignID string, role int,
 // visibleNPCIDs returns the character entity IDs matching opts' search/tag
 // filters for characterTypeID, narrowed to the viewer's visibility.
 //
-// Only an OWNER is unrestricted here (role >= permissions.RoleOwner) —
-// that is the NPC gallery's existing behaviour, UNCHANGED by this fix. The
-// gallery's own reveal mechanic (is_private toggle) and whether a co-DM
-// should see unrevealed NPCs are separate, undecided product questions
-// booked in .ai/todo.md ("does the co-DM promotion cross plugin lines?") and
-// deliberately out of scope here.
-//
-// Everyone below Owner, Scribes included, is narrowed through the
-// SAME canonical visibility policy the entities plugin itself applies
-// (EntityVisibilityFilter), replacing the hand-rolled `is_private == false`
-// check finding 2 flagged — so this gallery can no longer disagree with the
-// entity page about what is hidden.
+// Only an OWNER is unrestricted here (role >= permissions.RoleOwner).
+// Everyone below Owner, Scribes included, is narrowed through the SAME
+// canonical visibility policy the entities plugin itself applies
+// (EntityVisibilityFilter), so this gallery can't disagree with the entity
+// page about what is hidden.
 func (s *npcService) visibleNPCIDs(ctx context.Context, campaignID string, characterTypeID, role int, userID string, opts NPCListOptions) ([]string, error) {
 	allIDs, err := s.repo.ListRevealedIDs(ctx, campaignID, characterTypeID, opts)
 	if err != nil {
 		return nil, err
 	}
-	// Bypass at OWNER, not Scribe, because that is where the canonical
-	// policy bypasses: visibilityFilter (entities/repository.go) returns an
-	// empty predicate only for role >= RoleOwner. For a Scribe it still
-	// evaluates, and its custom branch requires an actual matching grant —
-	// a visibility='custom' entity is NOT automatically visible to a
-	// Scribe. Short-circuiting at Scribe here would have left this gallery
-	// more permissive than the entity page for exactly the state finding 2
-	// was about, which is the same disagreement in a narrower audience.
+	// Bypass at OWNER, not Scribe: visibilityFilter (entities/repository.go)
+	// returns an empty predicate only for role >= RoleOwner. A Scribe still
+	// gets evaluated, and a visibility='custom' entity is not automatically
+	// visible to them without a matching grant.
 	if role >= permissions.RoleOwner || len(allIDs) == 0 {
 		return allIDs, nil
 	}

@@ -1,6 +1,6 @@
 /**
  * markdown_importer.js — drag/drop + multi-file upload widget for
- * AI Workspace > Import (V1 Phase 4 + V1-F a11y).
+ * AI Workspace > Import.
  *
  * Mount: data-widget="markdown-importer". Looks for the
  * data-importer-dropzone (drag target), data-importer-file-input

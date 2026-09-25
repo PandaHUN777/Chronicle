@@ -1,12 +1,13 @@
-// handler.go — the binding HTTP surface (C-WIDGET-BINDING-P4a). This is the
-// ONLY Echo-aware code in the widgetbindings plugin; the Service stays
-// Echo-free. Handlers are thin: collect inputs, call the Service, render the
-// generic picker fragment (or signal a reload after a mutation).
+// The binding HTTP surface: the only Echo-aware code in the widgetbindings
+// plugin; the Service stays Echo-free. Handlers are thin: collect inputs,
+// call the Service, render the generic picker fragment (or signal a reload
+// after a mutation).
 //
-// SECURITY: the host's campaign ALWAYS comes from the route's campaign context
-// (never the request body); the Service re-checks the instance is in-campaign
-// (no DB FK to lean on). host_type/widget_type are validated against the
-// app-code namespace (registry + IsValidHostType), never a DB enum.
+// SECURITY: the host's campaign always comes from the route's campaign
+// context, never the request body; the Service re-checks the instance is
+// in-campaign (no DB FK to lean on). host_type/widget_type are validated
+// against the app-code namespace (registry + IsValidHostType), never a DB
+// enum.
 package widgetbindings
 
 import (
@@ -176,13 +177,13 @@ func (h *Handler) validate(hostType, hostID, widgetType string) (WidgetType, boo
 	return wt, ok
 }
 
-// swapHostBlock re-resolves the host's binding and renders the widget's block
-// for an in-place HTMX swap (C-WIDGET-BINDING-P4b — replaces P4a's HX-Refresh).
-// The widget plugin owns the block template; this delegates rendering through
-// the registry (RenderBlock) so the binding plugin imports no widget plugin.
-// The rendered fragment is wrapped in BlockHost (by RenderBlock), so the
-// outerHTML swap targeted by the picker controls replaces the block in place.
-// Defensive fallback: if a widget can't render (nil component), reload.
+// swapHostBlock re-resolves the host's binding and renders the widget's
+// block for an in-place HTMX swap. The widget plugin owns the block
+// template; this delegates rendering through the registry (RenderBlock) so
+// the binding plugin imports no widget plugin. The rendered fragment is
+// wrapped in BlockHost, so the outerHTML swap the picker targets replaces
+// the block in place. Defensive fallback: if a widget can't render (nil
+// component), reload.
 func (h *Handler) swapHostBlock(c echo.Context, cc *campaigns.CampaignContext, wt WidgetType, host HostRef, widgetType string) error {
 	ctx := c.Request().Context()
 	res, _ := h.svc.Resolve(ctx, host, widgetType)

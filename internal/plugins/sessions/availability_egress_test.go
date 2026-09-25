@@ -1,18 +1,14 @@
 package sessions_test
 
-// The own-tables egress guard (C-SCHED-P1 / design §5; extended C-SCHED-P2 0b):
-// scheduler data — recurring availability, per-date exceptions, slot proposals,
-// per-option responses, and scheduler notifications — lives in its OWN tables
-// and must never ride the campaign export or the AI export payloads (RC-12.5).
-// Both exports are hand-written per-aggregate, so a new table is invisible by
-// construction — but only as long as nobody grafts a scheduler-shaped field onto
-// an export struct or adds a scheduler AI-export category. This test fails loudly
-// the moment either happens.
-//
-// It is a structural guard (no DB needed). It reflects from the campaign export
-// ROOT (campaigns.CampaignExport) so a scheduler-shaped field added ANYWHERE in
-// the export aggregate — not just on ExportSession/ExportAttendee — trips it, and
-// scans the AI export category set for the same leak.
+// Pins that scheduler data — recurring availability, per-date exceptions,
+// slot proposals, per-option responses, and scheduler notifications — lives
+// in its own tables and must never ride the campaign export or the AI export
+// payloads (RC-12.5). Both exports are hand-written per-aggregate, so a new
+// table is invisible by construction unless a scheduler-shaped field is
+// grafted onto an export struct or a scheduler AI-export category is added.
+// It is a structural guard (no DB needed), reflecting from the campaign
+// export root (campaigns.CampaignExport) so a leak anywhere in the aggregate
+// trips it, and scanning the AI export category set for the same leak.
 
 import (
 	"reflect"
@@ -26,14 +22,10 @@ import (
 
 // schedulerTokens are the field-name / json-tag fragments that mark data which
 // must stay out of export egress: availability, exceptions, slot proposals,
-// per-option responses, and scheduler notifications.
-//
-// EXTENDED by C-CALV4-RSVP-P8 §5 with "timezone". OverlayMember gained a TZ
-// field this slice — a per-member IANA zone on a member-scoped DTO — and the
-// dispatch's rule is that a new DTO field EXTENDS this pin rather than
-// sidestepping it. A member's zone is a user-account fact that says where they
-// physically are; it is exactly the kind of field a well-meaning "and their
-// local times" addition would graft onto an export struct.
+// per-option responses, and scheduler notifications. "timezone" is included
+// because a member's zone is a user-account fact that says where they
+// physically are — a new DTO field carrying it must extend this pin, not
+// sidestep it.
 var schedulerTokens = []string{"avail", "proposal", "notification", "timezone"}
 
 // mentionsSchedulerData reports whether a struct field name or its json tag
@@ -78,17 +70,15 @@ func assertNoSchedulerFields(t *testing.T, typ reflect.Type, path string, seen m
 
 func TestScheduler_AbsentFromCampaignExport(t *testing.T) {
 	// Walk from the export ROOT so any scheduler-shaped field anywhere in the
-	// aggregate (0b), not only on the session/attendee leaves, trips the guard.
+	// aggregate, not only on the session/attendee leaves, trips the guard.
 	assertNoSchedulerFields(t, reflect.TypeOf(campaigns.CampaignExport{}), "CampaignExport", map[reflect.Type]bool{})
 }
 
-// The pin moves WITH INTENT, not by deletion (C-CALV4-RSVP-P8 §5). The guard
-// above only proves a zone is absent from the exports; this proves the field it
-// is guarding actually exists on the DTO, so nobody can satisfy the egress test
-// by quietly removing OverlayMember.TZ — and it re-states the invariant the
-// Bench's clock column depends on: EMPTY is a first-class state, distinguishable
-// from "UTC", because a clock rendered for a zone-less member is a guess
-// presented as a fact (ADR-048 §18).
+// Proves the field the export guard is protecting actually exists on the
+// DTO, so the egress test above can't be satisfied by quietly removing
+// OverlayMember.TZ. TZ empty must stay distinguishable from "UTC" — a clock
+// rendered for a zone-less member would otherwise be a guess presented as
+// fact.
 func TestScheduler_OverlayMemberCarriesZoneAndItIsOmitEmpty(t *testing.T) {
 	f, ok := reflect.TypeOf(sessions.OverlayMember{}).FieldByName("TZ")
 	if !ok {
@@ -102,7 +92,7 @@ func TestScheduler_OverlayMemberCarriesZoneAndItIsOmitEmpty(t *testing.T) {
 		t.Errorf("OverlayMember.TZ is %s; it must be a plain string so \"\" can mean "+
 			"NOT SET without a second nil/empty distinction", f.Type)
 	}
-	// The co-DM marker rides beside the role rather than encoded into it (WG-4).
+	// The co-DM marker rides beside the role rather than encoded into it.
 	if _, ok := reflect.TypeOf(sessions.OverlayMember{}).FieldByName("IsCoDM"); !ok {
 		t.Error("OverlayMember.IsCoDM is gone — a co-DM would be labelled a plain " +
 			"player on a permission surface again (ADR-048 §17)")

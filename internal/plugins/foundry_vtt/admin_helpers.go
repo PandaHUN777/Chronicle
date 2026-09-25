@@ -8,14 +8,9 @@ import (
 // relativeTime renders a coarse "Xm ago / Xh ago / Xd ago" string
 // for the admin "Campaigns Using v0.1.5" panel's last-active column.
 //
-// Local helper rather than a shared util because the codebase
-// pattern is per-plugin formatting helpers (campaigns has its own,
-// syncapi has its own, foundry_modules had its own — now ported
-// here as part of C-FMC-5c).
-//
-// Coarse buckets on purpose — admins comparing "last active 30
-// minutes ago vs 35 minutes ago" don't need precision; they want
-// to see at a glance which campaigns are dormant.
+// Local helper, following the codebase pattern of per-plugin
+// formatting helpers. Coarse buckets on purpose — admins want to see
+// at a glance which campaigns are dormant, not compare 30m vs 35m.
 func relativeTime(t time.Time) string {
 	d := time.Since(t)
 	switch {

@@ -29,25 +29,21 @@ func ParseVisibilityRules(raw *string) *VisibilityRules {
 	return &rules
 }
 
-// Allows reports whether userID may see content gated by these rules,
-// under the non-owner branch of a visibility check — Owners bypass
-// VisibilityRules entirely (see ListMarkers/ListDrawings) and never call
-// this. A nil receiver (no rules at all) always allows.
+// Allows reports whether userID may see content gated by these rules, under
+// the non-owner branch of a visibility check — Owners bypass VisibilityRules
+// entirely (ListMarkers/ListDrawings) and never call this. A nil receiver
+// always allows.
 //
-// Mirrors the SQL predicate in repository.go's ListMarkers and
-// drawing_repository.go's ListDrawings byte-for-byte, and is also the
-// spec the WebSocket hub's per-recipient gate follows (S1,
-// internal/websocket's Message.AudienceAllows) — duplicated there
-// rather than called from there, since that package must not import a
-// plugin's types, but the three MUST stay in lockstep or a marker/drawing
-// becomes visible over one channel and not another for no reason a user
-// could see.
+// Must mirror the SQL predicate in repository.go's ListMarkers and
+// drawing_repository.go's ListDrawings byte-for-byte, and the WebSocket
+// hub's per-recipient gate (internal/websocket's Message.AudienceAllows,
+// duplicated there since that package can't import a plugin's types) — all
+// three must stay in lockstep or content becomes visible over one channel
+// and not another.
 //
 // The default for a user named in NEITHER list depends on whether
 // AllowedUsers is in use: empty means "everyone except DeniedUsers"
-// (default-allow); non-empty is a strict allowlist that excludes anyone
-// not on it (default-deny). That asymmetry is the existing HTTP contract,
-// verified against ListMarkers' SQL, not introduced here.
+// (default-allow); non-empty is a strict allowlist (default-deny).
 func (v *VisibilityRules) Allows(userID string) bool {
 	if v == nil {
 		return true
@@ -80,9 +76,7 @@ type Map struct {
 	// BackgroundColor optionally overrides the default theme-following
 	// canvas color (bg-surface-alt, which adapts to dark/light via CSS
 	// vars) with a fixed CSS color (e.g. "#000000"). Nil means "follow
-	// theme" — the renderer falls back to the Tailwind class. Stored in
-	// the maps.background_color VARCHAR(7) column that has existed since
-	// migration 001 but was previously unused.
+	// theme" — the renderer falls back to the Tailwind class.
 	BackgroundColor *string   `json:"background_color,omitempty"`
 	SortOrder       int       `json:"sort_order"`
 	CreatedAt       time.Time `json:"created_at"`
@@ -147,33 +141,26 @@ type CreateMapInput struct {
 // UpdateMapInput is the validated input for updating a map.
 //
 // PARTIAL update: absent preserves, explicit null clears, present replaces
-// (contract ruled 2026-08-07, sweep R4; ADR-054 #4). Before this,
-// ImageID/ImageWidth/ImageHeight/Description were assigned unguarded —
-// including ImageID and Description, which were ALREADY a Go pointer: a
-// plain *string bound from JSON cannot tell "the caller omitted this key"
-// from "the caller sent null", so the pointer type alone never protected
-// anything. A rename-only PUT unlinked the map's image and wiped its
-// description. The one shipped caller (maps.templ) re-derives these
-// fields from hidden inputs so it is not tripped today, but nothing at
-// the service layer stopped a narrower caller from doing so.
+// (see .ai/conventions.md). ImageID, ImageWidth, ImageHeight and
+// Description use patch.Field[T] rather than a plain *T (a plain pointer
+// bound from JSON can't distinguish "key omitted" from "key sent null"): a
+// rename-only PUT must not unlink the map's image or wipe its description.
 //
-// BackgroundColor is the one field that was ALREADY genuinely tri-state
-// and is unchanged by this fix: nil pointer = leave unchanged;
-// pointer-to-empty-string = clear the override (revert to theme); any
-// other CSS color string = set as the override. It stays a plain *string
-// (not patch.Field) because that sentinel — not an explicit JSON null —
-// is what the existing caller and service already speak.
+// BackgroundColor is genuinely tri-state on its own terms: nil pointer =
+// leave unchanged; pointer-to-empty-string = clear the override (revert to
+// theme); any other CSS color string = set as the override. It stays a
+// plain *string (not patch.Field) because that sentinel, not an explicit
+// JSON null, is what the caller and service speak.
 //
-// Name is deliberately left a plain string: UpdateMap validates the
-// MERGED name is non-empty and rejects the whole call with 400 when it is
-// blank, so an absent name fails loudly instead of silently overwriting —
-// it was never part of the blind-overwrite class this struct is fixed for.
+// Name is deliberately left a plain string: UpdateMap validates the merged
+// name is non-empty and rejects the call with 400 when blank, so an absent
+// name fails loudly instead of silently overwriting.
 //
 // ExpectedUpdatedAt is the optional optimistic-concurrency token: when
-// non-nil, the service rejects with 409 Conflict if the row's UpdatedAt
-// has advanced past it. Omitting the field falls back to last-writer-wins
-// for backwards compatibility — see internal/concurrency.Check. It is NOT
-// a data field, so it stays a plain pointer.
+// non-nil, the service rejects with 409 Conflict if the row's UpdatedAt has
+// advanced past it. Omitting it falls back to last-writer-wins — see
+// internal/concurrency.Check. It is NOT a data field, so it stays a plain
+// pointer.
 type UpdateMapInput struct {
 	Name              string
 	Description       patch.Field[string]
@@ -206,20 +193,13 @@ type CreateMarkerInput struct {
 // NOT a data field — it is the caller's last-known version, so it stays a
 // plain pointer.
 //
-// Everything else is a patch.Field: this is a PARTIAL update under the
-// contract ruled on 2026-08-07 (sweep R4) — an ABSENT key preserves the
-// stored value, an EXPLICIT null clears it, a present value replaces it.
-//
-// Three losses were reproduced on this one struct. The Chronicle web edit
-// form and the drag-end PUT send neither pin_category nor visibility_rules,
-// so both were erased on every edit and every drag — and one of them is
-// access-control data. Worse, the web request struct has no foundry_id
-// member at all, so every web edit NULLed the marker's Foundry pairing key,
-// which resurfaces later as DUPLICATE markers on the next sync.
-//
-// Absent-preserve resolves the fork the R3 booking could not: the web form
-// still cannot set or clear a sync pairing key (it never sends foundry_id),
-// while syncapi CAN still clear one by sending an explicit null.
+// Everything else is a patch.Field: this is a PARTIAL update (see
+// .ai/conventions.md) — an ABSENT key preserves the stored value, an
+// EXPLICIT null clears it, a present value replaces it. pin_category and
+// visibility_rules (access-control data) must survive an edit or drag PUT
+// that omits them, and foundry_id must survive a web edit that omits it —
+// the web form never sends foundry_id, but syncapi can still clear it via
+// an explicit null.
 type UpdateMarkerInput struct {
 	Name              patch.Field[string]
 	Description       patch.Field[string]
@@ -242,13 +222,6 @@ type MapViewData struct {
 	Markers    []Marker
 	IsScribe   bool
 }
-
-// (FoundryPresenceView removed in NW-2.2 Chunk D2-cleanup. The "Connected
-// to Foundry" pill lives in foundry_vtt now and is lazy-loaded by
-// maps.templ via /foundry-vtt/presence-pill-fragment. The
-// campaigns-side FoundryPresenceLookup interface + the live
-// GET /campaigns/:id/foundry-presence JSON endpoint are unrelated and
-// stay in place.)
 
 // MapListData holds all data needed to render the map list page.
 type MapListData struct {

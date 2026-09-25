@@ -7,16 +7,13 @@
  * Custom mode, per-role / per-user / per-group grant rows.
  *
  * Animation: GPU-accelerated `transform translateX` with a 280ms ease-out
- * transition (under the 300ms budget called out in the dispatch). A
- * separate backdrop fades in to dim the page; clicking it closes the
- * card. Escape key and the X button also close.
+ * transition. A separate backdrop fades in to dim the page; clicking it
+ * closes the card. Escape key and the X button also close.
  *
  * Two mount modes:
  *
  *   1. `data-endpoint` present (entity show/edit pages):
  *      Loads state from GET /permissions, saves to PUT /permissions.
- *      This is the canonical mode the slide-in card replaces the
- *      former inline panel for.
  *
  *   2. `data-mode="draft"` + `data-draft-target` (create form):
  *      No endpoint. The widget exposes mode selection (Everyone /
@@ -27,8 +24,8 @@
  *
  * Save errors render inline inside the card (top of the body, dismissible).
  * The widget consumes the structured `{error, message, category}` wire
- * shape from C-PERMISSIONS-SAVE-FIX and styles by category (validation,
- * auth, not_found, internal) so operators see the actual cause.
+ * shape and styles by category (validation, auth, not_found, internal) so
+ * operators see the actual cause.
  *
  * Auto-mounted by boot.js on elements with data-widget="permissions".
  *
@@ -51,16 +48,12 @@ Chronicle.register('permissions', {
       permissions: [],
       tagGrants: [],
       loading: true,
-      // loadFailed is the ADR-057 guard: the fields above are just the
-      // widget's initial guess, never a real answer. A Scribe's GET
-      // .../permissions 403s (the route is Owner-only) or the network can
-      // fail outright; either way state.visibility/isPrivate are still sat
-      // at their untouched init values afterward. Without this flag,
-      // getMode() cannot tell "loaded and Everyone" apart from "never
-      // loaded, defaulted to Everyone" -- which is exactly how a Scribe
-      // editing a DM-only entity used to see "Permissions - Everyone".
-      // renderTrigger()/renderBody() must check this BEFORE calling
-      // getMode(), not rely on the defaults being "probably right".
+      // loadFailed (ADR-057): GET .../permissions can 403 (Owner-only
+      // route) or fail on the network, leaving visibility/isPrivate at
+      // their untouched init values. Without this flag getMode() cannot
+      // tell "loaded and Everyone" apart from "never loaded, defaulted to
+      // Everyone". renderTrigger()/renderBody() must check this BEFORE
+      // calling getMode().
       loadFailed: false,
       saving: false,
       saved: false,
@@ -72,15 +65,15 @@ Chronicle.register('permissions', {
     var editable = config.editable === true;
     var draftMode = config.mode === 'draft';
     var draftTarget = config.draftTarget || null;
-    // Inline layout (C-ENTITY-PERMISSIONS-UX Part 2): opt-in via
-    // data-layout="inline". Renders the editor as a compact summary row that
-    // expands IN PLACE (animated) instead of the right-edge slide-in card.
-    // Pure presentation — reuses renderBody/load/save/grant UI verbatim.
+    // Inline layout: opt-in via data-layout="inline". Renders the editor
+    // as a compact summary row that expands in place (animated) instead
+    // of the right-edge slide-in card. Pure presentation — reuses
+    // renderBody/load/save/grant UI verbatim.
     var inline = config.layout === 'inline';
 
     // Inject scoped styles once. Card uses CSS variables that flow from
     // the campaign theme (surface/edge/accent) so per-campaign retints
-    // continue to work after the reskin.
+    // work.
     if (!document.getElementById('perm-widget-styles')) {
       var style = document.createElement('style');
       style.id = 'perm-widget-styles';
@@ -144,15 +137,15 @@ Chronicle.register('permissions', {
         '.perm-loading { padding: 24px; text-align: center; color: var(--color-fg-muted, #9ca3af); font-size: 13px; }',
         '.perm-readonly-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 13px; background: var(--color-surface-alt, #f3f4f6); color: var(--color-fg-body, #374151); }',
         '.perm-draft-note { font-size: 11px; color: var(--color-fg-muted, #6b7280); margin-top: 10px; padding: 8px 10px; background: var(--color-surface-alt, #f9fafb); border-radius: 6px; border-left: 3px solid var(--color-accent, #6366f1); line-height: 1.4; }',
-        // Tag-derived grants note (C-PERM-W1-TAG-GRANTS): amber to distinguish a
-        // widening exposed by a tag from the page-level permission controls.
+        // Tag-derived grants note: amber to distinguish a widening exposed
+        // by a tag from the page-level permission controls.
         '.perm-tag-note { font-size: 12px; color: var(--color-fg-body, #374151); margin-bottom: 12px; padding: 8px 10px; background: var(--color-surface-alt, #f9fafb); border-radius: 6px; border-left: 3px solid #f59e0b; line-height: 1.5; }',
         '.perm-tag-note .perm-tag-note-title { font-weight: 600; display: block; margin-bottom: 2px; }',
         '.perm-tag-note .perm-tag-chip { color: var(--color-fg-muted, #6b7280); }',
         '.perm-trigger-widened { width: 6px; height: 6px; border-radius: 9999px; background: #f59e0b; margin-left: 4px; }',
         '@media (max-width: 480px) { .perm-card { width: 100%; box-shadow: none; } }',
-        // Inline layout (Part 2): a summary trigger above a collapsible panel
-        // in the form flow. The panel animates open/closed via the
+        // Inline layout: a summary trigger above a collapsible panel in the
+        // form flow. The panel animates open/closed via the
         // grid-template-rows 0fr↔1fr trick — pure CSS height animation, no JS
         // measurement, reduced-motion safe.
         '.perm-inline .perm-trigger { width: 100%; justify-content: flex-start; }',
@@ -245,17 +238,13 @@ Chronicle.register('permissions', {
     function renderTrigger() {
       if (!trigger) return;
       trigger.innerHTML = '';
-      // ADR-057 (adversarial-review follow-up, defect 1): a load that hasn't
-      // resolved yet is JUST AS UNKNOWN as one that failed -- state.loading
-      // starts true and getMode() would otherwise run against the untouched
-      // init defaults (visibility: 'default', isPrivate: false) for the
-      // entire in-flight window, painting "Everyone" until the response
-      // lands. Draft mode is excluded: it has no endpoint, never issues a
-      // request, and legitimately owns its mode locally from init -- init()
-      // -> load() resolves it synchronously before the first paint, but even
-      // the very first renderTrigger() call (which runs BEFORE load()) must
-      // not blank it, hence checking `!draftMode` here rather than relying on
-      // state.loading already being false by the time this runs.
+      // ADR-057: a load that hasn't resolved yet is just as unknown as one
+      // that failed — getMode() would otherwise run against untouched init
+      // defaults and paint "Everyone" until the response lands. Draft mode
+      // is excluded: it has no endpoint and owns its mode locally from
+      // init, so checking `!draftMode` here (rather than state.loading)
+      // keeps it visible even on the very first renderTrigger() call, which
+      // runs before load().
       var modeUnknown = state.loadFailed || (state.loading && !draftMode);
       if (modeUnknown) {
         var unknownIcon = document.createElement('i');
@@ -264,10 +253,8 @@ Chronicle.register('permissions', {
         var unknownLabel = document.createElement('span');
         unknownLabel.textContent = 'Permissions';
         trigger.appendChild(unknownLabel);
-        // Defect 3: inline mode's expand affordance must survive this branch
-        // too -- the panel still opens on click even though the mode is
-        // unknown, so the chevron cannot be lost here the way it was when
-        // this branch returned before the `if (inline)` block below.
+        // Inline mode's expand affordance must survive this branch too —
+        // the panel still opens on click even though the mode is unknown.
         if (inline) {
           var unknownChevron = document.createElement('i');
           unknownChevron.className = 'fa-solid fa-chevron-down text-xs perm-trigger-chevron';
@@ -287,8 +274,8 @@ Chronicle.register('permissions', {
       modeBadge.className = 'perm-trigger-mode';
       modeBadge.textContent = modeLabel(mode);
       trigger.appendChild(modeBadge);
-      // Tag-widening dot (C-PERM-W1-TAG-GRANTS): an amber pip when an otherwise
-      // hidden page is exposed by a tag grant, mirroring the show-page badge.
+      // Tag-widening dot: an amber pip when an otherwise hidden page is
+      // exposed by a tag grant, mirroring the show-page badge.
       if (mode !== 'everyone' && state.tagGrants && state.tagGrants.length > 0) {
         var widened = document.createElement('span');
         widened.className = 'perm-trigger-widened';
@@ -304,9 +291,8 @@ Chronicle.register('permissions', {
       }
     }
 
-    // renderTagGrantsNote appends a read-only summary of the tag-derived grants
-    // that widen this page's visibility (C-PERM-W1-TAG-GRANTS). It is the
-    // editor-side half of the glance integrity rule: if a tag exposed the page,
+    // renderTagGrantsNote appends a read-only summary of the tag-derived
+    // grants that widen this page's visibility. If a tag exposed the page,
     // the Owner managing permissions must see it, named.
     function renderTagGrantsNote(parent) {
       if (!state.tagGrants || state.tagGrants.length === 0) return;
@@ -345,8 +331,7 @@ Chronicle.register('permissions', {
         var errDiv = document.createElement('div');
         var category = state.errorCategory || 'internal';
         // Defensive: an unknown category falls through to internal styling
-        // rather than emitting an unstyled element. Same five-bucket enum
-        // the C-WIRE-INTEGRITY contract pinned.
+        // rather than emitting an unstyled element.
         var knownCategories = { validation: 1, auth: 1, not_found: 1, internal: 1, config: 1 };
         var cssCategory = knownCategories[category] ? category : 'internal';
         errDiv.className = 'perm-error perm-error-' + cssCategory;
@@ -358,16 +343,10 @@ Chronicle.register('permissions', {
         errText.style.flex = '1';
         errText.textContent = state.error;
         errDiv.appendChild(errText);
-        // Defect 2: a failed-LOAD error is not offered a dismiss button.
-        // state.error/errorCategory are shared between load() and save()'s
-        // catch blocks, but only a save error has real content underneath it
-        // to reveal once dismissed -- the mode picker / grant rows are
-        // already rendered from a real answer. A failed load has no such
-        // content: dismissing used to null state.error, re-render, and land
-        // straight in the `if (state.loadFailed) return;` below, leaving the
-        // panel completely empty with no way back inside the widget. Leaving
-        // this error non-dismissible keeps something honest on screen
-        // instead.
+        // A failed-load error is not offered a dismiss button: unlike a
+        // save error, a failed load has no real content underneath it to
+        // reveal once dismissed (the mode picker needs a real answer from
+        // load()). Dismissing would leave the panel empty with no way back.
         if (!state.loadFailed) {
           var dismissBtn = document.createElement('button');
           dismissBtn.type = 'button';
@@ -385,11 +364,10 @@ Chronicle.register('permissions', {
       }
 
       // ADR-057: a failed load has already said everything it honestly can
-      // via the perm-error region above. Rendering the mode picker or the
-      // read-only badge below this point would fall back to state's
-      // untouched init defaults (getMode() reading visibility: 'default',
-      // isPrivate: false) and repaint the same wrong "Everyone" claim the
-      // trigger used to make. Stop here instead -- an honest blank body.
+      // via the perm-error region above. Rendering the mode picker below
+      // this point would fall back to state's untouched init defaults
+      // (getMode() reading visibility: 'default') and repaint a wrong
+      // "Everyone" claim. Stop here instead.
       if (state.loadFailed) {
         return;
       }
@@ -633,8 +611,7 @@ Chronicle.register('permissions', {
           if (!resp.ok) {
             // Surface the structured wire error so operators see the
             // actual cause (validation / auth / not_found) instead of
-            // a generic "Failed to save". Mirrors the contract the
-            // server now emits per C-PERMISSIONS-SAVE-FIX.
+            // a generic "Failed to save".
             return resp.json().then(
               function (b) {
                 var err = new Error((b && (b.message || b.error)) || ('Failed to save permissions (HTTP ' + resp.status + ')'));
@@ -710,9 +687,9 @@ Chronicle.register('permissions', {
               permission: p.permission
             };
           });
-          // Tag-derived grants (C-PERM-W1-TAG-GRANTS): read-only, additive.
-          // Surfaced so an Owner editing permissions sees that a tag has ALSO
-          // exposed this page — a tag must never silently widen visibility.
+          // Tag-derived grants: read-only, additive. Surfaced so an Owner
+          // editing permissions sees that a tag has also exposed this page
+          // — a tag must never silently widen visibility.
           state.tagGrants = data.tag_grants || [];
           state.loading = false;
           renderTrigger();

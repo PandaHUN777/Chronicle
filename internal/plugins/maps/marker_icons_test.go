@@ -1,7 +1,7 @@
-// marker_icons_test.go — C-MAPS-EDITOR-PIN-AND-ICON-PARITY. Pins the
-// canonical marker icon vocabulary (the source of truth the editor picker,
-// the stored value, and the Foundry sync contract all share), the editor's
-// inline pin-create affordances (Part B), and the marker-icons API.
+// marker_icons_test.go pins the canonical marker icon vocabulary (the
+// source of truth the editor picker, the stored value, and the Foundry sync
+// contract all share), the editor's inline pin-create affordances, and the
+// marker-icons API.
 package maps
 
 import (

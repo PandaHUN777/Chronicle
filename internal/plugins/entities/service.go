@@ -175,14 +175,14 @@ type EntityService interface {
 	// EnsureEntityNotesBlockInDefaults walks every entity_types row and
 	// inserts a player-notes (entity_notes) block if one isn't already
 	// present, so custom types created before Player Notes was added to
-	// the default layouts still get the block (cordinator#7). Returns the
+	// the default layouts still get the block. Returns the
 	// count of types updated. Idempotent; safe to call on every boot.
 	EnsureEntityNotesBlockInDefaults(ctx context.Context) (int, error)
 
 	// SyncFieldGMFlags re-stamps the GMOnly flag on stored entity-type field
 	// definitions from a caller-supplied (preset-category → field-key →
 	// gm_only) map, so a system manifest that newly marks a field gm_only
-	// propagates onto already-created types (audit M-1 convergence).
+	// propagates onto already-created types.
 	// System-agnostic: the app layer builds the map from installed manifests;
 	// core just applies it. Touches only the fields column (never layout), so
 	// it can't race the layout backfills. Idempotent; safe at boot and after
@@ -190,8 +190,8 @@ type EntityService interface {
 	SyncFieldGMFlags(ctx context.Context, gmByCategory map[string]map[string]bool) (int, error)
 
 	// SyncFieldOwnerOnlyFlags is SyncFieldGMFlags's counterpart for
-	// FieldDefinition.OwnerOnly (C-FIELDS-OWNER-FILTER convergence) — same
-	// map shape, same idempotent per-type walk, different flag.
+	// FieldDefinition.OwnerOnly — same map shape, same idempotent per-type
+	// walk, different flag.
 	SyncFieldOwnerOnlyFlags(ctx context.Context, ownerOnlyByCategory map[string]map[string]bool) (int, error)
 
 	// BulkUpdateType changes the entity type for multiple entities at once.
@@ -520,13 +520,10 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 		}
 	}
 
-	// Load-merge-write (sweep R4). `entity` is the row as stored, so every
-	// merge below defaults to the stored value: only a key the caller
-	// actually sent can change anything.
-	//
-	// An absent name means "I am not editing the name" — which is what a
-	// {status}-shaped or {fields_data}-shaped push means. A name that IS
-	// sent is validated exactly as before.
+	// Load-merge-write. `entity` is the row as stored, so every merge below
+	// defaults to the stored value: only a key the caller actually sent can
+	// change anything. An absent name means "I am not editing the name" —
+	// which is what a {status}-shaped or {fields_data}-shaped push means.
 	name := strings.TrimSpace(input.Name.Val(entity.Name))
 	if name == "" {
 		return nil, apperror.NewBadRequest("entity name is required")
@@ -549,9 +546,7 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 		entity.IsPrivate = *input.IsPrivate
 	}
 
-	// TypeLabel: absent preserves; "" or an explicit null clears; a value
-	// sets. Before the sweep this was a plain string and every caller that
-	// did not carry the descriptor erased it.
+	// TypeLabel: absent preserves; "" or an explicit null clears; a value sets.
 	if input.TypeLabel.Present() {
 		typeLabel := strings.TrimSpace(input.TypeLabel.Val(""))
 		if typeLabel != "" {
@@ -561,9 +556,9 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 		}
 	}
 
-	// ParentID: same three states. This is the un-parenting fix — syncapi's
-	// update body has never had a parent_id member, so before the sweep
-	// every sync push flattened the entity out of the hierarchy.
+	// ParentID: same three states. Absent must preserve — a caller (e.g.
+	// syncapi) that carries no parent_id must not flatten the entity out of
+	// the hierarchy.
 	if input.ParentID.Present() {
 		pid := strings.TrimSpace(input.ParentID.Val(""))
 		if pid != "" {
@@ -580,14 +575,11 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 			// Check for circular reference: the proposed parent must not be
 			// a descendant of this entity.
 			//
-			// This call DELIBERATELY BYPASSES the visibility filter by asking
-			// as an Owner. It is a data-integrity check, not a read: the caller
-			// is never shown these rows, only the yes/no answer. Filtering here
-			// would let a user whose view of the tree is partial create a cycle
-			// THROUGH a page they cannot see -- the ancestor that would have
-			// caught it is invisible, so the check passes and the hierarchy
-			// corrupts. Every other FindAncestors caller filters; this one must
-			// not.
+			// DELIBERATELY BYPASSES the visibility filter (asks as Owner): a
+			// data-integrity check, not a read, since the caller is never
+			// shown these rows. Filtering here would let a partial view of
+			// the tree create a cycle through a page the user cannot see —
+			// unlike every other FindAncestors caller, this one must not filter.
 			ancestors, err := s.entities.FindAncestors(ctx, pid, permissions.RoleOwner, "")
 			if err != nil {
 				return nil, apperror.NewInternal(fmt.Errorf("checking ancestors: %w", err))
@@ -604,11 +596,8 @@ func (s *entityService) Update(ctx context.Context, entityID string, input Updat
 	}
 
 	// Update entry content if provided. Sanitize HTML to prevent stored XSS.
-	// An empty string has always meant "preserve" here rather than "clear"
-	// — a real residue (no caller can blank a body through this input), but
-	// changing it is a user-visible decision this sweep was not given, so it
-	// is kept byte-for-byte. An EXPLICIT null does clear, which completes
-	// the contract without moving any shipped client's behaviour.
+	// An empty string means "preserve" here rather than "clear" — no caller
+	// can blank a body through this input. An EXPLICIT null does clear.
 	if input.Entry.IsNull() {
 		entity.Entry = nil
 		entity.EntryHTML = nil
@@ -1031,7 +1020,7 @@ func (s *entityService) ListClaimed(ctx context.Context, campaignID string, role
 	return s.entities.ListClaimed(ctx, campaignID, role, userID)
 }
 
-// Player Character Claiming (PC-CLAIM-2) constants.
+// Player Character Claiming constants.
 const (
 	// PresetCategoryPlayerCharacter marks an entity type as the player-claimable
 	// "Player Character" sub-type via its system preset category.
@@ -1282,9 +1271,8 @@ func (s *entityService) MergeDuplicatePlayerCharacterType(ctx context.Context, c
 	if len(snap.GenericPCTypes) == 0 {
 		return MergeResult{NoOp: true}, nil
 	}
-	// Ambiguous: more than one of either category — the service can't safely pick
-	// the (from, to) pair. Surface a human-readable conflict (this also satisfies
-	// the deferred PC-DUP-GUARD-2 "human-readable error" ask).
+	// Ambiguous: more than one of either category — the service can't safely
+	// pick the (from, to) pair. Surface a human-readable conflict.
 	if len(snap.GenericPCTypes) > 1 || len(snap.SystemCharTypes) > 1 {
 		return MergeResult{}, apperror.NewConflict(
 			"Couldn't merge automatically — this campaign has more than one player-character or system character category. " +
@@ -1330,7 +1318,7 @@ func isClaimableType(et *EntityType) bool {
 	if et == nil {
 		return false
 	}
-	// Explicit Owner choice overrides the heuristic (PC-CLAIM-2).
+	// Explicit Owner choice overrides the heuristic.
 	if et.Claimable != nil {
 		return *et.Claimable
 	}
@@ -1359,8 +1347,8 @@ func (s *entityService) ClaimEntity(ctx context.Context, entityID, userID string
 	// When it is disabled for the campaign the endpoint must behave as if it
 	// does not exist — the UI hides the claim affordance, but a hand-rolled
 	// POST would otherwise still set ownership. Mirrors the service-side gate
-	// CreateEntityType applies to player-character sub-types (PC-CLAIM-2) and
-	// the RequireAddon middleware used by maps/calendar/etc.
+	// CreateEntityType applies to player-character sub-types and the
+	// RequireAddon middleware used by maps/calendar/etc.
 	if !s.isAddonEnabled(ctx, entity.CampaignID, AddonPlayerCharacterClaiming) {
 		return nil, apperror.NewForbidden("player character claiming is not enabled for this campaign")
 	}
@@ -1737,7 +1725,7 @@ func (s *entityService) CreateEntityType(ctx context.Context, campaignID string,
 	}
 
 	// Player-character sub-types are gated behind the Player Character
-	// Claiming addon (PC-CLAIM-2). Creating one while the addon is off would
+	// Claiming addon. Creating one while the addon is off would
 	// mint a claimable type the campaign has no claim flow for — reject with a
 	// clear pointer to the toggle. With the addon on, default claimable=true
 	// (unless the caller set it explicitly) so the type is immediately
@@ -2714,15 +2702,15 @@ func (s *entityService) EnsureEntityNotesBlockInDefaults(ctx context.Context) (i
 }
 
 // SyncFieldGMFlags re-stamps FieldDefinition.GMOnly on stored entity types
-// from a (preset-category → field-key → gm_only) map. This is the M-1
-// convergence step: when a system manifest newly marks a field gm_only (e.g.
-// Draw Steel's gm_notes), preset application only stamps NEW types, so this
-// walks every existing type whose preset category is in the map and flips
-// the flag on any field whose key the manifest marks. Core stays
-// system-agnostic — it applies whatever flags the app-built map carries, no
-// system-specific keys here. Only the fields column is written (never
-// layout_json), so this never races the layout backfills. Idempotent — a
-// type is written only when a flag actually changes. Best-effort per row.
+// from a (preset-category → field-key → gm_only) map. When a system manifest
+// newly marks a field gm_only (e.g. Draw Steel's gm_notes), preset
+// application only stamps NEW types, so this walks every existing type whose
+// preset category is in the map and flips the flag on any field whose key
+// the manifest marks. Core stays system-agnostic — it applies whatever flags
+// the app-built map carries, no system-specific keys here. Only the fields
+// column is written (never layout_json), so this never races the layout
+// backfills. Idempotent — a type is written only when a flag actually
+// changes. Best-effort per row.
 func (s *entityService) SyncFieldGMFlags(ctx context.Context, gmByCategory map[string]map[string]bool) (int, error) {
 	return s.syncFieldFlag(ctx, gmByCategory, "gm-flag",
 		func(f *FieldDefinition) bool { return f.GMOnly },
@@ -2731,9 +2719,9 @@ func (s *entityService) SyncFieldGMFlags(ctx context.Context, gmByCategory map[s
 }
 
 // SyncFieldOwnerOnlyFlags is SyncFieldGMFlags's counterpart for
-// FieldDefinition.OwnerOnly (C-FIELDS-OWNER-FILTER convergence): same
-// (preset-category → field-key → owner_only) map shape, same idempotent
-// per-type walk via the shared syncFieldFlag helper, different flag.
+// FieldDefinition.OwnerOnly: same (preset-category → field-key → owner_only)
+// map shape, same idempotent per-type walk via the shared syncFieldFlag
+// helper, different flag.
 func (s *entityService) SyncFieldOwnerOnlyFlags(ctx context.Context, ownerOnlyByCategory map[string]map[string]bool) (int, error) {
 	return s.syncFieldFlag(ctx, ownerOnlyByCategory, "owner-only-flag",
 		func(f *FieldDefinition) bool { return f.OwnerOnly },

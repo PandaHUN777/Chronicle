@@ -35,10 +35,9 @@ const (
 )
 
 // EffectiveVisibility is the server-computed glance for one entity: its base
-// configured state plus whether tag grants WIDEN it and to whom. The glance is
-// the safety contract of C-PERM-W1-TAG-GRANTS — a tag must never silently
-// expose content, so wherever a Scribe+ sees an entity's visibility they must
-// also see any tag that exposed it.
+// configured state plus whether tag grants WIDEN it and to whom. A tag must
+// never silently expose content, so wherever a Scribe+ sees an entity's
+// visibility they must also see any tag that exposed it.
 type EffectiveVisibility struct {
 	// BaseState is the configured visibility (everyone / dm_only / custom).
 	BaseState string
@@ -109,17 +108,8 @@ func effectiveVisibilityTooltip(ev *EffectiveVisibility, campaignIsPublic bool) 
 	default:
 		// An "everyone" entity reaches every campaign MEMBER. Whether it also
 		// reaches a logged-out stranger is a property of the CAMPAIGN, not the
-		// entity: only a public campaign is readable by RoleNone at all.
-		//
-		// This used to read "Public — visible to everyone, including logged-out
-		// visitors" unconditionally. On a private campaign that is simply false,
-		// and it is the same class of defect as the wrong-glance ADR-057 slice 2
-		// fixed: a glance stating something untrue about who can read the page.
-		// It was survivable while one site rendered it; slice 3 unified seven
-		// call sites onto this function, which would have spread it everywhere.
-		// C-PERM-ANON-IDENTITY's intent is honesty about the anonymous reader —
-		// that argues for naming visitors when they can in fact see it, and for
-		// NOT naming them when they cannot.
+		// entity: only a public campaign is readable by RoleNone at all, so the
+		// tooltip must not claim visitor reach on a private campaign.
 		if campaignIsPublic {
 			base = "Public — visible to everyone in this campaign, including logged-out visitors"
 		} else {
@@ -137,14 +127,12 @@ func effectiveVisibilityTooltip(ev *EffectiveVisibility, campaignIsPublic bool) 
 }
 
 // visibilityGlanceTooltip builds the shared visibilityGlance component's
-// title text (ADR-057 slice 3). When ev is available it defers entirely to
-// effectiveVisibilityTooltip so the tag-widening safety contract is honoured.
-// When no EffectiveVisibility was computed for this call site — cards,
-// category-dashboard rows/tree, child-entity lists; none of these fetch tag
-// grants today — it still names the entity's *configured* state, using the
-// identical wording effectiveVisibilityTooltip would produce for a
-// non-widened entity in that state, so all call sites read the same. It just
-// cannot report a tag widening it was never given.
+// title text (ADR-057). When ev is available it defers to
+// effectiveVisibilityTooltip so the tag-widening safety contract is
+// honoured. When no EffectiveVisibility was computed for this call site
+// (cards, category-dashboard rows/tree, child-entity lists), it still names
+// the entity's *configured* state with the same wording, just without a tag
+// widening it was never given.
 func visibilityGlanceTooltip(cc *campaigns.CampaignContext, entity *Entity, ev *EffectiveVisibility) string {
 	// A nil campaign context cannot happen behind visibilityGlanceVisible, which
 	// already rejects nil — but the tooltip must not be the thing that panics if

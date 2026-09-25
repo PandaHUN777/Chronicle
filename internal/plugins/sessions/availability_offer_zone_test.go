@@ -1,22 +1,11 @@
 package sessions
 
 // The ZONE half of the offered-availability contract (the compose-the-day half
-// lives in availability_offer_test.go).
-//
-// THE DEFECT THESE PIN: AddMyAvailableWindows composes a whole day from the
-// member's own rows and writes it back through ReplaceMyDayExceptions, which
-// stamps ONE zone on every row. It used to stamp the CALLER'S zone —
-// users.timezone, "UTC" whenever the member never set an account zone, which is
-// the default — while the minutes on the canvas had been authored in the zone
-// the availability page's "Your timezone" control writes into
-// member_availability.tz and nowhere else.
-//
-// The two are one click apart, so a member who painted 18:00–22:00 from a New
-// York browser and then answered "Suggest another time" in an RSVP email had
-// their whole stated evening RELABELLED as UTC: same minute numbers, four hours
-// earlier in real time, showing in the Director's overlay as free during their
-// working afternoon and busy during the hours they actually painted. They never
-// edited anything and nothing on screen said so.
+// lives in availability_offer_test.go). Pins that AddMyAvailableWindows
+// composes a whole day from the member's own rows and writes it back through
+// ReplaceMyDayExceptions in the zone those rows were AUTHORED in — never the
+// caller's zone (users.timezone) — since relabelling stored minutes into a
+// different zone silently moves a member's stated hours in real time.
 
 import (
 	"context"
@@ -94,12 +83,10 @@ func TestOfferedWindows_KeepsTheZoneTheMembersRowsWereAuthoredIn(t *testing.T) {
 	}
 }
 
-// TestOfferedWindows_DoNotMoveTheMemberInTheDirectorsOverlay measures the same
-// fix where the operator actually sees it: the projection. Before and after the
-// offer the member must be free at the SAME REAL HOURS.
-//
-// This is the assertion that would still catch the defect if someone "fixed"
-// the zone field alone without converting the offer.
+// TestOfferedWindows_DoNotMoveTheMemberInTheDirectorsOverlay pins the same
+// invariant at the projection: before and after an offer, the member must
+// stay free at the SAME REAL HOURS, catching a fix that touched the stored
+// zone field without converting the offer itself.
 func TestOfferedWindows_DoNotMoveTheMemberInTheDirectorsOverlay(t *testing.T) {
 	recurring := []AvailabilityBlock{{
 		DayOfWeek: int(time.Tuesday), StartMinute: 18 * 60, EndMinute: 22 * 60,

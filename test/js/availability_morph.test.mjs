@@ -1,16 +1,9 @@
-// availability_morph.test.mjs — regression guard for C-CAL-BETA-RESCUE #2:
-// "clicking a day in month view is broken on desktop".
-//
-// Root cause: the month<->week morph (AvailabilityApp.setScale) schedules a 340ms
-// setTimeout that adds `hidden` to the OUTGOING view. Clicking a month-grid day
-// fires setScale('week') while a prior morph's cleanup timer is still pending (the
-// current week is cached, so the month grid renders instantly — this window is hit
-// routinely). The stale timer then fired and re-hid the week view we had just
-// navigated to, leaving BOTH views hidden: a blank calendar.
-//
-// Fix: setScale cancels any pending cleanup timer (this._morphTimer) and clears
-// both views' transient `leave`/`enter` classes before starting a new transition,
-// so the incoming view is unambiguously shown and only the outgoing one is hidden.
+// availability_morph.test.mjs — pins that AvailabilityApp.setScale cancels any
+// pending morph cleanup timer (this._morphTimer) and clears both views'
+// transient `leave`/`enter` classes before starting a new transition. Without
+// this, a setScale('week') fired while a prior morph's 340ms cleanup timeout
+// is still pending re-hides the view just navigated to, leaving both views
+// hidden.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

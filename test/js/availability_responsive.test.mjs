@@ -1,17 +1,9 @@
-// availability_responsive.test.mjs — regression guard for C-CAL-BETA-RESCUE #1:
-// "the month view is unusable on mobile".
-//
-// availability.js injected ZERO responsive rules (only a prefers-reduced-motion
-// block), and its month + week grids (repeat(7,1fr), no scroll container) crushed
-// to an unreadable smear — or forced the whole page sideways — at phone widths.
-//
-// Fix: a `@media (max-width:640px)` block gives the grids a legible min-width, and
-// each grid renders inside an `.avail-scroll` (overflow-x:auto) container so it
-// scrolls horizontally INSIDE its own box (calendar_v2.templ's bounded-scroll
-// approach) instead of crushing. The signed heatmap encoding is untouched.
-//
-// These assertions pin the *containment/CSS* contract; they intentionally do not
-// re-check the encoding (covered by availability_labels.test.mjs).
+// availability_responsive.test.mjs — pins that the month/week grids stay usable
+// at phone widths: a `@media (max-width:640px)` block gives the grids a legible
+// min-width, and each grid renders inside an `.avail-scroll` (overflow-x:auto)
+// container so it scrolls horizontally inside its own box instead of crushing
+// the page sideways. Pins the containment/CSS contract only; the label
+// encoding is covered by availability_labels.test.mjs.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

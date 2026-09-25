@@ -1,8 +1,7 @@
-// anonymous_access_test.go — public-campaign read access for the embeddable
-// map widget (C-SWEEP-FIXES-R1 / cordinator#39 finding 4). Mirrors calendar's
-// TestAnonymousAccess_PublicVsPrivate: the read-only map data routes are
-// reachable anonymously on a PUBLIC campaign; on a PRIVATE campaign they bounce
-// to /login; and fog / layers / writes bounce even on a public campaign.
+// anonymous_access_test.go pins public-campaign read access for the embeddable
+// map widget: read-only map data routes are reachable anonymously on a PUBLIC
+// campaign, bounce to /login on a PRIVATE one, and fog/layers/writes bounce
+// even on a public campaign.
 package maps
 
 import (
@@ -76,10 +75,9 @@ func newGuardRouter(public bool) *echo.Echo {
 }
 
 // isLoginRedirect reports whether the response bounced an anonymous visitor to
-// the login page. Since C-CALV4-RSVP-P8B stage 1 the bounce also carries where
-// the visitor was going (/login?redirect=<sanitized path>), so the assertion is
-// on the login path, not on the whole Location — the property under test here
-// is "anonymous access was refused", not the shape of the query string.
+// the login page. It checks only the login path, not the whole Location (which
+// may carry a redirect query param), since the property under test is "access
+// was refused", not the shape of the query string.
 func isLoginRedirect(rec *httptest.ResponseRecorder) bool {
 	switch rec.Code {
 	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,

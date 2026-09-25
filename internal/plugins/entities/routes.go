@@ -102,10 +102,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignServ
 	cg.DELETE("/sidebar-nodes/:nid", h.DeleteSidebarNodeAPI, campaigns.RequireRole(campaigns.RoleOwner))
 
 	// Sub-category type reorder (Owner only): dense re-sequence of a sub-type
-	// among its parent's children — the previously-frozen sub-category ordering.
-	// Owner-gated to match every other entity-type mutation below and the
-	// sidebar-config PUT: reordering the type taxonomy is structural campaign
-	// configuration, not per-page content a Scribe edits (0c / RC-15.4).
+	// among its parent's children. Owner-gated to match every other
+	// entity-type mutation below: reordering the type taxonomy is structural
+	// campaign configuration, not per-page content a Scribe edits.
 	cg.PUT("/entity-types/:etid/reorder", h.ReorderEntityTypeAPI, campaigns.RequireRole(campaigns.RoleOwner))
 
 	// Owner routes.
@@ -161,9 +160,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignServ
 	// entity-level privacy checks (private entities require Scribe+).
 	pub.GET("/entities/:eid/entry", h.GetEntry, campaigns.RequireViewAccess())
 	pub.GET("/entities/:eid/fields", h.GetFieldsAPI, campaigns.RequireViewAccess())
-	// Aliases display data (cordinator#39 finding 3) — the aliases widget mounts
-	// for every viewer, so its read must be public-capable like entry/fields.
-	// GetAliasesAPI now enforces the same IDOR + entity-privacy gate.
+	// Aliases display data — the aliases widget mounts for every viewer, so
+	// its read must be public-capable like entry/fields. GetAliasesAPI
+	// enforces the same IDOR + entity-privacy gate.
 	pub.GET("/entities/:eid/aliases", h.GetAliasesAPI, campaigns.RequireViewAccess())
 
 	// Dynamic category route: resolves any entity type slug to a category

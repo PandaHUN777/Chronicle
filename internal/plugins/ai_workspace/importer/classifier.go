@@ -4,9 +4,6 @@
 // classification needs the entity-type registry + a same-slug
 // lookup, so it lives in this file with a narrow interface the
 // handler injects.
-//
-// Per scoping §2.2 (the review screen's Status column drives the
-// per-row UI variant) + §3.8 (per-category create-once decision).
 
 package importer
 
@@ -28,8 +25,8 @@ type CampaignLookup interface {
 
 // Classification is the per-page outcome of Classify. Stored on the
 // review-row struct that ReviewScreen renders; the commit handler
-// (Phase 5) consumes the same struct to decide create vs map vs
-// skip / rename / overwrite.
+// consumes the same struct to decide create vs map vs skip / rename
+// / overwrite.
 type Classification struct {
 	// Status is the upgraded value (StatusNew / StatusConflict /
 	// StatusNewCategory / StatusParseError). StatusParseError is
@@ -38,12 +35,12 @@ type Classification struct {
 
 	// ResolvedSlug is the entity slug derived from the page name
 	// (via entities.Slugify). Empty when the page has no name.
-	// Phase 5 uses this to call entityService.Create / Update.
+	// The commit handler uses this to call entityService.Create / Update.
 	ResolvedSlug string
 
 	// ConflictEntity is non-nil when an entity with ResolvedSlug
-	// already exists in the campaign. Phase 5 reads this to drive
-	// the Rename / Overwrite handling.
+	// already exists in the campaign. The commit handler reads this
+	// to drive the Rename / Overwrite handling.
 	ConflictEntity *entities.Entity
 
 	// ProposedTypeSlug is the FrontMatter.Type lowercased + trimmed.
@@ -52,7 +49,8 @@ type Classification struct {
 	ProposedTypeSlug string
 
 	// ExistingType is non-nil when ProposedTypeSlug names a current
-	// entity type. Phase 5 uses ExistingType.ID for entity creation.
+	// entity type. The commit handler uses ExistingType.ID for entity
+	// creation.
 	ExistingType *entities.EntityType
 
 	// IsNewCategory is true when ProposedTypeSlug is non-empty AND
@@ -65,11 +63,9 @@ type Classification struct {
 	// classifier to avoid N+1 fetches per page.
 	AvailableTypes []entities.EntityType
 
-	// Reason (V1.5 / C-AI-WORKSPACE-V1-G) carries the human-readable
-	// explanation for StatusActionMismatch rows. Empty for all other
-	// statuses. The review-screen templ renders this verbatim on the
-	// row card so the operator sees why the action verb is at odds
-	// with live campaign state.
+	// Reason is the human-readable explanation for StatusActionMismatch
+	// rows, rendered verbatim by the review-screen templ. Empty for
+	// all other statuses.
 	Reason string
 }
 
@@ -78,11 +74,11 @@ type Classification struct {
 // full page-list classification to amortise the GetEntityTypes
 // call.
 type Classifier struct {
-	lookup        CampaignLookup
-	campaignID    string
-	cachedTypes   []entities.EntityType
-	typesBySlug   map[string]*entities.EntityType
-	typesFetched  bool
+	lookup       CampaignLookup
+	campaignID   string
+	cachedTypes  []entities.EntityType
+	typesBySlug  map[string]*entities.EntityType
+	typesFetched bool
 }
 
 // NewClassifier constructs a per-request classifier. The lookup is
@@ -143,21 +139,12 @@ func (c *Classifier) classifyOne(ctx context.Context, p ParsedPage) (Classificat
 
 	cls.ResolvedSlug = entities.Slugify(p.Name)
 
-	// Slug lookup. The interpretation depends on the front-matter
-	// action verb (V1.5 / C-AI-WORKSPACE-V1-G):
-	//
-	//   - action=create (default): existing-slug means StatusConflict;
-	//     operator picks Skip / Rename / Update via the per-row
-	//     conflict-mode dropdown.
-	//   - action=update: existing-slug is the LEGITIMATE target;
-	//     classified as StatusNew (ready to commit). Missing slug is
-	//     StatusActionMismatch.
-	//   - action=delete: same shape as update — existing-slug is
-	//     legitimate; missing slug is StatusActionMismatch.
-	//
-	// For all three actions, ConflictEntity is set to the existing
-	// row when it exists so the review-screen templ can render the
-	// entity's current name + ID alongside the action chip.
+	// Interpretation of an existing slug depends on the front-matter
+	// action: create treats it as StatusConflict (operator picks
+	// Skip/Rename/Update); update/delete treat it as the legitimate
+	// target, and a MISSING slug is StatusActionMismatch instead.
+	// ConflictEntity is set whenever a match exists so the
+	// review-screen can show its current name/ID next to the chip.
 	existing, _ := c.lookup.GetBySlug(ctx, c.campaignID, cls.ResolvedSlug)
 	if existing != nil {
 		cls.ConflictEntity = existing
@@ -171,9 +158,7 @@ func (c *Classifier) classifyOne(ctx context.Context, p ParsedPage) (Classificat
 				`"` + p.Name + `"` + " in this campaign."
 			return cls, nil
 		}
-		// existing != nil: legitimate update target. Status stays at
-		// StatusNew (carried from the parser); UI branches on the
-		// row's Action chip to render "Update" vs "New".
+		// existing target: status stays StatusNew.
 	case ActionDelete:
 		if existing == nil {
 			cls.Status = StatusActionMismatch
@@ -181,34 +166,24 @@ func (c *Classifier) classifyOne(ctx context.Context, p ParsedPage) (Classificat
 				`"` + p.Name + `"` + " in this campaign."
 			return cls, nil
 		}
-		// existing != nil: legitimate delete target.
-	default:
-		// action=create (or empty, defaulted by parser): existing V1
-		// conflict semantics. Existing slug → StatusConflict so the
-		// operator picks Skip / Rename / Update via the conflict-mode
-		// dropdown.
+	default: // action=create (or empty, defaulted by parser)
 		if existing != nil {
 			cls.Status = StatusConflict
 		}
 	}
 
-	// Category detection — FrontMatter.Type vs known types. For
-	// action=delete the category is irrelevant (commit doesn't read
-	// it), but classifying it consistently keeps the templ branching
-	// simple. For action=update, the category is also irrelevant at
-	// commit but populating it preserves the existing UI shape.
+	// Category detection (FrontMatter.Type vs known types). Classified
+	// for update/delete too, even though commit ignores it there, to
+	// keep the templ branching and UI shape uniform.
 	cls.ProposedTypeSlug = strings.ToLower(strings.TrimSpace(p.FrontMatter.Type))
 	if cls.ProposedTypeSlug != "" {
 		if et, ok := c.typesBySlug[cls.ProposedTypeSlug]; ok {
 			cls.ExistingType = et
 		} else {
 			cls.IsNewCategory = true
-			// New-category status wins over Conflict at the chip
-			// level for action=create — the operator must resolve
-			// the category (Create new / Map to existing) before
-			// Rename / Update becomes meaningful. ActionMismatch
-			// (set above for update/delete with no target) stays;
-			// no-such-category doesn't change the diagnosis.
+			// NewCategory wins over Conflict: the operator must resolve
+			// the category before Rename/Update applies. ActionMismatch
+			// (set above) stays unaffected.
 			if cls.Status != StatusActionMismatch {
 				cls.Status = StatusNewCategory
 			}

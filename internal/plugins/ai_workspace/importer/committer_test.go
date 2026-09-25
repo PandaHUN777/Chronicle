@@ -1,14 +1,8 @@
 // committer_test.go is the behavioral-test counterpart to the
 // structural AST pin in committer_sanitize_test.go. Drives the
-// Committer through every per-row outcome:
-//
-//   - Created (new page, no conflict)
-//   - Renamed (slug conflict → "(Imported)" suffix)
-//   - Overwrote (slug conflict → operator picked Overwrite)
-//   - Skipped (Include=false; parse-error row)
-//   - Failed (entity-type creation failed; row referenced it)
-//   - New category creation (slug→ID map; dedup across rows)
-//   - Per-row autonomy (row N failure doesn't abort N+1)
+// Committer through every per-row outcome: Created, Renamed, Updated
+// (conflict → operator picked update), Skipped, Failed, new-category
+// creation (dedup across rows), and per-row autonomy.
 
 package importer
 
@@ -27,8 +21,7 @@ type fakeCreator struct {
 	createCalls   []entities.CreateEntityInput
 	updateCalls   []entities.UpdateEntityInput
 	updateEntries []updateEntryCall
-	// V1.5 / C-AI-WORKSPACE-V1-G: capture for Delete dispatch tests.
-	deleteCalls   []string
+	deleteCalls   []string // capture for Delete dispatch tests
 	createTypeFn  func(input entities.CreateEntityTypeInput) (*entities.EntityType, error)
 	createFn      func(input entities.CreateEntityInput) (*entities.Entity, error)
 	updateFn      func(id string, input entities.UpdateEntityInput) (*entities.Entity, error)
@@ -77,7 +70,7 @@ func (f *fakeCreator) Create(_ context.Context, _, _ string, input entities.Crea
 		return f.createFn(input)
 	}
 	ent := &entities.Entity{
-		ID: "ent-" + strings.ReplaceAll(strings.ToLower(input.Name), " ", "-"),
+		ID:   "ent-" + strings.ReplaceAll(strings.ToLower(input.Name), " ", "-"),
 		Name: input.Name,
 		Slug: entities.Slugify(input.Name),
 	}
@@ -231,8 +224,8 @@ func TestCommit_RenameWithCollisionLoop(t *testing.T) {
 	f := &fakeCreator{
 		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
 		existing: map[string]*entities.Entity{
-			"lyra-vance":            {ID: "ent-a", Name: "Lyra Vance", Slug: "lyra-vance"},
-			"lyra-vance-imported":   {ID: "ent-b", Name: "Lyra Vance (Imported)", Slug: "lyra-vance-imported"},
+			"lyra-vance":          {ID: "ent-a", Name: "Lyra Vance", Slug: "lyra-vance"},
+			"lyra-vance-imported": {ID: "ent-b", Name: "Lyra Vance (Imported)", Slug: "lyra-vance-imported"},
 		},
 	}
 	c := NewCommitter(f)
@@ -252,15 +245,10 @@ func TestCommit_RenameWithCollisionLoop(t *testing.T) {
 	}
 }
 
-// TestCommit_OverwritePreservesExistingNameAndID — Overwrite mode
-// loads the existing entity by slug + runs Update keeping the
-// original name. Audit semantics: the operator decided to keep the
-// existing entity (not create a new one) so the existing.ID is
-// what gets touched.
-// TestCommit_UpdatePreservesExistingNameAndID (V1-E test, renamed in
-// V1.5 along with the verb-set rename overwrite → update). The
-// committer accepts both labels for one release via the backward-
-// compat alias at committer.go's conflict-mode switch.
+// TestCommit_UpdatePreservesExistingNameAndID: update mode loads the
+// existing entity by slug and runs Update keeping the original name —
+// the operator decided to keep the existing entity, so existing.ID is
+// what gets touched. Also checks the "overwrite" backward-compat alias.
 func TestCommit_UpdatePreservesExistingNameAndID(t *testing.T) {
 	f := &fakeCreator{
 		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
@@ -270,10 +258,9 @@ func TestCommit_UpdatePreservesExistingNameAndID(t *testing.T) {
 	}
 	c := NewCommitter(f)
 	res, err := c.Commit(context.Background(), "camp-1", CommitInput{
-		OwnerID:   "u-1",
-		Pages:     []ParsedPage{page("Lyra Vance", "character", "# Lyra\n\nNew body.")},
-		// "overwrite" form value still accepted as backward-compat
-		// alias for "update"; V2 removes the alias.
+		OwnerID: "u-1",
+		Pages:   []ParsedPage{page("Lyra Vance", "character", "# Lyra\n\nNew body.")},
+		// "overwrite" form value still accepted as an alias for "update".
 		Decisions: []RowDecision{decision(true, "Lyra Vance", "character", "private", "overwrite")},
 	})
 	if err != nil {
@@ -352,10 +339,9 @@ func TestCommit_SkipsParseErrorRow(t *testing.T) {
 	}
 }
 
-// TestCommit_NewCategoryCreatedOnceForDuplicateRows — per scoping
-// §3.8 (per-category create-once decision). Two rows both reference
-// new category "warrior" → CreateEntityType called once, both rows
-// land successfully.
+// TestCommit_NewCategoryCreatedOnceForDuplicateRows: two rows both
+// reference new category "warrior" → CreateEntityType called once,
+// both rows land successfully.
 func TestCommit_NewCategoryCreatedOnceForDuplicateRows(t *testing.T) {
 	createCalls := 0
 	f := &fakeCreator{
@@ -405,9 +391,9 @@ func TestCommit_FailedNewCategoryMarksReferencingRowsFailed(t *testing.T) {
 	res, _ := c.Commit(context.Background(), "camp-1", CommitInput{
 		OwnerID: "u-1",
 		Pages: []ParsedPage{
-			page("Lyra Vance", "character", "body"),  // OK
-			page("Ash-Wraith", "warrior", "body"),    // needs new:warrior → fails
-			page("Bone-Wraith", "warrior", "body"),   // same — also fails
+			page("Lyra Vance", "character", "body"), // OK
+			page("Ash-Wraith", "warrior", "body"),   // needs new:warrior → fails
+			page("Bone-Wraith", "warrior", "body"),  // same — also fails
 		},
 		Decisions: []RowDecision{
 			decision(true, "Lyra Vance", "character", "private", "rename"),

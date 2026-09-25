@@ -1,12 +1,10 @@
-// upload_authz_test.go pins finding 1 of
-// .ai/designs/2026-09-12-security-audit-findings.md: POST /media/upload
-// took campaign_id from the form body and never checked that the caller
-// belonged to that campaign, let alone held a role allowed to write to it.
+// upload_authz_test.go pins that POST /media/upload checks the caller
+// belongs to campaign_id (taken from the form body) and holds a role
+// allowed to write to it, before Upload is reached.
 //
 // These tests drive the REAL Handler.Upload — never a reimplementation of
 // the check — against a fake MediaService that only records whether Upload
-// was reached. The question these tests answer is exactly "did the write
-// happen", which is what the audit's attack path exploited.
+// was reached.
 package media
 
 import (
@@ -120,10 +118,9 @@ func assertForbidden(t *testing.T, err error) {
 	}
 }
 
-// TestUpload_NonMemberForbidden is the core of finding 1(a): an
-// authenticated user who is not a member of the target campaign must not
-// be able to write media into it, no matter what campaign_id they name in
-// the form body.
+// TestUpload_NonMemberForbidden pins that an authenticated user who is not
+// a member of the target campaign cannot write media into it, no matter
+// what campaign_id they name in the form body.
 func TestUpload_NonMemberForbidden(t *testing.T) {
 	svc := &fakeUploadService{}
 	h := &Handler{
@@ -164,9 +161,9 @@ func TestUpload_PlayerRoleForbidden(t *testing.T) {
 }
 
 // TestUpload_ScribeMemberAllowed is the positive control: a genuine
-// Scribe+ member of the named campaign must still be able to upload. This
-// is not itself red-first evidence of a vulnerability, but it proves the
-// fix doesn't overcorrect into blocking legitimate uploads.
+// Scribe+ member of the named campaign must still be able to upload,
+// proving the authorization gate doesn't overcorrect into blocking
+// legitimate uploads.
 func TestUpload_ScribeMemberAllowed(t *testing.T) {
 	svc := &fakeUploadService{}
 	h := &Handler{
@@ -187,13 +184,13 @@ func TestUpload_ScribeMemberAllowed(t *testing.T) {
 	}
 }
 
-// TestUpload_DedupHitNeverReachedByNonMember pins finding 1(b): the dedup
-// short-circuit in mediaService.Upload (FindByContentHash) hands back an
-// EXISTING file's id and would let the handler mint that file a fresh
-// signed URL. uploadFn here plays the part of that short-circuit,
-// returning a file the caller did not just create. The fix must stop a
-// non-member from ever reaching Upload at all, so this "existing" file
-// must never be handed out.
+// TestUpload_DedupHitNeverReachedByNonMember pins that the dedup
+// short-circuit in mediaService.Upload (FindByContentHash), which hands
+// back an EXISTING file's id and would let the handler mint that file a
+// fresh signed URL, is never reached by a non-member. uploadFn here plays
+// the part of that short-circuit, returning a file the caller did not just
+// create — the authorization gate must stop a non-member from ever
+// reaching Upload at all.
 func TestUpload_DedupHitNeverReachedByNonMember(t *testing.T) {
 	const victimFileID = "victim-existing-file"
 	svc := &fakeUploadService{

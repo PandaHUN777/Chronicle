@@ -64,11 +64,9 @@ func (h *Handler) ListRelations(c echo.Context) error {
 		// Fail closed: a missing gate must never serve ungated relations.
 		return apperror.NewInternal(errors.New("relations: entity gate not configured"))
 	}
-	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
-	// cc.MemberRole. The privileged branch just below already checks
-	// cc.IsDmGranted directly for dm_only relation content, but this gate
-	// used to 404 a Co-DM before that branch could ever run — the same
-	// one-function, two-role-derivations shape BacklinksFragment had.
+	// Use cc.VisibilityRole(), not the raw cc.MemberRole (ADR-057): the
+	// privileged branch just below already checks cc.IsDmGranted directly
+	// for dm_only relation content, and the two role derivations must agree.
 	userID := auth.GetUserID(c)
 	campaignID, canView, err := h.entityGate.ResolveViewableEntity(
 		c.Request().Context(), entityID, int(cc.VisibilityRole()), userID)
@@ -97,12 +95,10 @@ func (h *Handler) ListRelations(c echo.Context) error {
 		}
 		relations = filtered
 
-		// Drop relations whose TARGET entity the viewer cannot see — the target
+		// Drop relations whose target entity the viewer cannot see — the target
 		// name/slug/type are the leak. Batched visibility check (no N+1).
-		// ADR-057 slice 2 (P1FIX): promoted role for consistency with the
-		// source-entity gate above (a DM-granted viewer never actually
-		// reaches this branch — `privileged` above already catches
-		// cc.IsDmGranted — but the two role derivations must agree).
+		// Promoted role for consistency with the source-entity gate above
+		// (ADR-057): the two role derivations must agree.
 		relations, err = h.filterByTargetVisibility(c.Request().Context(), cc.Campaign.ID, relations, int(cc.VisibilityRole()), userID)
 		if err != nil {
 			return err
@@ -316,11 +312,9 @@ func (h *Handler) GraphAPI(c echo.Context) error {
 	// non-privileged viewers (includeDmOnly viewers keep the full picture).
 	userID := auth.GetUserID(c)
 
-	// ADR-057 slice 2 (P1FIX): promoted role for consistency with
-	// includeDmOnly above (a DM-granted viewer never actually reaches the
-	// service's node-visibility filter — it only runs `if !includeDmOnly`,
-	// and includeDmOnly already covers cc.IsDmGranted — but the two role
-	// derivations must agree, same as the other relations call sites).
+	// Promoted role for consistency with includeDmOnly above: it only runs
+	// `if !includeDmOnly`, but the two role derivations must agree (ADR-057),
+	// same as the other relations call sites.
 	data, err := h.service.GetFilteredGraphData(c.Request().Context(), cc.Campaign.ID, filter, includeDmOnly, int(cc.VisibilityRole()), userID)
 	if err != nil {
 		return apperror.NewInternal(err)

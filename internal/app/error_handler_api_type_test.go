@@ -1,27 +1,14 @@
 package app
 
-// error_handler_api_type_test.go — the JSON error body's `error` field carries
-// the MACHINE-READABLE condition, not the status word.
+// error_handler_api_type_test.go pins that the JSON error body's `error`
+// field carries an AppError's machine-readable Type (e.g.
+// "sync_api_disabled"), not http.StatusText(code) — asserted against the
+// real errorHandler, not a fixture's own error handler, since a fixture-only
+// assertion can pass while the product emits the bare status word.
 //
-// This exists because the claim was made and was false. syncapi's
-// RequireSyncAPIAddon builds an AppError with Type "sync_api_disabled", its
-// ADR promised "a client can name the condition instead of parsing prose", and
-// the docs said so in three places — but errorHandler emitted
-// http.StatusText(code) unconditionally, so what actually reached the wire was
-// the bare word "Forbidden". A 403 from the Sync API toggle and a 403 from a
-// permission check were indistinguishable to any client.
-//
-// The gate's own test passed the whole time, because it installed its OWN
-// error handler that emitted appErr.Type. It asserted the fixture, never the
-// product. That is the defect class this repo's guard culture exists for, so
-// the contract is pinned HERE, against the real errorHandler, in the package
-// that owns it. The syncapi fixture mirrors this shape; if the two ever
-// diverge, this test is the one telling the truth.
-//
-// The field roles are not arbitrary — they are what the Foundry module already
-// reads (api-client.mjs: `err.code = parsed.error`, `err.serverMessage =
-// parsed.message`) and what the calendar blackout has answered since
-// 2026-08-21 (`{"error":"calendar_rebuilding", …}`).
+// The field roles match what the Foundry module reads (api-client.mjs:
+// `err.code = parsed.error`, `err.serverMessage = parsed.message`) and what
+// the calendar blackout response uses (`{"error":"calendar_rebuilding", …}`).
 
 import (
 	"encoding/json"

@@ -26,10 +26,10 @@ func (s *stubReconciler) markConsolidationApplied(context.Context) error {
 }
 
 // TestReconcileConsolidationState_MarksInapplicableMigrationApplied is the
-// fresh-install case (C-SWEEP-R4 / data/fvtt-fresh-db-rename): the predecessor
-// token table has never existed, so migration 001's RENAME can never succeed
-// and must be recorded as applied — otherwise the runner stops there forever
-// and the Foundry integration is dead on every new self-hosted install.
+// fresh-install case: the predecessor token table has never existed, so
+// migration 001's RENAME can never succeed and must be recorded as
+// applied — otherwise the runner stops there forever and Foundry
+// integration is dead on every new self-hosted install.
 func TestReconcileConsolidationState_MarksInapplicableMigrationApplied(t *testing.T) {
 	s := &stubReconciler{exists: false}
 	if err := reconcileConsolidationState(context.Background(), s); err != nil {
@@ -42,11 +42,11 @@ func TestReconcileConsolidationState_MarksInapplicableMigrationApplied(t *testin
 	}
 }
 
-// TestReconcileConsolidationState_LeavesRealUpgradeAlone is the half that keeps
-// the fix from becoming a data-loss bug. When the predecessor table IS present
-// the database is genuinely pre-consolidation: 001 has real token rows to
-// carry across, so it must run. Marking it applied here would strand those rows
-// under the old table name while the repository queries the new one.
+// TestReconcileConsolidationState_LeavesRealUpgradeAlone guards against
+// data loss: when the predecessor table IS present, the database is
+// genuinely pre-consolidation and 001 has real token rows to carry
+// across, so it must run. Marking it applied here would strand those
+// rows under the old table name while the repository queries the new one.
 func TestReconcileConsolidationState_LeavesRealUpgradeAlone(t *testing.T) {
 	s := &stubReconciler{exists: true}
 	if err := reconcileConsolidationState(context.Background(), s); err != nil {

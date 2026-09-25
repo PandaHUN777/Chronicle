@@ -85,13 +85,9 @@ Chronicle.register('notes', {
     el.appendChild(fab);
     el.appendChild(panel);
 
-    // Both the bottom-right FAB and the topbar notes button stay
-    // visible — they target the same toggle, but the FAB is the
-    // primary call-to-action and was previously hidden at init when
-    // the topbar trigger existed. That created a confusing "the
-    // bottom-right icon only appears after you open the panel from
-    // the top-right" experience because the close handler unhid the
-    // FAB. Keeping both visible is duplicate but unambiguous.
+    // Both the bottom-right FAB and the topbar notes button stay visible
+    // — they target the same toggle, and the FAB is the primary
+    // call-to-action. Keeping both visible is duplicate but unambiguous.
 
     // --- Saved preferences (localStorage) ---
     var STORAGE_KEY = 'chronicle_notes_size';
@@ -286,9 +282,7 @@ Chronicle.register('notes', {
     }
 
     // Quick-add: Enter in the text input OR clicking the plus button
-    // both create a note from the current input value. The plus button
-    // had previously been a decorative <i> tag with no handler, so only
-    // Enter worked — confusing because the button looked clickable.
+    // both create a note from the current input value.
     function quickAddFromInput() {
       if (!quickInput) return;
       var text = quickInput.value.trim();

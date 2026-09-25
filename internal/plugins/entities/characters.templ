@@ -17,17 +17,13 @@ import (
 // CharactersPage renders the full Characters page for a campaign, wrapping the
 // content fragment in the App shell.
 //
-// THE ENHANCEMENT SCRIPT IS DELIBERATELY NOT HERE. characters.js used to be a
-// `<script src>` right here, at the top of the body — which the App layout
-// renders inside `<main id="main-content">`. Every sidebar link is
-// `hx-boost="true" hx-target="#main-content" hx-select="#main-content"`, and
-// boot.js sets `htmx.config.allowScriptTags = false`; htmx's makeFragment then
-// REMOVES every script in the swapped fragment rather than skipping it. So the
-// cast cards' quick-look wired on a direct load and silently did not when the
-// page was reached through the sidebar, looking identical either way. The
-// driver now ships from the plugin body-script registry (internal/app/routes.go
-// → layouts.SetPluginBodyScripts → base.templ), which emits after
-// `{children...}` — outside the swapped region. Pinned by
+// THE ENHANCEMENT SCRIPT IS DELIBERATELY NOT HERE. A `<script src>` here
+// would sit inside `<main id="main-content">`, which every boosted sidebar
+// link swaps with `htmx.config.allowScriptTags = false` — htmx REMOVES any
+// script tag in the swapped fragment rather than just skipping it. The
+// driver ships from the plugin body-script registry instead
+// (internal/app/routes.go -> layouts.SetPluginBodyScripts -> base.templ),
+// which emits outside the swapped region. Pinned by
 // characters_boosted_nav_test.go; do not put it back.
 templ CharactersPage(cc *campaigns.CampaignContext, view CastView) {
 	@layouts.App("Characters - " + cc.Campaign.Name) {

@@ -181,8 +181,7 @@ func TestRedeemProposalToken(t *testing.T) {
 	used := time.Now().UTC().Add(-time.Minute)
 
 	// openProposalMock wires FindOption + FindProposalByID to an OPEN proposal so
-	// ValidateProposalToken's new option→proposal→open traversal (C-SCHED-P3 0a)
-	// can resolve.
+	// ValidateProposalToken's option->proposal->open traversal can resolve.
 	openProposalMock := func(base *mockSessionRepo) *mockSessionRepo {
 		base.findOptionFn = func(_ context.Context, _ string) (*SlotProposalOption, error) {
 			return &SlotProposalOption{ID: "o1", ProposalID: "p1"}, nil

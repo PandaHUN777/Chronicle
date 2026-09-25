@@ -1,22 +1,13 @@
 #!/usr/bin/env bash
 # Start a local MariaDB for integration tests WITHOUT Docker.
 #
-# WHY THIS EXISTS. Every integration test in this repo skips when no database
-# answers, and the skip message says "run `make docker-up`". In sandboxes and CI
-# images that have no Docker daemon, that advice is a dead end, and the project
-# concluded — in `.ai/status.md`, in several sweep reports, and in dozens of
-# "proven against fakes, not the database" caveats — that those environments
-# simply cannot test against a real database.
-#
-# THAT CONCLUSION WAS WRONG, and it cost real coverage. The absent thing is the
-# Docker *daemon*; the MariaDB *server binary* is installed
-# (/usr/sbin/mariadbd). It can be run directly against a scratch datadir. The
-# only non-obvious part is that mariadbd refuses to start as root unless you
-# say --user=root, and that a Unix socket path has a ~107 character limit, which
-# a long scratch path silently exceeds. Both are handled below.
-#
-# Measured 2026-08-08: MariaDB 10.11.14 starts this way in ~3s and round-trips
-# DDL and DML normally.
+# Every integration test in this repo skips when no database answers, and the
+# skip message says "run `make docker-up`" — a dead end in sandboxes and CI
+# images with no Docker daemon. The MariaDB server binary is installed there
+# regardless (/usr/sbin/mariadbd) and can be run directly against a scratch
+# datadir. mariadbd refuses to start as root unless you say --user=root, and a
+# Unix socket path has a ~107 character limit that a long scratch path
+# silently exceeds; both are handled below.
 #
 # USAGE
 #   tools/start-test-db.sh          # start (idempotent); prints the DSN to export
@@ -90,23 +81,14 @@ else
     --pid-file="${PIDFILE}" \
     >"${ERRLOG}" 2>&1 &
 
-  # ── THE WAIT IS 120s, NOT 20s, AND THE DIFFERENCE IS A REAL FALSE ALARM ────
-  #
-  # This loop was `seq 1 40` × 0.5s. A COLD InnoDB start here takes ~24 seconds —
-  # measured: server launched 05:46:35, "ready for connections" 05:46:59 — so the
-  # loop expired FOUR SECONDS BEFORE the server was ready and the script exited
-  # non-zero while mariadbd sat happily listening on the port.
-  #
-  # THAT FAILURE MODE IS WORSE THAN A SLOW START. Every integration test in this
-  # repo SKIPS when it cannot reach a database, and a skipped test reports as a
-  # passing package. So a false "did not come up" does not stop anyone — it
-  # quietly converts the entire integration suite into green nothing, which is
-  # the exact "a skipped run is NOT a pass" trap the browser probes have their
-  # own census to prevent.
-  #
-  # The budget is generous on purpose: this waits on a first-run buffer-pool
-  # load, which varies with disk and with how much the container is doing. Being
-  # slow costs seconds; being wrong costs a suite.
+  # The wait budget is 120s, not 20s: a cold InnoDB start can take ~24s, and a
+  # timeout that expires before the server is ready fails non-zero even though
+  # mariadbd is happily listening. That failure mode is worse than a slow
+  # start — every integration test in this repo SKIPS when it cannot reach a
+  # database, and a skipped test reports as a passing package, so a false
+  # "did not come up" silently converts the whole integration suite into green
+  # nothing. The budget is generous on purpose: being slow costs seconds,
+  # being wrong costs a suite.
   # NOT `local` — this block runs at top level, not inside a function, and `local`
   # there is a RUNTIME error that `bash -n` does not catch.
   waited=0

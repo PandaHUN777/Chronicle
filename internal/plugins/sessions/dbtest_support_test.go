@@ -7,13 +7,11 @@ package sessions
 // can be spent twice, whether an UPDATE that matches a row but changes nothing
 // is distinguishable from one that matched nothing. A mock repository cannot
 // answer any of those: MySQL/MariaDB's RowsAffected counts CHANGED rows, not
-// matched rows, and that distinction is itself a defect source here.
+// matched rows.
 //
 // Each test gets its OWN scratch schema, fully migrated, and drops it on
-// cleanup — deliberately NOT the caller's DSN database. The repo has a standing
-// problem where integration tests take CHRONICLE_TEST_DB_DSN verbatim and die
-// on "Error 1046 (3D000): No database selected" because `make test-int-local`
-// hands them a DSN with no schema name; building our own schema sidesteps it.
+// cleanup — deliberately NOT the caller's DSN database, since
+// `make test-int-local` hands a DSN with no schema name selected.
 //
 // Skips (never fails) when no server is reachable, per the house convention.
 //

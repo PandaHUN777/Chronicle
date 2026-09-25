@@ -1,7 +1,6 @@
-// classifier_v1_5_test.go covers the V1.5 verb-set classifier
-// extension (C-AI-WORKSPACE-V1-G): ActionMismatch status for
-// update/delete rows targeting non-existent entities; no
-// StatusConflict for legitimate update targets.
+// classifier_v1_5_test.go pins ActionMismatch status for update/delete
+// rows targeting non-existent entities, and confirms legitimate update
+// targets never get StatusConflict.
 
 package importer
 

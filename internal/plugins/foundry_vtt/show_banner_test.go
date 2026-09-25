@@ -1,11 +1,5 @@
-// show_banner_test.go — C-UPDATER-NOTIFICATION-LINK regression test
-// (cordinator Issue #16). Pins the banner's "Update pin" settings
-// link against the canonical set of campaign-settings tab values.
-//
-// Previously lived at internal/plugins/campaigns/foundry_banner_link_test.go
-// alongside the foundryModuleUpdateBanner templ; followed the templ to
-// its new home in foundry_vtt per NW-2.2 Chunk D. Same regression
-// coverage, new file location.
+// show_banner_test.go pins the banner's "Update pin" settings link
+// against the canonical set of campaign-settings tab values.
 
 package foundry_vtt
 
@@ -17,10 +11,8 @@ import (
 )
 
 // validSettingsTabs mirrors the five `tab = '<value>'` buttons in
-// campaigns/settings.templ (general / features / people / integrations /
-// activity). If a tab is renamed or added there, update this set; the
-// renaming PR's reviewer should also re-confirm every ?tab=<x> URL
-// repo-wide via grep.
+// campaigns/settings.templ. If a tab is renamed or added there, update
+// this set and re-confirm every ?tab=<x> URL repo-wide.
 var validSettingsTabs = map[string]bool{
 	"general":      true,
 	"features":     true,
@@ -30,14 +22,9 @@ var validSettingsTabs = map[string]bool{
 }
 
 // TestCampaignShowFoundryBanner_LinksToValidSettingsTab pins the
-// banner's "Update pin" link against validSettingsTabs. The original
-// bug (cordinator Issue #16) was that the link pointed at ?tab=foundry
-// — a tab that does not exist after the C-FMC-5b/5c rename. Clicking
-// it loaded settings with Alpine's tab initialized to a no-match value,
-// hiding every tab section → blank page.
-//
-// If the banner regresses to a non-existent tab, this test fails with
-// a clear message naming both sites.
+// banner's "Update pin" link against validSettingsTabs. A link to a
+// non-existent tab initializes Alpine's tab to a no-match value,
+// hiding every tab section behind a blank page.
 func TestCampaignShowFoundryBanner_LinksToValidSettingsTab(t *testing.T) {
 	component := CampaignShowFoundryBanner("test-campaign-id", BannerStatus{
 		HasUpdate:      true,

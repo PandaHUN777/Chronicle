@@ -6,14 +6,11 @@ import (
 	"time"
 )
 
-// C-RSVP-P9 against a REAL MariaDB.
-//
-// Everything here is a claim a mock cannot check: that migration 005's DDL is
-// syntax MariaDB actually accepts (ADD UNIQUE KEY IF NOT EXISTS / DROP INDEX IF
-// EXISTS are MariaDB-only spellings), that the re-keyed unique constraint really
-// does let one slot exist on both alternating tracks, and that an EMPTY save
-// still writes the answered stamp — which is the entire point of the status
-// table and is invisible to any test that only inspects returned structs.
+// Runs against a REAL MariaDB: claims a mock cannot check, since migration
+// 005's DDL uses MariaDB-only syntax (ADD UNIQUE KEY IF NOT EXISTS / DROP
+// INDEX IF EXISTS), the re-keyed unique constraint must let one slot exist on
+// both alternating tracks, and an EMPTY save must still write the answered
+// stamp.
 //
 //	make test-db-up
 //	CHRONICLE_TEST_DB_DSN='root@tcp(127.0.0.1:13306)/' go test ./internal/plugins/sessions/ -run TestDB
@@ -24,7 +21,7 @@ func TestDB_CadenceColumnDefaultsToEveryWeek(t *testing.T) {
 	db := newScratchDB(t)
 	campID, userID := seedCampaign(t, db)
 
-	// Insert WITHOUT naming week_parity — the shape a pre-C-RSVP-P9 writer had.
+	// Insert WITHOUT naming week_parity, the shape a pre-cadence writer used.
 	if _, err := db.Exec(`INSERT INTO member_availability
 		(id, campaign_id, user_id, day_of_week, start_minute, end_minute, state, tz, updated_at)
 		VALUES (?,?,?,?,?,?,?,?,NOW())`,

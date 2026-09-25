@@ -1,12 +1,9 @@
 // logging_endtoend_test.go complements logging_test.go's unit coverage of
 // redactQuery with a full drive through the REAL, exported RequestLogger()
-// middleware — the exact echo.MiddlewareFunc app.go registers globally
-// (`a.Echo.Use(middleware.RequestLogger())`, internal/app/app.go:146, no
-// path exclusion for /media) — capturing what slog actually emits. This
-// answers the reachability question directly: does a signed media request
-// really flow through this logger, and does the credential really end up
-// redacted on the wire out to the log, not just inside the helper
-// function in isolation.
+// middleware (registered globally in internal/app/app.go, no path exclusion
+// for /media), capturing what slog actually emits — pinning that a signed
+// media request really flows through this logger and the credential really
+// ends up redacted on the wire, not just inside the helper in isolation.
 package middleware
 
 import (

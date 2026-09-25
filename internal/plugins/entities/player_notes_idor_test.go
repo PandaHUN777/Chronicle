@@ -1,11 +1,11 @@
-// player_notes_idor_test.go — SEC-IDOR-5 visibility + cross-campaign gate for
-// GetPlayerNotes. The player-notes JSON endpoint previously enforced only the
-// campaign-ownership check and omitted the canonical CheckEntityAccess gate its
-// siblings (GetEntry, GetFieldsAPI) apply — so a player excluded from an entity
-// by grant/custom visibility could still read its player_notes by id. These
-// tests drive the handler with a campaign context set (the pattern
-// gm_fields_handler_test.go uses) and assert the gate at each of: a viewable
-// same-campaign entity, a custom-restricted entity, and a foreign-campaign id.
+// player_notes_idor_test.go pins that GetPlayerNotes applies the canonical
+// CheckEntityAccess gate, the same one its siblings (GetEntry,
+// GetFieldsAPI) apply, not just the campaign-ownership check — otherwise a
+// player excluded from an entity by grant/custom visibility could still
+// read its player_notes by id. These tests drive the handler with a
+// campaign context set and assert the gate at each of: a viewable
+// same-campaign entity, a custom-restricted entity, and a foreign-campaign
+// id.
 package entities
 
 import (

@@ -1,18 +1,8 @@
-// import_smoke_test.go is the dispatch's "browser smoke-test"
-// substitute. No browser available in the AI sandbox; this test
-// drives the full handler → parser → classifier → review-screen
-// templ render pipeline with a multi-page fixture that includes
-// every mixed-state row the dispatch asks for:
-//
-//   - Full FM (StatusNew)
-//   - No FM (parses via H1; could be StatusNew or StatusConflict)
-//   - Name conflict (StatusConflict)
-//   - New category (StatusNewCategory)
-//   - Parse error (StatusParseError)
-//
-// Asserts the response HTML contains the expected per-row status
-// chips + the inert Submit button — same checks an operator would
-// eyeball in the browser.
+// import_smoke_test.go drives the full handler → parser → classifier
+// → review-screen templ render pipeline with a multi-page fixture
+// covering every row status: new, name conflict, new category, and
+// parse error. Asserts the response HTML contains the expected
+// per-row status chips and the Submit button.
 
 package ai_workspace
 
@@ -59,11 +49,9 @@ func fakeContext(c echo.Context, cc *campaigns.CampaignContext) {
 	c.Set("campaign_context", cc)
 }
 
-// TestImport_ParseAndReview_MixedStates is the load-bearing smoke
-// test — sends a 5-page fixture through the parse endpoint and
-// asserts the rendered review screen contains the expected per-row
-// chips. Stand-in for the manual browser smoke test the dispatch
-// would normally require.
+// TestImport_ParseAndReview_MixedStates sends a 5-page fixture
+// through the parse endpoint and asserts the rendered review screen
+// contains the expected per-row chips.
 func TestImport_ParseAndReview_MixedStates(t *testing.T) {
 	lookup := &stubLookup{
 		existing: map[string]*entities.Entity{
@@ -83,10 +71,9 @@ func TestImport_ParseAndReview_MixedStates(t *testing.T) {
 	h := NewHandler(nil)
 	h.SetImportLookup(lookup)
 
-	// Five pages — every state at least once. Each page is one FM
+	// Five pages, every state at least once. Each page is one FM
 	// block + body, with the closer of page N immediately followed
-	// by the opener of page N+1 (matches scoping §3.5's AI prompt
-	// format; that's what real AI output looks like).
+	// by the opener of page N+1 (matches real AI output format).
 	//
 	// 1. Full FM, new (character "Maro Halvi") — StatusNew
 	// 2. Full FM, new (location "Drowned Reach") — StatusNew
@@ -159,17 +146,15 @@ Body.`
 
 	out := rec.Body.String()
 
-	// V1-E: Submit is now wired. Confirm the form posts to the
-	// commit endpoint + carries the markdown_source hidden field
-	// so the commit handler can re-parse without round-tripping
-	// the per-page bodies as separate fields.
+	// The form posts to the commit endpoint and carries the
+	// markdown_source hidden field so the commit handler can
+	// re-parse without round-tripping the per-page bodies.
 	mustContain(t, out, `hx-post="/campaigns/camp-1/ai-workspace/import/commit"`)
 	mustContain(t, out, `name="markdown_source"`)
 	mustContain(t, out, `type="submit"`)
 
-	// Page count + per-status counters. V1-F fixes the singular
-	// grammar ("1 conflicts" → "1 conflict") per dispatch §Review-
-	// screen polish item #6.
+	// Page count + per-status counters (singular grammar: "1
+	// conflict", not "1 conflicts").
 	mustContain(t, out, "5 pages detected")
 	mustContain(t, out, "1 conflict")
 	mustContain(t, out, "1 new category")
@@ -189,10 +174,9 @@ Body.`
 	mustContain(t, out, `value="Ash-Wraith"`)
 	mustContain(t, out, `value="Bone Citadel"`)
 
-	// New-category UI surface. V1-F replaced the old single-
-	// dropdown with an explicit Create-new / Map-to-existing radio
-	// pair (dispatch §Review-screen polish item #1). The proposed
-	// slug still surfaces in a <code> chip next to the Create radio.
+	// New-category UI surface: Create-new / Map-to-existing radio
+	// pair; the proposed slug surfaces in a <code> chip next to the
+	// Create radio.
 	mustContain(t, out, "Create new:")
 	mustContain(t, out, "warrior")
 	mustContain(t, out, `value="new"`)      // Create-new radio value
@@ -231,8 +215,6 @@ func TestImport_EmptyBodyReturns400(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for empty body, got nil")
 	}
-	// V1-F: error wording switched to friendlier phrasing. Match
-	// the "Nothing to import" hint operator now sees.
 	if !strings.Contains(err.Error(), "Nothing to import") {
 		t.Errorf("error message = %q; want 'Nothing to import' hint", err.Error())
 	}
@@ -240,8 +222,7 @@ func TestImport_EmptyBodyReturns400(t *testing.T) {
 
 // TestImport_UnwiredLookupGracefulDegrade — handler returns the
 // empty review screen rather than crashing when SetImportLookup
-// wasn't called. Same defensive shape as the prompt + export
-// handlers.
+// wasn't called.
 func TestImport_UnwiredLookupGracefulDegrade(t *testing.T) {
 	h := NewHandler(nil)
 	// No SetImportLookup call.

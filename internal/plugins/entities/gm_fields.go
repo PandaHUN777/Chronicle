@@ -1,14 +1,14 @@
 package entities
 
-// gm_fields.go — the shared field-restriction filters (audit M-1, dispatch
-// C-FIELDS-GM-FILTER / C-FIELDS-OWNER-FILTER). Entity `fields_data` is served
-// to every campaign member; fields a system manifest marks gm_only (e.g. Draw
-// Steel's director `gm_notes`) or owner_only (e.g. Draw Steel's `backstory`)
-// must be stripped before the JSON reaches a caller who isn't allowed to see
-// them. Every egress point — syncapi GetEntity/ListEntities, the
-// entities-plugin GetFieldsAPI/PreviewAPI, and CharacterSurfaceSchemaJSON —
-// calls FilterRestrictedFields so the paths can't drift. Server is the
-// authority; the widgets' client-side "hide the box" is not a fix.
+// gm_fields.go holds the shared field-restriction filters. Entity
+// `fields_data` is served to every campaign member; fields a system manifest
+// marks gm_only (e.g. Draw Steel's director `gm_notes`) or owner_only (e.g.
+// `backstory`) must be stripped before the JSON reaches a caller who isn't
+// allowed to see them. Every egress point — syncapi GetEntity/ListEntities,
+// the entities-plugin GetFieldsAPI/PreviewAPI, and
+// CharacterSurfaceSchemaJSON — calls FilterRestrictedFields so the paths
+// can't drift. Server is the authority; a widget's client-side "hide the
+// box" is not a fix.
 
 // FilterGMOnlyFields returns fieldsData with GM-only field VALUES removed
 // when the caller may not see GM content (canSeeGM == false). GM/owner
@@ -16,14 +16,11 @@ package entities
 // unchanged.
 //
 // It never mutates the input map: when something must be stripped it
-// returns a fresh copy, so the caller's scanned model / DB-backed map is
-// left intact (matching the egress-sanitize convention). When the caller
-// is a GM, there are no gm_only defs, or no gm_only key is actually present
-// in the data, the original map is returned as-is (zero allocation).
+// returns a fresh copy, so the caller's scanned model / DB-backed map stays
+// intact. Otherwise the original map is returned as-is (zero allocation).
 //
-// "GM-only" is declared per field via FieldDefinition.GMOnly, populated
-// from a system manifest's gm_only annotation through preset application
-// and EnsureFieldMetadataFromManifests — core stays system-agnostic and
+// "GM-only" is declared per field via FieldDefinition.GMOnly, populated from
+// a system manifest's gm_only annotation — core stays system-agnostic and
 // strips whatever the installed manifest marked.
 func FilterGMOnlyFields(fieldsData map[string]any, defs []FieldDefinition, canSeeGM bool) map[string]any {
 	if canSeeGM || len(fieldsData) == 0 || len(defs) == 0 {
@@ -69,14 +66,13 @@ func FilterGMOnlyFields(fieldsData map[string]any, defs []FieldDefinition, canSe
 // FilterOwnerOnlyFields returns fieldsData with owner-only field VALUES
 // removed when the caller can neither see GM content nor owns the entity
 // (canSeeGM == false && isOwner == false). Mirrors FilterGMOnlyFields's
-// contract exactly: never mutates the input map, and returns it unchanged
-// (zero allocation) when there is nothing to strip.
+// contract: never mutates the input map, and returns it unchanged when
+// there is nothing to strip.
 //
-// "Owner-only" is declared per field via FieldDefinition.OwnerOnly, populated
-// from a system manifest's owner_only annotation the same way gm_only is.
-// Unlike GMOnly, an owner-only field's value IS shown to the entity's own
-// claimed owner — this is for player-private content (e.g. a character's
-// backstory), not a GM-exclusive secret.
+// "Owner-only" is declared per field via FieldDefinition.OwnerOnly. Unlike
+// GMOnly, an owner-only field's value IS shown to the entity's own claimed
+// owner — this is for player-private content (e.g. backstory), not a
+// GM-exclusive secret.
 func FilterOwnerOnlyFields(fieldsData map[string]any, defs []FieldDefinition, canSeeGM, isOwner bool) map[string]any {
 	if canSeeGM || isOwner || len(fieldsData) == 0 || len(defs) == 0 {
 		return fieldsData

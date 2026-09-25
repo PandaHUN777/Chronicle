@@ -46,13 +46,10 @@ type MediaService interface {
 
 	// SetMemberChecker and SetEntityVisibilityFilter wire the ADR-058
 	// decision 5 merge-eligibility machinery (see canMergeWithExisting) —
-	// the SAME MemberChecker/EntityVisibilityFilter seams Handler wires for
-	// the decision 1 read-path check, wired onto the service too because
-	// the merge decision has to be made deep inside Upload, before any
-	// HTTP-layer check runs, and for every caller of Upload (notes
-	// attachments, campaign backdrops, the Foundry sync API) — not just the
-	// /media/upload route. Optional: nil fails the merge closed rather than
-	// defaulting to "merge" (see canMergeWithExisting).
+	// the same seams Handler wires for the decision 1 read-path check, but
+	// wired onto the service since the merge decision is made deep inside
+	// Upload, for every caller (not just /media/upload). Optional: nil
+	// fails the merge closed rather than defaulting to "merge".
 	SetMemberChecker(checker MemberChecker)
 	SetEntityVisibilityFilter(f EntityVisibilityFilter)
 
@@ -132,16 +129,13 @@ type mediaService struct {
 	repo      MediaRepository
 	mediaPath string         // Root directory for file storage.
 	maxSize   int64          // Maximum file size in bytes (static fallback).
-	limiter StorageLimiter // Dynamic storage limits from settings plugin. May be nil.
-	sem     *uploadSemaphore
+	limiter   StorageLimiter // Dynamic storage limits from settings plugin. May be nil.
+	sem       *uploadSemaphore
 
 	// memberChecker and entityVisibility back the ADR-058 decision 5 merge
-	// rule (canMergeWithExisting) — the SAME seams Handler holds for the
-	// decision 1 read-path check, wired here too because the merge decision
-	// is made deep inside Upload. Both are optional: nil (before routes.go
-	// finishes wiring, and in every test that doesn't exercise dedup across
-	// a permission boundary) makes canMergeWithExisting fail closed rather
-	// than assume "merge".
+	// rule (canMergeWithExisting), the same seams Handler holds for the
+	// decision 1 read-path check. Both optional: nil makes
+	// canMergeWithExisting fail closed rather than assume "merge".
 	memberChecker    MemberChecker
 	entityVisibility EntityVisibilityFilter
 }
@@ -163,10 +157,8 @@ func (s *mediaService) SetStorageLimiter(limiter StorageLimiter) {
 }
 
 // SetMemberChecker and SetEntityVisibilityFilter wire the ADR-058 decision 5
-// merge-eligibility machinery. Called during wiring in app/routes.go with
-// the SAME adapter instances passed to Handler's identically named setters
-// — the service asks the exact seam the handler's read-path access check
-// already uses, never a second copy of either predicate.
+// merge-eligibility machinery, using the same adapter instances passed to
+// Handler's identically named setters.
 func (s *mediaService) SetMemberChecker(checker MemberChecker) {
 	s.memberChecker = checker
 }
@@ -205,18 +197,12 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 		return nil, apperror.NewBadRequest("unsupported file type: " + input.MimeType)
 	}
 
-	// Per-campaign dedup: hash the *original* bytes (before sanitization
-	// re-encodes them, which is non-deterministic). If the same hash
-	// already exists for this campaign, return that record instead of
-	// writing a duplicate to disk + DB. Saves storage, dodges thumbnail
-	// regeneration, and gives the caller the same UploadResponse it
-	// would have got on a fresh upload.
-	//
-	// Skipped for uploads with no campaign context (avatars, backdrops,
-	// system-level files) — those are scoped per-user/global and the
-	// dedup index is keyed on (campaign_id, content_hash). Hashing them
-	// would still be useful for global dedup but that's intentionally
-	// out of scope: each campaign owns its media space.
+	// Per-campaign dedup: hash the original bytes (before sanitization
+	// re-encodes them, which is non-deterministic). A hash already used in
+	// this campaign returns that record instead of writing a duplicate.
+	// Skipped when there's no campaign context (avatars, backdrops,
+	// system-level files) — the dedup index is keyed on
+	// (campaign_id, content_hash), and each campaign owns its own media space.
 	contentHash := ""
 	if len(input.FileBytes) > 0 {
 		sum := sha256.Sum256(input.FileBytes)
@@ -231,24 +217,18 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 				)
 			} else if existing != nil {
 				// ADR-058 decision 5: a content-hash match is not
-				// automatically safe to merge. The NEW upload has no
-				// destination page yet, so "the destination's permission
-				// level" doesn't exist to compare against — what CAN be
-				// asked is who is uploading and what pages already
-				// reference the MATCHED file. Merging is safe only if the
-				// uploader can already see every one of them; otherwise a
-				// secret map's artwork becomes reachable the moment they
-				// attach their "new" file to a visible page, with nobody
-				// having decided that (the trap this whole decision exists
-				// to close).
+				// automatically safe to merge. The new upload has no
+				// destination page yet, so merging is safe only if the
+				// uploader can already see every page that references the
+				// matched file — otherwise a hidden page's artwork becomes
+				// reachable the moment they attach their "new" file to a
+				// visible page.
 				mergeable, refs, mergeErr := s.canMergeWithExisting(ctx, input.CampaignID, existing.ID, input.UploadedBy)
 				switch {
 				case mergeErr != nil:
-					// Fail closed: refuse the merge on an answer we
-					// couldn't compute — falls through to a fresh upload
-					// exactly like the genuine "no" below. These two cases
-					// must behave identically from the uploader's side;
-					// see the "not mergeable" comment for why.
+					// Fail closed: an uncomputable answer falls through to
+					// a fresh upload exactly like a genuine "no" — the two
+					// must behave identically from the uploader's side.
 					slog.Warn("media dedup: merge-eligibility check failed, refusing merge",
 						slog.String("campaign_id", input.CampaignID),
 						slog.String("existing_id", existing.ID),
@@ -260,28 +240,20 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 						slog.String("existing_id", existing.ID),
 						slog.String("hash", contentHash),
 					)
-					// Decision 4's "where is this used" data doing double
-					// duty (decision 5): safe to hand back in full,
-					// unfiltered, because `mergeable` above already proved
-					// the uploader can see every one of these pages — there
-					// is nothing left to filter.
+					// Safe to hand back the "where is this used" refs in
+					// full, unfiltered: mergeable already proved the
+					// uploader can see every one of these pages.
 					existing.MatchedExisting = true
 					existing.UsedBy = refs
 					return existing, nil
 				default:
-					// NOT mergeable: the uploader cannot see at least one
-					// page already using this exact content. Do NOT merge —
-					// and say NOTHING here, or in the response Upload's
-					// caller builds, that distinguishes this from an
-					// ordinary upload. Confirming "this matched a file you
-					// can't see" would let the uploader fingerprint a
-					// hidden page's artwork with their own candidate
-					// images — the ADR-055 rule 3 leak this whole arc
-					// exists to close, reintroduced at the moment this rule
-					// tries to help. Falling through here stores a
-					// genuinely separate row and returns a completely
-					// ordinary, and completely true, success: the file
-					// really was stored.
+					// Not mergeable: the uploader cannot see at least one
+					// page already using this content. Do not merge, and
+					// say nothing here or in the response that
+					// distinguishes this from an ordinary upload —
+					// confirming a match would let the uploader fingerprint
+					// a hidden page's artwork (ADR-055 rule 3). Fall
+					// through to store a genuinely separate row.
 					slog.Info("media dedup: merge refused, uploader cannot see every referencing page; storing a separate file",
 						slog.String("campaign_id", input.CampaignID),
 						slog.String("existing_id", existing.ID),
@@ -292,14 +264,11 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 		}
 	}
 
-	// Validate file size. When the dynamic limiter is wired (production
-	// path), the live setting from settings.GetEffectiveLimits is the
-	// source of truth — checkQuotas() below enforces it with the same
-	// "file too large" error shape. Skipping the static check here
-	// prevents the env-var ceiling from silently overriding the admin
-	// panel's saved value, which is the bug operators hit when raising
-	// the cap from 10 MB to 100 MB and seeing uploads still 413 at
-	// 10 MB. Tests without a limiter still get the static fallback.
+	// Validate file size. When the dynamic limiter is wired, its live
+	// setting is the source of truth (checkQuotas below enforces it) —
+	// skip the static check here so the env-var ceiling can't silently
+	// override the admin panel's saved limit. Tests without a limiter
+	// still get the static fallback.
 	if s.limiter == nil {
 		maxUpload := s.maxSize
 		if input.FileSize > maxUpload {
@@ -375,13 +344,13 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 	}
 
 	file := &MediaFile{
-		ID:             id,
-		CampaignID:     campaignPtr,
-		UploadedBy:     input.UploadedBy,
-		Filename:       filepath.Join(now.Format("2006/01"), filename),
-		OriginalName:   input.OriginalName,
-		MimeType:       input.MimeType,
-		FileSize:       input.FileSize,
+		ID:           id,
+		CampaignID:   campaignPtr,
+		UploadedBy:   input.UploadedBy,
+		Filename:     filepath.Join(now.Format("2006/01"), filename),
+		OriginalName: input.OriginalName,
+		MimeType:     input.MimeType,
+		FileSize:     input.FileSize,
 		// contentHash was computed above (sha256 of original bytes,
 		// before sanitization). Persisting it here makes future dedup
 		// lookups for this same content short-circuit immediately.
@@ -434,19 +403,14 @@ func (s *mediaService) Upload(ctx context.Context, input UploadInput) (*MediaFil
 
 // canMergeWithExisting answers ADR-058 decision 5's merge question: may
 // uploaderID's upload be merged into existingFileID, the row a content-hash
-// match just found in campaignID? Returns the (deduplicated) reference list
-// alongside the verdict so a safe merge can hand it straight back to Upload's
-// caller as decision 4's "where is this used" data — no second query, and no
-// separate filtering pass, because a true verdict already proves the
-// uploader can see every one of these pages.
+// match just found in campaignID? Returns the deduplicated reference list
+// alongside the verdict, since a true verdict already proves the uploader
+// can see every referencing page.
 //
-// A file no entity yet references (an avatar, backdrop, or an attachment
-// never linked to any page) has nothing to protect: vacuously mergeable,
-// matching decision 3's "files no page references keep today's behaviour."
+// A file no entity yet references is vacuously mergeable (decision 3).
 //
-// FAILS CLOSED: any error from FindReferences, or from the visibility
-// filter, is reported back as an error rather than resolved to true — Upload
-// refuses the merge on error exactly as it does on a genuine "no".
+// Fails closed: any error from FindReferences or the visibility filter is
+// reported back as an error, refusing the merge exactly as on a genuine "no".
 func (s *mediaService) canMergeWithExisting(ctx context.Context, campaignID, existingFileID, uploaderID string) (bool, []MediaRef, error) {
 	refs, err := s.repo.FindReferences(ctx, campaignID, existingFileID)
 	if err != nil {
@@ -573,14 +537,10 @@ func (s *mediaService) FilePath(file *MediaFile) string {
 	return filepath.Join(s.mediaPath, file.Filename)
 }
 
-// BackfillContentHashes is the migration 26 backfill: any row with a
-// NULL content_hash gets its bytes read from disk, hashed, and the
-// hash written back. Iterates in batches so a campaign with thousands
-// of legacy media files doesn't load them all at once.
-//
-// Errors per file are logged and skipped (missing-on-disk, permission,
-// IO) — the goal is to make as much progress as possible. Returns when
-// a SELECT comes back empty.
+// BackfillContentHashes hashes the on-disk bytes of any row with a NULL
+// content_hash and writes the hash back, in batches so a campaign with
+// thousands of legacy files isn't loaded at once. Per-file errors are
+// logged and skipped so the run makes as much progress as possible.
 func (s *mediaService) BackfillContentHashes(ctx context.Context, batchSize int) (int, error) {
 	if batchSize <= 0 {
 		batchSize = 100
@@ -608,12 +568,9 @@ func (s *mediaService) BackfillContentHashes(ctx context.Context, batchSize int)
 					slog.String("path", path),
 					slog.Any("error", err),
 				)
-				// Mark with a sentinel so the next batch doesn't pick
-				// it up forever. We use a 64-char placeholder distinct
-				// from any real sha256 — all-zeros prefix + "missing".
-				// This trades dedup correctness for backfill convergence:
-				// "missing" rows won't dedup against each other, which
-				// is fine since they're already broken on disk.
+				// Mark with a sentinel (distinct from any real sha256) so
+				// the next batch doesn't pick this row up forever; these
+				// rows simply won't dedup against each other.
 				_ = s.repo.SetContentHash(ctx, f.ID, "0000000000000000000000000000000000000000000000000000000missing0")
 				continue
 			}
@@ -729,21 +686,17 @@ func (s *mediaService) CleanupOrphans(ctx context.Context) (int, error) {
 			return nil
 		}
 
-		// Defense in depth: skip symlinks. filepath.Walk uses Lstat, so
-		// symlinks never resolve under our cleanup, but a symlink in
-		// the media tree is unexpected enough that we'd rather not
-		// touch it. Refuse to os.Remove it — even though Remove unlinks
-		// the symlink itself rather than its target, leaving it in
-		// place lets an operator investigate how it got there.
+		// Defense in depth: refuse to remove a symlink in the media tree —
+		// unexpected enough to leave for an operator to investigate rather
+		// than delete.
 		if info.Mode()&os.ModeSymlink != 0 {
 			slog.Warn("skipping symlink in media directory",
 				slog.String("path", path),
 			)
 			return nil
 		}
-		// Also refuse anything that isn't a regular file (sockets,
-		// devices, named pipes). os.FileInfo.Mode().IsRegular() is the
-		// idiomatic check.
+		// Also skip anything that isn't a regular file (sockets, devices,
+		// named pipes).
 		if !info.Mode().IsRegular() {
 			return nil
 		}

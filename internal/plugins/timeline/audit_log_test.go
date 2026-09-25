@@ -1,7 +1,5 @@
-// audit_log_test.go covers V2 Wave 0 PR 4 (C-CAL-V2-AUDIT-LOG-INTEGRATION)
-// handler-layer audit emission for the timeline plugin. Same harness
-// pattern as calendar/audit_log_test.go — capture audit calls,
-// exercise handler with a stub TimelineService.
+// Pins handler-layer audit emission for the timeline plugin: capture audit
+// calls while exercising the handler with a stub TimelineService.
 
 package timeline
 

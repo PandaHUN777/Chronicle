@@ -45,9 +45,8 @@ func TestEntityShowRendererRegistry_RegisterAndLookup(t *testing.T) {
 	}
 }
 
-// TestEntityShowRendererRegistry_LookupMiss confirms unregistered
-// slugs return (nil, false). This is the *only* failure mode CH4
-// promises — the caller branches on the bool to fall through to
+// TestEntityShowRendererRegistry_LookupMiss confirms unregistered slugs
+// return (nil, false) — the caller branches on the bool to fall through to
 // the existing block dispatch.
 func TestEntityShowRendererRegistry_LookupMiss(t *testing.T) {
 	reg := NewEntityShowRendererRegistry()

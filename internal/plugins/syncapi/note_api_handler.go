@@ -63,14 +63,11 @@ func (h *NoteAPIHandler) GetNote(c echo.Context) error {
 		return err
 	}
 
-	// Verify the note belongs to the campaign in the URL AND that the caller may
-	// read it. The middleware chain only proves the caller is a member of the
-	// campaign with the "read" permission — it knows nothing about note
-	// ownership, and the service/repository address the note by bare `WHERE id
-	// = ?`. Without this gate any campaign member reads any other member's
-	// private journal. Same predicate the web route applies (ADR-013: private
-	// notes are owner-only); 404 rather than 403 so the response does not
-	// confirm that a note the caller may not see exists.
+	// Ownership gate: the middleware only proves campaign membership, and the
+	// repository addresses the note by bare `WHERE id = ?` with no ownership
+	// filter, so this check is what stops any member reading another
+	// member's private journal (ADR-013: private notes are owner-only). 404
+	// rather than 403 so the response doesn't confirm the note exists.
 	campaignID := c.Param("id")
 	if !note.CanAccess(key.UserID, campaignID) {
 		return apperror.NewNotFound("note not found")

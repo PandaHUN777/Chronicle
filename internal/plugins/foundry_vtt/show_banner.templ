@@ -1,14 +1,9 @@
 // show_banner.templ owns the "newer Foundry module version available"
-// banner displayed at the top of the campaign show page. Previously
-// lived in campaigns/show.templ as foundryModuleUpdateBanner; moved
-// here per NW-2.2 Chunk D to keep the campaigns plugin VTT-agnostic.
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (the
-// fragment-lazy-load convention) + reports/chronicle/2026-05-23-c-plugin-isolation-audit.md
-// §1.3 + §3 Chunk D.
+// banner displayed at the top of the campaign show page. Kept here
+// (not in campaigns) so the campaigns plugin stays VTT-agnostic (T-B2).
 //
 // URL: GET /campaigns/:id/foundry-vtt/show-banner-fragment
-// Auth: owner-only (matches the prior fmBanner resolver's role gate)
+// Auth: owner-only
 
 package foundry_vtt
 

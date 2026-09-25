@@ -1,29 +1,7 @@
-// search_visibility_reachability_test.go is a REACHABILITY test for the
-// 2026-09-12 security audit's UNTESTED finding #2
-// (.ai/designs/2026-09-12-security-audit-findings.md):
-//
-//	"cross-plugin timeline search applies only the SQL role narrowing and
-//	returns results without passing them through the per-user filter that
-//	List uses, so a restricted timeline entry may be named to an anonymous
-//	viewer."
-//
-// This drives the REAL timelineRepo.Search (the SQL role-only narrowing) and
-// the REAL timelineService.SearchTimelines (the caller the audit finding
-// says was responsible for the missing per-user filter) against a real
-// MariaDB, asserting the CORRECT behaviour: a timeline restricted to
-// specific users by visibility_rules must not be named to a viewer that
-// allow-list excludes, anonymous included.
-//
-// IMPORTANT — what this test actually found: repository.go's own doc
-// comment on Search (and service.go's on SearchTimelines) already states
-// this was fixed as a "2026-09-12 audit finding 4 follow-up" (ADR-058),
-// with SearchTimelines now running repo.Search's results through the same
-// filterTimelinesByUser List uses. That means the .ai/designs anchor at
-// repository.go:251 has DRIFTED — it now lands mid-comment describing the
-// historical bug, not live vulnerable code. This test is written to assert
-// the CORRECT behaviour regardless of that history: if it FAILS, the leak
-// is reachable; if it PASSES, the fix holds under a real database, which is
-// itself the verdict (CHANGED, not CONFIRMED — see the audit report).
+// Drives the real timelineRepo.Search (SQL role-only narrowing) and
+// timelineService.SearchTimelines against a real MariaDB, asserting that a
+// timeline restricted by visibility_rules to specific users is never named
+// to a viewer the allow-list excludes, anonymous included (ADR-058).
 //
 // Scratch-schema pattern mirrors sessions/dbtest_support_test.go: own
 // throwaway schema, fully migrated (core + calendar + timeline plugin
@@ -96,12 +74,11 @@ func newSearchVisScratchDB(t *testing.T) *sql.DB {
 		t.Skipf("core migrations did not apply: %v", err)
 	}
 
-	// timelines.calendar_id FKs to calendars(id) (nullable, but the FK
-	// constraint still requires the table to exist at CREATE TABLE time), so
-	// the calendar plugin's schema must be loaded before timeline's — same
-	// dependency sessions/dbtest_support_test.go documents and loads off
-	// disk (never by importing the package: internal/wire/
-	// plugin_import_guard_test.go forbids a timeline→calendar edge).
+	// timelines.calendar_id FKs to calendars(id) (nullable, but the FK still
+	// requires the table to exist at CREATE TABLE time), so the calendar
+	// plugin's schema must load first, off disk — never by importing the
+	// package (internal/wire/plugin_import_guard_test.go forbids a
+	// timeline→calendar edge).
 	calDir := os.DirFS(filepath.Join(root, "internal", "plugins", "calendar", "migrations"))
 	tlSub, err := fs.Sub(MigrationsFS, database.PluginMigrationsSubdir)
 	if err != nil {
@@ -135,28 +112,17 @@ func mustSearchVisExec(t *testing.T, db *sql.DB, query string, args ...any) {
 }
 
 // TestSearchTimelines_DoesNotNameAllowListRestrictedTimelineToAnonymous
-// reproduces audit finding #2 end to end against real SQL:
+// verifies end to end against real SQL:
 //
-//  1. Seed a campaign, an allowed user, and a timeline with
-//     visibility='everyone' (passes repo.Search's coarse SQL role filter —
-//     this is NOT a dm_only timeline) but visibility_rules restricting it to
-//     a single allowed user by id — the "restricted timeline entry" shape
-//     the finding describes.
-//  2. Call the REAL timelineRepo.Search directly and confirm it returns the
-//     row (this is DOCUMENTED, intentional behaviour of that function —
-//     repo.Search only narrows dm_only; it is not itself the bug).
-//  3. Call the REAL timelineService.SearchTimelines as an ANONYMOUS viewer
-//     (role=Player, userID="") and assert the timeline's name is ABSENT —
-//     the per-user allow-list must still apply even though the coarse SQL
-//     filter let the row through.
-//  4. Sanity-check the harness: SearchTimelines AS the allowed user must
-//     still return the timeline, proving step 3's absence is the allow-list
-//     working, not a search string/setup mistake.
-//
-// A failure at step 3 is the proof the leak is reachable. A pass says the
-// fix recorded in repository.go/service.go's doc comments (ADR-058) holds
-// against a real database — see this file's header for why that makes the
-// verdict CHANGED rather than CONFIRMED.
+//  1. Seed a timeline with visibility='everyone' (passes repo.Search's
+//     coarse SQL role filter) but visibility_rules restricting it to one
+//     allowed user by id.
+//  2. timelineRepo.Search returns the row (documented: it only narrows
+//     dm_only, not the per-user allow-list).
+//  3. timelineService.SearchTimelines as an anonymous viewer must omit the
+//     timeline's name — the per-user allow-list must still apply (ADR-058).
+//  4. SearchTimelines as the allowed user must still return it, proving 3
+//     is the allow-list working, not a setup mistake.
 func TestSearchTimelines_DoesNotNameAllowListRestrictedTimelineToAnonymous(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test requires a database; skipped under -short")

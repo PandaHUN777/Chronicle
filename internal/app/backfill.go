@@ -1,10 +1,9 @@
 // Package app wires together all application dependencies.
 //
 // This file holds one-time, idempotent startup backfills: data fix-ups that
-// replay an addon's enable-effects across campaigns that enabled the addon
-// BEFORE the effect existed. They run through the owning services (never
-// hand-rolled SQL), so they can never drift from the service's definition of
-// the data, and they are safe to run on every boot.
+// replay an addon's enable-effects for campaigns that enabled it before the
+// effect existed. They run through the owning services, never hand-rolled
+// SQL, so they stay safe to run on every boot.
 package app
 
 import (
@@ -26,21 +25,16 @@ type pcBackfillEntities interface {
 	EnsurePlayerCharacterType(ctx context.Context, campaignID string) error
 }
 
-// backfillPlayerCharacterTypes ensures the claimable "Player Character" sub-type
-// is present AND nested under the default "Characters" category for every
-// campaign that already has the Player Character Claiming addon enabled. The
-// enable hook (ApplyAddonEnableEffects) only fires on a fresh enable, so
-// campaigns that turned the addon on before that effect shipped would otherwise
-// lack the premade type until they re-toggled it. Running this at startup heals
-// them.
+// backfillPlayerCharacterTypes ensures the claimable "Player Character"
+// sub-type is present and nested under the default "Characters" category for
+// every campaign with the Player Character Claiming addon enabled — heals
+// campaigns that enabled the addon before ApplyAddonEnableEffects created
+// this type, since that hook only fires on a fresh enable.
 //
-// EnsurePlayerCharacterType is idempotent: it re-parents a PC type that an
-// earlier build premade at the top level (a one-time in-place migration that
-// preserves the type's claimed characters), creates a missing one already
-// nested, and no-ops once the type is correctly nested. So this is safe and
-// self-healing on every boot. Per-campaign failures are logged and skipped so
-// one bad campaign neither aborts the sweep nor blocks startup. Returns the
-// number of campaigns processed without error.
+// EnsurePlayerCharacterType is idempotent (re-parents, creates, or no-ops as
+// needed), so this is safe to run on every boot. Per-campaign failures are
+// logged and skipped rather than aborting the sweep. Returns the number of
+// campaigns processed without error.
 func backfillPlayerCharacterTypes(ctx context.Context, addonSvc pcBackfillAddons, entitySvc pcBackfillEntities) (int, error) {
 	campaignIDs, err := addonSvc.ListCampaignsUsingAddon(ctx, entities.AddonPlayerCharacterClaiming)
 	if err != nil {

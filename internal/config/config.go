@@ -179,15 +179,12 @@ type UploadConfig struct {
 	// Auto-generated on first boot if not set. Must be at least 32 bytes.
 	SigningSecret string
 
-	// SigningSecretFile is the path where an auto-generated signing
-	// secret is persisted so it survives restarts. Only used when
-	// SigningSecret is empty (env var unset). Empty value disables
-	// persistence — test environments only; production deploys
-	// should leave this at the default or set MEDIA_SIGNING_SECRET
-	// in env. See cordinator Issue #17: without persistence, every
-	// restart silently invalidates every outstanding Foundry
-	// manifest token, because foundry_vtt's TokenSigner shares this
-	// secret as its HMAC key.
+	// SigningSecretFile is where an auto-generated signing secret is
+	// persisted so it survives restarts (used only when SigningSecret is
+	// empty). Without persistence, every restart invalidates outstanding
+	// Foundry manifest tokens, since foundry_vtt's TokenSigner shares this
+	// key. Leave empty only in test environments; production should keep
+	// the default or set MEDIA_SIGNING_SECRET directly.
 	SigningSecretFile string
 
 	// ServeRateLimit is the max requests per minute per IP for media serve

@@ -73,13 +73,12 @@ type SystemManifest struct {
 	// so widgets can depend on them (e.g., DrawSteelRefRenderer).
 	TextRenderers []TextRendererDef `json:"text_renderers,omitempty"`
 
-	// Renderers declares page-level entity-show renderers (CH4.5). Each
-	// entry binds an entity_type slug owned by this manifest to a widget
-	// that should render the entity's show page in place of the standard
-	// layout-block dispatch. The host auto-registers each entry into the
-	// EntityShowRendererRegistry at system-load time so JSON-only system
-	// packages don't need a Chronicle Go release to ship a custom
-	// renderer.
+	// Renderers declares page-level entity-show renderers. Each entry binds
+	// an entity_type slug owned by this manifest to a widget that renders
+	// the entity's show page in place of the standard layout-block dispatch.
+	// The host auto-registers each entry into the EntityShowRendererRegistry
+	// at system-load time so JSON-only system packages don't need a
+	// Chronicle Go release to ship a custom renderer.
 	Renderers []RendererDef `json:"renderers,omitempty"`
 }
 
@@ -189,24 +188,19 @@ type FieldDef struct {
 	// Type is the field data type: "string", "number", "list", "markdown".
 	Type string `json:"type"`
 
-	// GMOnly marks a field as GM-only: its VALUE is stripped from entity
-	// API responses served to non-GM (player / public) callers, so GM
-	// secrets like a statblock's director notes never reach a player's
-	// browser. Absent/false = player-visible (backward-compatible default).
-	// The systems tier only DECLARES this; core enforces it at egress
-	// (C-FIELDS-GM-FILTER / audit M-1). It flows to the entity type's stored
-	// field defs via preset application + the field-metadata reconciler.
+	// GMOnly marks a field as GM-only: its VALUE is stripped from entity API
+	// responses served to non-GM (player / public) callers, so GM secrets
+	// like a statblock's director notes never reach a player's browser.
+	// Absent/false = player-visible. The systems tier only DECLARES this;
+	// core enforces it at egress via preset application + the field-metadata
+	// reconciler.
 	GMOnly bool `json:"gm_only,omitempty"`
 
 	// OwnerOnly marks a field as visible only to GM-tier callers AND the
-	// entity's own claimed owner: its VALUE is stripped from entity API
-	// responses served to every other player, so player-private content
-	// like a character's backstory isn't shared with the rest of the party.
-	// Unlike GMOnly, the entity's own owner still sees it. Absent/false =
-	// party-visible (backward-compatible default). The systems tier only
-	// DECLARES this; core enforces it at egress (C-FIELDS-OWNER-FILTER). It
-	// flows to the entity type's stored field defs via preset application +
-	// the field-metadata reconciler, mirroring GMOnly.
+	// entity's own claimed owner: its VALUE is stripped from responses served
+	// to every other player, so player-private content like a backstory
+	// isn't shared with the rest of the party. Absent/false = party-visible.
+	// Enforced the same way as GMOnly.
 	OwnerOnly bool `json:"owner_only,omitempty"`
 
 	// FoundryPath is the dot-notation path to the corresponding field in

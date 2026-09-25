@@ -2,7 +2,7 @@
 // and topbar navigation. Used for all pages after login.
 //
 // Layout data (user name, campaign context, CSRF token) is read from Go's
-// context.Context via helpers in data.go. The LayoutInjector in app/routes.go
+// context.Context via helpers in data.go. LayoutInjector in app/routes.go
 // copies this data from Echo's context before rendering.
 
 package layouts
@@ -796,8 +796,8 @@ templ sidebarAddonLink(ctx context.Context, item SidebarItemView) {
 
 // sidebarAllPagesLink renders the "All Pages" (Entities) link in the sidebar.
 // Uses longest-prefix (isPathPrefix), not exact match, so an entity detail page
-// (/campaigns/:id/entities/42) highlights this link on a hard server load too —
-// matching boot.js's boosted-nav highlighter (r2-3). Sibling links stay exact
+// (/campaigns/:id/entities/42) highlights this link on a hard server load too,
+// matching boot.js's boosted-nav highlighter. Sibling links stay exact
 // (Dashboard is /campaigns/:id), so this prefix never over-highlights them.
 templ sidebarAllPagesLink(ctx context.Context) {
 	<a
@@ -1071,19 +1071,15 @@ templ SidebarDrillFragment(slug string) {
 }
 
 // activeDrillSlug returns the entity type slug whose drill panel should be
-// auto-opened for the current request, or "" if none. The slug returned is
-// always a TOP-LEVEL category's slug — when the URL matches a sub-category
-// (template-variant) entity type, this resolves up to the parent so the
-// sidebar highlights the canonical Characters / Locations / etc. drill
-// panel rather than treating the variant as its own first-class category.
+// auto-opened for the current request, or "" if none. Always a top-level
+// category's slug — when the URL matches a sub-category (template-variant)
+// entity type, this resolves up to the parent so the sidebar highlights the
+// canonical Characters / Locations / etc. drill panel.
 //
-// Sub-categories are template variants per ADR (sub-cats-as-templates,
-// PR #241): they live in the entity_types table for layout/template
-// scoping but never appear as their own sidebar items. Without the
-// parent-walk here, navigating to a URL whose slug is a variant
-// (typically because the user navigated via a sub-cat-typed entity's
-// dynamic slug route) would orphan the drill — no matching top-level
-// item in the icon list.
+// Sub-categories are template variants (ADR: sub-cats-as-templates): they
+// live in the entity_types table for layout/template scoping but never
+// appear as their own sidebar items, so a variant slug must resolve up to
+// its parent or the drill has no matching top-level item to open.
 func activeDrillSlug(ctx context.Context) string {
 	types := GetEntityTypes(ctx)
 	for _, et := range types {
@@ -1111,8 +1107,8 @@ func activeDrillSlug(ctx context.Context) string {
 
 // customNavLink renders a single custom link in the sidebar. Used for owner-
 // defined links from the Customization Hub's navigation editor.
-// safeExternalURL re-applies the SafeLinkURL allowlist at RENDER time so a link
-// row stored BEFORE the ingress guard (audit-R2 Finding 1) can never render as
+// safeExternalURL re-applies the SafeLinkURL allowlist at render time so a
+// link row stored before the ingress guard existed can never render as
 // javascript:/data:/protocol-relative — defense-in-depth over templ.SafeURL,
 // which deliberately bypasses Templ's URL sanitization. Falls back to "#".
 func safeExternalURL(url string) templ.SafeURL {
@@ -1524,11 +1520,8 @@ func isPathPrefix(ctx context.Context, prefix string) bool {
 // NotesWidget) and its topbar trigger button should render for the current
 // request: authenticated, in a campaign, with the "notes" addon enabled, and
 // not on the full-page journal (suppressed there to avoid autosave/sync
-// conflicts between the floating panel and the journal's own editor).
-// Single source of truth for both call sites (the mount point and the topbar
-// button) — they previously used two independently-written conditions that
-// drifted apart, leaving the button clickable-but-dead on the journal page
-// (C-NAV-ACTIVE-FIX).
+// conflicts between the floating panel and the journal's own editor). Single
+// source of truth for both call sites, so they can't drift apart.
 func notesWidgetVisible(ctx context.Context) bool {
 	return InCampaign(ctx) && IsAuthenticated(ctx) && IsAddonEnabled(ctx, "notes") &&
 		!isPathPrefix(ctx, fmt.Sprintf("/campaigns/%s/journal", GetCampaignID(ctx)))
@@ -1568,11 +1561,9 @@ templ topbarCenterContent(ctx context.Context) {
 }
 
 // topbarInlineStyle returns the CSS background declaration for the campaign's
-// custom topbar, or an empty string for the default surface styling. The value
-// is applied to the dedicated background LAYER inside the <header> (see Topbar),
-// not the <header> element itself: keeping the background on its own full-bleed
-// layer is what prevents the opaque surface fill and the flex nav children from
-// masking the image or gradient.
+// custom topbar, or an empty string for the default surface styling. Applied
+// to the dedicated background layer inside <header> (see Topbar), not the
+// element itself, so the opaque surface fill and nav children don't mask it.
 func topbarInlineStyle(ctx context.Context) string {
 	style := GetTopbarStyle(ctx)
 	if style == nil {

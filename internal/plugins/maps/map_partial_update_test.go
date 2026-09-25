@@ -1,17 +1,9 @@
-// map_partial_update_test.go — sweep R4 / ADR-054 #4, the map-settings half
-// of the absent-means-preserve contract.
-//
-// UpdateMap assigned ImageID, ImageWidth, ImageHeight and Description
-// UNGUARDED — including ImageID and Description, which were ALREADY a Go
-// pointer. A plain *string bound from JSON cannot tell "the caller omitted
-// this key" from "the caller sent null", so the pointer type alone never
-// protected anything: a rename-only PUT unlinked the map's image and wiped
-// its description. BackgroundColor was the one field already correctly
-// tri-state (see its doc comment on UpdateMapInput) and is unaffected by
-// this fix. The one shipped caller (maps.templ) re-derives these fields
-// from hidden inputs today, so it is not tripped in production — but
-// nothing at the service layer stopped a narrower caller from tripping it,
-// which is exactly the shape syncapi or a future UI could reach.
+// map_partial_update_test.go pins the map-settings half of the
+// absent-means-preserve contract (.ai/conventions.md): ImageID, ImageWidth,
+// ImageHeight and Description must use patch.Field[T] rather than a plain
+// *string, since a plain pointer bound from JSON can't distinguish "key
+// omitted" from "key sent null" — a rename-only PUT must not unlink the
+// map's image or wipe its description.
 package maps
 
 import (

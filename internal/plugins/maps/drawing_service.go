@@ -199,9 +199,9 @@ func (s *drawingService) UpdateDrawing(ctx context.Context, id, mapID string, in
 		return err
 	}
 
-	// Load-merge-write (sweep R4 / ADR-054 #6). `d` is the row as stored, so
-	// every merge below defaults to the stored value: only a key the caller
-	// actually sent can change anything.
+	// Load-merge-write: `d` is the row as stored, so every merge below
+	// defaults to the stored value; only a key the caller actually sent
+	// can change anything.
 	d.Points = input.Points.Val(d.Points)
 	d.StrokeColor = input.StrokeColor.Val(d.StrokeColor)
 	d.StrokeWidth = input.StrokeWidth.Val(d.StrokeWidth)
@@ -326,11 +326,9 @@ func (s *drawingService) UpdateToken(ctx context.Context, id, mapID string, inpu
 		return err
 	}
 
-	// Load-merge-write (sweep R4 / ADR-054 #6). `t` is the row as stored, so
-	// every merge below defaults to the stored value: only a key the caller
-	// actually sent can change anything. Before this, a drag PUT carrying
-	// only {x, y} zeroed IsHidden, IsLocked, both HP bars and every aura/
-	// light/vision field — see the input's doc comment for the incident.
+	// Load-merge-write: `t` is the row as stored, so every merge below
+	// defaults to the stored value; only a key the caller actually sent
+	// can change anything.
 	if input.Name != "" {
 		t.Name = input.Name
 	}
@@ -477,10 +475,9 @@ func (s *drawingService) UpdateLayer(ctx context.Context, id, mapID string, inpu
 		return err
 	}
 
-	// Load-merge-write (sweep R4 / ADR-054 #6). `l` is the row as stored, so
-	// every merge below defaults to the stored value: only a key the caller
-	// actually sent can change anything. Before this, reordering the layer
-	// stack (a SortOrder-only PUT) silently turned visibility and lock off.
+	// Load-merge-write: `l` is the row as stored, so every merge below
+	// defaults to the stored value; only a key the caller actually sent
+	// can change anything.
 	if input.Name != "" {
 		l.Name = input.Name
 	}

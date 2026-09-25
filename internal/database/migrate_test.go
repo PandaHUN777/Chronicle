@@ -51,11 +51,9 @@ func migrationsDir(t *testing.T) string {
 
 // TestExpectedCoreMigrationVersion_MatchesMax pins the health-check floor
 // (ExpectedCoreMigrationVersion, used in cmd/server/main.go) to the highest
-// on-disk core migration. It guards the drift that the 000030 incident exposed:
-// the constant was 29 while the newest migration was 30. If the constant lags
-// the real max, a deploy missing the newest migration passes a floor check it
-// should fail; if it leads, every normal boot fails the floor check. Reuses the
-// production HighestSourceVersion so the parse logic can't diverge.
+// on-disk core migration: if it lags, a deploy missing the newest migration
+// passes a floor check it should fail; if it leads, every normal boot fails.
+// Reuses the production HighestSourceVersion so the parse logic can't diverge.
 func TestExpectedCoreMigrationVersion_MatchesMax(t *testing.T) {
 	max, err := HighestSourceVersion(migrationsDir(t))
 	if err != nil {
@@ -302,11 +300,11 @@ func TestMigrations_NoPluginTableReferences(t *testing.T) {
 	}
 }
 
-// --- Migration safety guards added after the 000030 incident (ADR-044) ---
+// --- Migration safety guards (ADR-044) ---
 
 // TestMigrations_GaplessSequence asserts the core migration numbers form a
 // contiguous 1..N run with no gaps or duplicates. A gap makes golang-migrate's
-// file source stop early; a duplicate is ambiguous. (See ADR-044.)
+// file source stop early; a duplicate is ambiguous.
 func TestMigrations_GaplessSequence(t *testing.T) {
 	dir := migrationsDir(t)
 	ups, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
@@ -365,13 +363,11 @@ func TestMigrations_PluginUpDownPairs(t *testing.T) {
 	}
 }
 
-// grandfatheredNonIdempotentMigrations exempts migration FILES that pre-date the
-// idempotent-DDL rule (they use bare ADD COLUMN / CREATE TABLE / DROP without
-// IF [NOT] EXISTS). They are immutable — the migration-immutability guard
-// (tools/check-migration-immutability.sh) forbids editing them — so they're
-// exempt forever. NEW migrations must be idempotent so the dirty-state recovery
-// path (the Force(v-1) re-run in migrate.go) is unconditionally safe. Generated
-// from the current tree; keyed by basename (unique across core + all plugins).
+// grandfatheredNonIdempotentMigrations exempts migration FILES that pre-date
+// the idempotent-DDL rule (bare ADD COLUMN / CREATE TABLE / DROP without
+// IF [NOT] EXISTS). They are immutable (tools/check-migration-immutability.sh
+// forbids editing them) so they're exempt forever; new migrations must be
+// idempotent. Keyed by basename, unique across core + all plugins.
 var grandfatheredNonIdempotentMigrations = map[string]bool{
 	// core
 	"000002_note_sharing.up.sql":                   true,

@@ -1,11 +1,10 @@
 package campaigns
 
-// show_banner_gate_test.go — cordinator#30 r2: the Foundry update-banner
-// fragment loader is OWNER-ONLY MARKUP. It used to render for every viewer
-// while its endpoint sits behind RequireAuth+requireOwner — so an anonymous
-// visitor on a PUBLIC campaign fired an on-load hx-get, took a 401, and the
-// error handler bounced the whole page to /login. Non-owners must never
-// receive the fragment call at all.
+// show_banner_gate_test.go pins that the Foundry update-banner fragment
+// loader is owner-only markup: its endpoint sits behind
+// RequireAuth+requireOwner, so a non-owner must never receive the fragment
+// call (an anonymous visitor on a public campaign would 401 on-load and get
+// bounced to /login).
 
 import (
 	"context"

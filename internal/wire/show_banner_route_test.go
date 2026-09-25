@@ -1,20 +1,9 @@
 // show_banner_route_test.go pins the owner-only access control on
 // /foundry-vtt/show-banner-fragment via AST inspection of the route
-// registration. Permanent regression guard added by NW-2.2 Chunk
-// D2-cleanup: the inline role gate in campaigns.Handler that
-// previously double-checked owner-only was removed (route-level
-// requireOwner middleware enforces it). This test makes the
-// route-level enforcement load-bearing — if a future contributor
-// drops the requireOwner argument from the show-banner-fragment
-// registration, this test fails with a clear pointer.
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-26-c-d2-cleanup-verification.md
-// (the role-gate-removal-safety verification).
-//
-// Same AST-assertion shape as foundry_public_ratelimit_test.go's
-// middleware-pin pattern (PR #339); generalizes to other security-
-// sensitive routes.
+// registration. Owner-only is enforced solely by the route-level
+// requireOwner middleware (there is no inline role check in the handler),
+// so this test makes that middleware load-bearing: dropping the
+// requireOwner argument from the registration fails here.
 
 package wire
 
@@ -29,9 +18,7 @@ import (
 
 // TestShowBannerFragmentRoute_HasOwnerGate pins that the
 // /foundry-vtt/show-banner-fragment route registration includes the
-// requireOwner middleware argument. The campaigns-side inline role
-// gate that previously double-checked owner was removed in D2-cleanup;
-// this test makes the route-level gate the load-bearing enforcement.
+// requireOwner middleware argument.
 func TestShowBannerFragmentRoute_HasOwnerGate(t *testing.T) {
 	root := repoRoot(t)
 	routesPath := filepath.Join(root, "internal", "plugins", fvttDirName, "routes.go")

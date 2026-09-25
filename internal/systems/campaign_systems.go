@@ -1,4 +1,4 @@
-// campaign_modules.go manages per-campaign custom game systems.
+// campaign_systems.go manages per-campaign custom game systems.
 // Campaign owners can upload ZIP files containing manifest.json + data/*.json
 // to create custom reference content for their campaign. These modules use
 // GenericSystem (no Go code needed) and are stored in the media directory.

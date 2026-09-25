@@ -1,11 +1,11 @@
-// claim_overview_test.go — PC-CLAIM-3. Pins the Player Character Claiming UI:
+// claim_overview_test.go pins the Player Character Claiming UI:
 //
-//	Part 1/4 — claimBanner: "Claimed by <player>" when owned; the actionable
-//	           claim banner only when unclaimed + claimable + addon enabled.
-//	Part 2   — claimRosterPanel: per-character owner + reassign/unclaim controls;
-//	           ownerDisplayNames / resolveOwnerName / roster label helpers.
-//	Part 3   — EntityTypeCard: the per-type "Players can claim" toggle appears
-//	           and rides the save PUT only when the addon is enabled.
+//	claimBanner: "Claimed by <player>" when owned; the actionable claim
+//	  banner only when unclaimed + claimable + addon enabled.
+//	claimRosterPanel: per-character owner + reassign/unclaim controls;
+//	  ownerDisplayNames / resolveOwnerName / roster label helpers.
+//	EntityTypeCard: the per-type "Players can claim" toggle appears and
+//	  rides the save PUT only when the addon is enabled.
 package entities
 
 import (

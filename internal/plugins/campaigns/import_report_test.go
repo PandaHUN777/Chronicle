@@ -1,17 +1,10 @@
-// import_report_test.go is the regression for the silent-partial-import bug
-// (sweep R4 stage 16). Fix id: backend/import-silent-partial-success.
-// Import has always been best-effort — a single bad row
-// must not abandon a half-built campaign — but every skipped row went to
-// slog.Warn only, and the handler redirected the operator to their new
-// campaign as if nothing had been lost. A restore tool that reports success
-// while dropping rows is worse than one that fails outright.
-//
-// Two halves are pinned here:
-//   - the report COUNTS every dropped object and names how many of what
-//     (TestImportReport_*),
-//   - the import handler SURFACES a partial import instead of redirecting
-//     (TestImportCampaign_PartialImportIsSurfaced), and still redirects on a
-//     clean import (TestImportCampaign_CleanImportRedirects).
+// import_report_test.go pins that a partial import is never silent: import
+// is best-effort (a single bad row must not abandon a half-built campaign),
+// but the report must count every dropped object and name how many of what
+// (TestImportReport_*), and the handler must surface a partial import
+// instead of redirecting as if nothing were lost
+// (TestImportCampaign_PartialImportIsSurfaced), while still redirecting on
+// a clean import (TestImportCampaign_CleanImportRedirects).
 package campaigns
 
 import (

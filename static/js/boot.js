@@ -60,15 +60,12 @@
    * Report `data-widget` names that are mounted in the DOM but have no
    * registered implementation, once per name per page.
    *
-   * WHY THIS EXISTS. mountElement() bails silently on an unknown name because
-   * registration legitimately races the scan (a widget script that has not run
-   * yet mounts itself on register()). That makes "this widget is not registered
-   * YET" and "this widget's JS file is shipped on no page at all" produce the
-   * identical observable: an empty div, an empty console, and a page that looks
-   * finished. Three real widgets (aliases, inventory, transaction_log) sat
-   * permanently blank on entity pages that way — full backend, full JS, in no
-   * <script src> anywhere — and nothing said a word. Called only after the load
-   * has settled, when "not yet" is no longer a live explanation.
+   * mountElement() bails silently on an unknown name because registration
+   * legitimately races the scan (a widget script that has not run yet mounts
+   * itself on register()). Without this check a widget missing its
+   * <script src> entirely looks identical to one that just hasn't registered
+   * yet: an empty div, an empty console. Called only after the load has
+   * settled, when "not yet" is no longer a live explanation.
    *
    * @param {Element|Document} root - Root element to scan.
    */
@@ -312,16 +309,11 @@
   // data-nav-active-classes / data-nav-inactive-classes attributes, which the
   // server populates from the SAME Go string constants used to build every nav
   // link's class list (sidebarNavActive / sidebarNavInactive in
-  // layouts/app.templ) -- the single source of truth. A past nav redesign
-  // changed those server classes without updating a hardcoded copy that used
-  // to live here, so a boosted nav re-applied a class vocabulary the server no
-  // longer used: the just-left link kept its stale "active" classes (never
-  // removed, since they weren't in the old INACTIVE_CLASSES list either) while
-  // the newly-active link only got a partial set (missing the actual
-  // border/glow classes) -- the "wrong / doubled active nav item" bug
-  // (C-NAV-ACTIVE-FIX). FALLBACK_* below only covers a #sidebar missing the
-  // data attributes (e.g. very old cached HTML mid-deploy) and must be kept in
-  // sync by hand if that path is ever actually exercised.
+  // layouts/app.templ) -- the single source of truth, so a hardcoded copy here
+  // can't drift from a server-side class change. FALLBACK_* below only covers
+  // a #sidebar missing the data attributes (e.g. very old cached HTML
+  // mid-deploy) and must be kept in sync by hand if that path is ever
+  // actually exercised.
   var FALLBACK_ACTIVE_CLASSES = ['sidebar-nav-active', 'text-sidebar-active', 'border-accent'];
   var FALLBACK_INACTIVE_CLASSES = ['text-sidebar-text', 'hover:text-sidebar-active'];
 
@@ -350,7 +342,7 @@
   /**
    * True if the element carries any class from the given vocabulary list. Used
    * to identify sidebar nav links from the parsed active/inactive vocabulary
-   * rather than a hardcoded copy of the marker tokens (r2-1).
+   * rather than a hardcoded copy of the marker tokens.
    *
    * @param {Element} el
    * @param {string[]} classes
@@ -385,9 +377,8 @@
       var href = link.getAttribute('href');
       if (!href) continue;
       // Only process styled nav links — those carrying the active OR inactive
-      // vocabulary. Derived from the SAME parsed #sidebar vocabulary the
-      // highlighter applies below, not a hardcoded copy of the marker tokens
-      // that silently drifts when the server classes change (r2-1).
+      // vocabulary. Derived from the same parsed #sidebar vocabulary the
+      // highlighter applies below, so it can't drift from server classes.
       if (!hasAnyClass(link, ACTIVE_CLASSES) && !hasAnyClass(link, INACTIVE_CLASSES)) continue;
       // Skip category drill-down links (handled by sidebar_drill.js).
       if (link.classList.contains('sidebar-category-link')) continue;

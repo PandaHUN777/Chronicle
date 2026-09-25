@@ -1,16 +1,12 @@
 // parser.go splits multi-page AI-generated markdown into ParsedPage
-// structs. Canonical multi-page boundary is a YAML front-matter
+// structs. The canonical multi-page boundary is a YAML front-matter
 // opener (`---\n` at the start of a line, only when FM mode is
 // active for the input). H1 is NOT a split signal when FM mode is
 // active — the AI's body can legitimately contain `#` lines.
 //
-// When NO front-matter blocks appear anywhere in the input, the
-// parser falls back to H1 splitting (each `# Heading` starts a new
-// page; matches the §3.5 prompt template's instruction to AI tools
-// to use `#` headings per page).
-//
-// Per cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §3.3 (front-matter schema) + §4 Phase 4.
+// When no front-matter blocks appear anywhere in the input, the
+// parser falls back to H1 splitting: each `# Heading` starts a new
+// page, matching the prompt template's instruction to AI tools.
 
 package importer
 
@@ -23,10 +19,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// validVisibilities enumerates the allowed `visibility:` enum values
-// per scoping §3.3. Anything else (e.g. "PUBLIC", "everyone") is a
-// parse error per-row — the operator fixes the source or picks a
-// different bulk default and reparses.
+// validVisibilities enumerates the allowed `visibility:` values.
+// Anything else (e.g. "PUBLIC", "everyone") is a parse error per-row.
 var validVisibilities = map[string]bool{
 	"private": true,
 	"dm_only": true,
@@ -96,9 +90,9 @@ func splitPages(input string) []string {
 	}
 
 	// Classify each fence as opener / closer / stray by CONTENT, not
-	// by blind odd/even pairing (the old scheme — one horizontal
-	// rule in a body, or one missing closer, shifted the pairing and
-	// corrupted every page after it; operator-reported 2026-06-12).
+	// by blind odd/even pairing — a horizontal rule in a body or a
+	// missing closer would otherwise shift the pairing and corrupt
+	// every page after it.
 	//
 	// A fence is an OPENER iff the first non-blank line after it
 	// looks like a YAML key (`name: …`). Its CLOSER is the next
@@ -247,10 +241,9 @@ func parseOnePage(raw string) ParsedPage {
 		}
 	}
 
-	// Validate + default the action field (V1.5 per C-AI-WORKSPACE-V1-G).
-	// Empty defaults to "create" so V1-era AI prompts (no `action:`)
-	// continue to parse with their previous semantics. Per-action
-	// required-field validation lives below (after the name check).
+	// Validate + default the action field. Empty defaults to "create".
+	// Per-action required-field validation lives below (after the
+	// name check).
 	switch p.FrontMatter.Action {
 	case "":
 		p.FrontMatter.Action = ActionCreate
@@ -366,7 +359,6 @@ func unknownYAMLKeys(rawYAML string) []string {
 	known := map[string]bool{
 		"name": true, "type": true, "subcategory": true,
 		"visibility": true, "tags": true, "description": true,
-		// V1.5 (C-AI-WORKSPACE-V1-G) declarative action verb.
 		"action": true,
 	}
 	var unknown []string

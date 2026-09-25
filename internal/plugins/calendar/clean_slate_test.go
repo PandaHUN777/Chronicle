@@ -197,25 +197,14 @@ func foreignKeyParentsOtherPluginsNeed(t *testing.T, created map[string]string) 
 	return needed
 }
 
-// TestCleanSlateKeepsForeignKeyParentsOtherPluginsStillReference is the guard
-// for the defect CI caught on PR #595: 019 dropped `calendars` and
-// `calendar_events` while sessions/001 and timeline/001 still declared foreign
-// keys to them.
-//
-// Those migrations are immutable, so the constraints are recreated verbatim on
-// every fresh database. The calendar plugin migrates BEFORE both, so dropping
-// the parents made sessions/001 and timeline/001 fail on statement 1 with
-// errno 150, leaving both plugins DEGRADED at version 0 — sessions and
-// timeline simply dead on every new install. On an existing database the same
-// constraints block the DROP outright, failing the migration with DDL already
-// committed and no rollback available.
-//
-// Emptying the parents does the same job with none of that: the deletes
-// cascade and null the dependent rows through the constraints instead of
-// fighting them. When V5 ships sessions/timeline migrations that DROP those
-// constraints by name, this guard sees the release and starts requiring the
-// stubs to be dropped instead — the completeness test's exemption vanishes
-// with the constraints.
+// TestCleanSlateKeepsForeignKeyParentsOtherPluginsStillReference pins that 019
+// never DROPs a table another (immutable) plugin migration still declares a
+// foreign key to — the calendar plugin migrates before those, so a DROP would
+// fail sessions/timeline on a fresh database with errno 150, or fail outright
+// against an existing one's constraints. Emptying the parent (DELETE) is safe
+// instead: the deletes cascade through the constraint rather than fighting it.
+// When a later plugin migration DROPs the constraint by name, this guard sees
+// the release and starts requiring the parent dropped instead.
 func TestCleanSlateKeepsForeignKeyParentsOtherPluginsStillReference(t *testing.T) {
 	created := tablesCreatedBeforeCleanSlate(t)
 	needed := foreignKeyParentsOtherPluginsNeed(t, created)

@@ -75,20 +75,16 @@ func handleUnauthenticated(c echo.Context) error {
 
 // loginRedirectTarget builds the /login destination for an unauthenticated
 // browser navigation, carrying where the visitor was actually going so the
-// login form can send them back there afterwards. Without this a member who
-// clicks a deep link from their inbox — the schedule-solicitation email is the
-// first Chronicle mail that contains one — signs in and lands on /dashboard,
-// several navigations from the page they were asked to visit.
+// login form can send them back there afterwards.
 //
 // Two deliberate narrowings:
 //
 //   - Only GET (and HEAD) navigations carry a destination. Replaying a POST
 //     target as a post-login GET would either 405 or, worse, look like the
 //     write succeeded.
-//   - The destination goes through sanitizeRedirect, so a request line of
-//     "//evil.example" or "/\evil.example" — the protocol-relative
-//     open-redirect vectors — degrades to a bare /login instead of becoming a
-//     Location the login handler would later honour.
+//   - The destination goes through sanitizeRedirect, so a protocol-relative
+//     open-redirect ("//evil.example") degrades to a bare /login instead of
+//     becoming a Location the login handler would later honour.
 func loginRedirectTarget(c echo.Context) string {
 	const bare = "/login"
 	req := c.Request()

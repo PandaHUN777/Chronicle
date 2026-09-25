@@ -237,10 +237,9 @@ func checkAudienceWrite(audience Audience, viewer ViewerContext) error {
 			return nil
 		}
 	case AudienceDMOnly:
-		// IsDmGranted users can READ dm_only (per the column docstring at
-		// internal/plugins/campaigns/model.go:246) but only Owners can
-		// AUTHOR them. Without this, a dm-granted player could quietly
-		// post notes that pretended to be GM-authored.
+		// IsDmGranted users can read dm_only but only Owners can author
+		// them, so a dm-granted player can't post notes that pretend to be
+		// GM-authored.
 		if viewer.IsOwner {
 			return nil
 		}

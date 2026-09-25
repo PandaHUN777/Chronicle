@@ -1,44 +1,23 @@
 // Package systems — operator_diag_campaign.go is the CAMPAIGN half of the
-// operator diagnostic catalog: "why does MY campaign look like this?"
+// operator diagnostic catalog: "why does MY campaign look like this?" — as
+// opposed to the host.* family, which answers WHICH CODE IS RUNNING.
 //
-// WHY IT EXISTS. The host.* family answers WHICH CODE IS RUNNING. On
-// 2026-08-11 an operator reported three things about their phone — no RSVP on
-// the calendar, no real moon on the real calendar, and a skybox that was still
-// there — and answering them took a five-lane source investigation. The
-// catalog scored 0 for 3, because every diagnostic in it reads process state,
-// on-disk or embedded bytes, or entity rows, and NOT ONE reads `campaign_addons`,
-// `campaigns.dashboard_layout` / `sidebar_config`, the `calendars` /
-// `calendar_moons` tables, the route table, or any render decision. The one
-// reachable move was `host.deploy-check data-bench-rsvp`, which would have
-// answered "✓ found in the executable" — true, and the wrong answer.
+// The blind spot these diagnostics cover is THREE axes, not one: campaign
+// CONFIG (addons, layouts, sidebar), per-VIEWER state, and PRODUCER RULES
+// that otherwise exist only as Go comments in the producing plugin.
 //
-// The blind spot is THREE axes, not one:
+// THE MIRROR, STATED UP FRONT BECAUSE IT IS THIS FILE'S ONE REAL RISK. The
+// pre-V5 calendar's render rules were unexported inside
+// `internal/plugins/calendar`, and `internal/systems` must not import a
+// plugin package — so `calendar.render` re-derived them here from the same
+// inputs, as a MIRROR of the producer rather than a call into it. Since the
+// V4 calendar was deleted for the V5 rebuild (#741), the mirrored functions
+// below now describe rules that no longer have a live producer to drift
+// from; treat their source-line pointers as historical until V5 lands.
 //
-//   - campaign CONFIG (addons, layouts, sidebar),
-//   - per-VIEWER state (`block_layers`, `bench_sections` — both
-//     `(user_id, campaign_id)`-grained, both defaulting to something other
-//     than nothing), and
-//   - PRODUCER RULES ([SKY-1], benchClassify) that exist only as Go comments.
-//
-// THE MIRROR, STATED UP FRONT BECAUSE IT IS THIS FILE'S ONE REAL RISK.
-// `benchClassify`, `resolveBenchSections`, the [SKY-1] seat arguments and the
-// Almanac gate are all UNEXPORTED inside `internal/plugins/calendar`, and
-// `internal/systems` must not import a plugin package. So `calendar.render`
-// re-derives them here from the same inputs — it is a MIRROR of the producer,
-// not a call into it. A mirror that silently goes stale would be a second
-// opinion that disagrees with the page precisely while somebody is using it to
-// decide what the page did, which is the worst available failure. Two things
-// hold it honest:
-//
-//  1. Every mirrored rule carries its source file and the exact line it copies,
-//     and `operator_diag_campaign_mirror_test.go` reads that source and fails
-//     when the line changes.
-//  2. The render trace SAYS it is a mirror, in its own output, every time.
-//
-// DEGRADE LOUDLY. An unwired provider prints "provider not wired"; a read that
-// failed prints the error. A plausible-looking empty answer is the one thing
-// none of these may ever produce — "no moons" and "nobody could read the moons
-// table" must never render the same.
+// DEGRADE LOUDLY. An unwired provider prints "provider not wired"; a read
+// that failed prints the error. A plausible-looking empty answer is the one
+// thing none of these may ever produce.
 package systems
 
 import (
@@ -259,9 +238,8 @@ func SetCampaignDiagProvider(p CampaignDiagProvider) { campaignDiagProvider = p 
 
 // ── catalog entries ─────────────────────────────────────────────────────────
 
-// calendarRenderDiagnostic is rank 1 of the 2026-08-11 proposals. Four
-// independent causes currently render as one identical unfilled Bench, and
-// three investigation lanes independently ended on "I cannot distinguish them".
+// calendarRenderDiagnostic traces why the v4 calendar page rendered as it did
+// for one viewer, disambiguating causes that otherwise look identical.
 func calendarRenderDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "calendar.render",
@@ -272,8 +250,8 @@ func calendarRenderDiagnostic() Diagnostic {
 	}
 }
 
-// calendarConfigDiagnostic is rank 2: no viewer, one question — "is the data
-// there at all?". Nothing in the catalog counted moon rows before this.
+// calendarConfigDiagnostic answers "is the data there at all?" for a
+// campaign's calendars, with no viewer context.
 func calendarConfigDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "calendar.config",
@@ -284,9 +262,9 @@ func calendarConfigDiagnostic() Diagnostic {
 	}
 }
 
-// campaignSurfacesDiagnostic is rank 3. Both calendar surfaces are Templ
-// compiled into one binary, so neither appears in host.assets or host.embedded
-// and nothing anywhere exposed the route table.
+// campaignSurfacesDiagnostic exposes the live route table: Templ pages are
+// compiled into the binary, so they never appear in host.assets or
+// host.embedded.
 func campaignSurfacesDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "campaign.surfaces",
@@ -297,9 +275,9 @@ func campaignSurfacesDiagnostic() Diagnostic {
 	}
 }
 
-// campaignConfigDiagnostic is rank 4, and the ONLY way to establish whether a
-// legacy `skybox` block was hand-placed: it is in no default layout and no
-// migration seeds it.
+// campaignConfigDiagnostic shows enabled addons and the block types a
+// campaign has placed, to establish whether a block was hand-placed vs seeded
+// by a default layout or migration.
 func campaignConfigDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "campaign.config",
@@ -312,9 +290,8 @@ func campaignConfigDiagnostic() Diagnostic {
 
 // ── the mirrored producer rules ─────────────────────────────────────────────
 //
-// Each of these copies ONE rule out of internal/plugins/calendar. Every one
-// names the file and the line it copies, and operator_diag_campaign_mirror_test.go
-// reads that source and fails when the copied line changes.
+// Each of these copied one rule out of the pre-V5 internal/plugins/calendar
+// (now deleted; see #741). The source-line pointers below are historical.
 
 // benchSeat is one classified seat on the Bench.
 type benchSeat struct {
@@ -323,7 +300,7 @@ type benchSeat struct {
 	Clause string // which rule selected it, in the producer's own terms
 }
 
-// mirrorBenchClassify mirrors benchClassify (bench.go:1390-1428).
+// mirrorBenchClassify mirrors the deleted v4 calendar's benchClassify.
 //
 // PRIMARY is the calendar a reader means when they say "the campaign
 // calendar": the campaign default, else the viewer's active one, else the
@@ -331,11 +308,9 @@ type benchSeat struct {
 // REAL-WORLD is the first real-life calendar that is not already the primary.
 // EVERYTHING ELSE IS A ROW.
 //
-// Reproduced rather than called because it is unexported and systems may not
-// import the plugin. The CLAUSE STRINGS are the reason this is worth
-// mirroring at all: the producer decides silently, and "which clause fired"
-// is the fact that separates "signed behaviour, adding a moon will not help"
-// from "adding one moon fixes it".
+// The CLAUSE STRINGS are the reason this is worth mirroring at all: the
+// producer decided silently, and "which clause fired" is what separates
+// "adding a moon will not help" from "adding one moon fixes it".
 func mirrorBenchClassify(cals []DiagCalendar, activeID string) []benchSeat {
 	if len(cals) == 0 {
 		return nil
@@ -401,14 +376,8 @@ const (
 // isRealLifeMode mirrors Calendar.IsRealLife (model.go) — `Mode == "reallife"`.
 func isRealLifeMode(mode string) bool { return mode == "reallife" }
 
-// mirrorSeatRender mirrors the two [SKY-1] seat calls in buildBench:
-//
-//	bench.go:1129  h.benchBlock(…, primary,   …, false, true,  …)  → noShelf=false, sky=true
-//	bench.go:1143  h.benchBlock(…, realWorld, …, true,  false, …)  → noShelf=true,  sky=false
-//
-// ONE SKY PER SURFACE, on the Primary Block and nowhere else. This is signed
-// behaviour, not an oversight — a fix that seats a sky on the real-world Block
-// would AMEND [SKY-1].
+// mirrorSeatRender mirrors the deleted v4 calendar's seat rendering: ONE SKY
+// PER SURFACE, on the Primary Block and nowhere else.
 func mirrorSeatRender(seat string) (skyOn, shelfHidden bool) {
 	switch seat {
 	case seatPrimary:
@@ -420,24 +389,17 @@ func mirrorSeatRender(seat string) (skyOn, shelfHidden bool) {
 	}
 }
 
-// mirrorAlmanacBuilt mirrors the Almanac gate (block_geometry.go:773):
-//
-//	if (!in.ShelfHidden || !in.SkyHidden) && len(cal.Moons) > 0 {
-//
-// with SkyHidden = !SkyOn (block_projection.go:166). TWO READERS, NAMED
-// SEPARATELY ([SKY-7]): either the Shelf or the sky header asking is enough.
+// mirrorAlmanacBuilt mirrors the deleted v4 calendar's Almanac gate: either
+// the Shelf or the sky header asking is enough to build the register.
 func mirrorAlmanacBuilt(skyOn, shelfHidden bool, moonsRendered int) bool {
 	return (!shelfHidden || skyOn) && moonsRendered > 0
 }
 
-// benchSectionKeysMirror mirrors bench_sections.go:41 — the CLOSED registry of
+// benchSectionKeysMirror mirrors the deleted v4 calendar's registry of
 // collapsible Bench sections, in the page's contract order.
 var benchSectionKeysMirror = []string{"ribbon", "rsvp", "nextup", "rows"}
 
 // benchSectionLabels names each key for a reader who has never seen the page.
-// `rsvp` is the one the 2026-08-11 operator met: its summary line reads
-// "Session & availability", and the ONLY link to /schedule in the entire
-// product sits inside it (bench.templ:715).
 var benchSectionLabels = map[string]string{
 	"ribbon": "the whole ribbon (session tile, next-up, sync pill, attention rows)",
 	"rsvp":   `"Session & availability" — the RSVP panel, and the only link to /schedule in the product`,
@@ -445,16 +407,15 @@ var benchSectionLabels = map[string]string{
 	"rows":   "the subordinate-calendar row grid",
 }
 
-// mirrorResolveBenchSections mirrors resolveBenchSections (bench_sections.go:68-81).
+// mirrorResolveBenchSections mirrors the deleted v4 calendar's
+// resolveBenchSections:
 //
-//	stored == nil          never chosen   → all four CLOSED  ([BR2-4] SIGNED)
+//	stored == nil          never chosen   → all four CLOSED
 //	stored == []string{}   closed nothing → all four OPEN
 //	stored == [rsvp rows]  → those two closed, the other two open
 //
-// The nil case is the whole point: "the operator never touched it" and "the
-// operator closed nothing" are different states that the page renders
-// oppositely, and a diagnostic that printed only the resolved booleans would
-// lose the distinction that explains the complaint.
+// The nil case is the whole point: "never touched" and "closed nothing" are
+// different states the page renders oppositely.
 func mirrorResolveBenchSections(stored []string, neverChosen bool) map[string]bool {
 	closed := make(map[string]bool, len(benchSectionKeysMirror))
 	if neverChosen {
@@ -672,8 +633,7 @@ func writeSeatMoons(b *strings.Builder, c DiagCalendar, skyOn, shelfHidden bool)
 	}
 }
 
-// benchMoonCapMirror mirrors benchMoonCap (bench.go:60) — the Bench passes 3,
-// matching the renderer's own ceiling and the governing render's three discs.
+// benchMoonCapMirror mirrors the deleted v4 calendar's benchMoonCap: 3 discs.
 const benchMoonCapMirror = 3
 
 // writeRenderSections prints the four disclosures and, for each, WHY.
@@ -887,22 +847,10 @@ func calendarSurfaceMap() []surfaceRow {
 
 // handlerSurfaces classifies the routes this file DISCOVERS rather than
 // declares: the surface is keyed on the handler Echo reports, and the path is
-// taken from the running router.
-//
-// WHY DISCOVERY RATHER THAN A DECLARED ROW, for the frozen shell in particular.
-// `[VS-2]` SIGNED sunset the old shell as a CLICKABLE destination — it stays
-// reachable by URL and by nothing else — and `TestSunset_NoLiveDoorRemains`
-// enforces that by walking `internal/` for the shell's path prefix and failing
-// on any hit that is not a signed exemption. Writing those paths into this map
-// would have added four, and the honest options were to amend a signed
-// exemption list or to change the construction.
-//
-// Changing the construction is better on its own terms. A declared path is a
-// claim this repo makes about a page; a discovered one is a fact read off the
-// router. So these rows print the LIVE path with an authored explanation
-// attached to the handler, and if the shell is ever genuinely removed,
-// `campaign.surfaces` stops mentioning it the moment the route goes — with no
-// edit here, and no stale row claiming a page that no longer exists.
+// taken from the running router. This way a declared path never goes stale —
+// if a handler is ever removed, `campaign.surfaces` stops mentioning it the
+// moment the route goes, with no edit here. `TestSunset_NoLiveDoorRemains`
+// enforces that the frozen V2 shell stays unreachable except by URL.
 func handlerSurfaces() map[string]surfaceRow {
 	return map[string]surfaceRow{
 		"ShowV2": {Surface: "the frozen V2 calendar shell", Status: statusLegacy,
@@ -1151,18 +1099,12 @@ func writeConfigAddons(b *strings.Builder, f CampaignConfigFacts) {
 
 const (
 	// blockTypeCalendar is a LAYOUT BLOCK TYPE, not a reference to the calendar
-	// plugin. The two spell the same word, which is why this is a named const
-	// rather than a literal: tools/check-plugin-isolation.sh (T-B2) forbids a
-	// plugin slug spelled outside the owning plugin, and internal/systems may
-	// not import a plugin to borrow calendar.PluginSlug the way the app-layer
-	// adapter does.
-	//
-	// The block type arrives here as DATA — the app layer reads it out of a
-	// stored layout — so nothing is being coupled: this map only decides which
-	// of the types already on the page get an explanatory note. Declared under
-	// the guard's const-registry amendment (R4-S26-A), which exempts a bare
-	// const-assignment line and nothing else in the file, so a future
-	// `"calendar"` written anywhere else here still fails.
+	// plugin — named as a const rather than a literal because
+	// tools/check-plugin-isolation.sh (T-B2) forbids a plugin slug spelled
+	// outside the owning plugin, and internal/systems may not import a plugin
+	// to borrow calendar.PluginSlug. The value arrives here as DATA read out
+	// of a stored layout; this const only decides which placed block gets an
+	// explanatory note.
 	blockTypeCalendar = "calendar"
 )
 
@@ -1181,18 +1123,11 @@ func writeConfigLayouts(b *strings.Builder, f CampaignConfigFacts) {
 	}
 
 	interesting := map[string]string{
-		// The class name of the v4 sky band is deliberately NOT written here.
-		// It is a signed carve-out that lives in exactly two files, guarded by
-		// a repository-wide walk, and a diagnostic naming it would be a third
-		// consumer of a signature that names ONE band on ONE Block. The
-		// distinction the reader needs is between the two THINGS, and it can
-		// be drawn without the selector.
-		// CALV5-PLACEHOLDER: the four calendar-family descriptions below are
-		// rebuild-era truth. The world-state pipeline (cal-almanac.js) was
-		// deleted with the v4 calendar; every one of these placements renders
-		// the "being rebuilt" notice today. The bindings themselves are kept
-		// on purpose (Sweep skips unknown types), so a placed block is a fact
-		// worth reporting — what it renders is not what it used to.
+		// CALV5-PLACEHOLDER: the four calendar-family descriptions below
+		// describe rebuild-era behavior. V5 must re-wire each placement's
+		// rendering once its world-state pipeline replaces the deleted one;
+		// until then every one renders the "being rebuilt" notice, and the
+		// bindings are kept so a placed block still reports as a fact.
 		"skybox":            "the LEGACY skybox widget placement. Its canvas/particle engine and the world-state pipeline behind it were deleted in the CALV5 clean slate, so this placement renders the calendar-rebuilding notice today; the binding is kept so V5 can reclaim the seat. (Historically this was the surface that rendered the synthesized real Moon — distinct from the v4 sky band on the Bench, which was server-rendered with no JavaScript.)",
 		"entity_worldstate": "the world-state band placement — its pipeline was deleted in the CALV5 clean slate; renders the rebuilding notice until V5.",
 		"entity_calendar":   "a calendar Block embedded on an entity page — renders the rebuilding notice until V5.",

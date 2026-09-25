@@ -73,16 +73,13 @@ func HTML(input string) string {
 	return getPolicy().Sanitize(input)
 }
 
-// HTMLPtr sanitizes the HTML behind a nullable string pointer and
-// returns a fresh pointer to the sanitized value. nil input returns
-// nil. The original *p value is not mutated — callers receive a new
-// pointer to a new string, which is the right shape for re-sanitizing
-// at EGRESS on response copies whose canonical value lives in the DB.
+// HTMLPtr sanitizes the HTML behind a nullable string pointer and returns a
+// fresh pointer to the sanitized value; nil input returns nil. The original
+// *p is not mutated.
 //
-// Defense-in-depth companion to HTML: ingress sanitization (write
-// path) is the primary guarantee; calling HTMLPtr on response fields
-// covers historical rows or future tooling-bug-inserted rows that
-// slipped past ingress.
+// Defense-in-depth companion to HTML: ingress sanitization (write path) is
+// the primary guarantee; calling HTMLPtr on response fields covers
+// historical or otherwise-unsanitized rows on the egress path.
 func HTMLPtr(p *string) *string {
 	if p == nil {
 		return nil

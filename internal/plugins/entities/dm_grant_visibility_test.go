@@ -1,23 +1,16 @@
-// dm_grant_visibility_test.go — ADR-057 slice 1 (C-CODM-VIS-PARITY).
-//
-// campaigns.CampaignContext.VisibilityRole() promotes a DM-granted member
-// (IsDmGranted=true) to Owner for visibility purposes so they can see
-// dm_only content — that is the documented design (campaigns/model.go). But
-// every CheckEntityAccess caller in this file passed the raw cc.MemberRole
-// instead, so a Co-DM (a Player with a DM grant) was 404'd opening exactly
-// the dm_only entity they are meant to be able to see. BacklinksFragment did
-// both in one function: it already used VisibilityRole() to build the
-// backlinks list, then re-derived a plain MemberRole for the target's own
-// access check a few lines later — so the list is populated but the page
-// that would show it 404s.
+// dm_grant_visibility_test.go pins that campaigns.CampaignContext.
+// VisibilityRole(), which promotes a DM-granted member (IsDmGranted=true) to
+// Owner for visibility purposes (campaigns/model.go), is what every
+// CheckEntityAccess/GetChildren call site here uses — never the raw
+// cc.MemberRole — so a Co-DM (a Player with a DM grant) reaches dm_only
+// content instead of getting 404'd (ADR-057).
 //
 // These tests drive Handler.Show and Handler.BacklinksFragment directly with
-// a campaign context set the way gm_fields_handler_test.go / player_notes
-// _idor_test.go do (c.Set("campaign_context", ...) by the middleware's known
-// key), so no router/session middleware is needed. The stub CheckEntityAccess
-// mirrors the real service's default-visibility "dm_only" rule (service.go:
-// Scribe+ i.e. role>=2 required) so the test exercises the actual promotion
-// threshold rather than an arbitrary sentinel.
+// a campaign context set the way other handler tests do
+// (c.Set("campaign_context", ...)), so no router/session middleware is
+// needed. The stub CheckEntityAccess mirrors the real service's
+// default-visibility "dm_only" rule (Scribe+, role>=2) so the test exercises
+// the actual promotion threshold.
 package entities
 
 import (
@@ -60,10 +53,9 @@ func (s *dmGrantEntitySvc) GetAncestors(_ context.Context, _ string, _ int, _ st
 }
 
 // GetChildren mirrors the real repository's visibilityFilter default-mode
-// rule (entities/repository.go: role>=RoleScribe sees dm_only; role>=RoleOwner
-// is the same threshold with room to spare) so a test against this stub
-// exercises the actual promotion threshold Show's GetChildren call site must
-// clear for a Co-DM, not an arbitrary sentinel unconnected to production.
+// rule (entities/repository.go: role>=RoleScribe sees dm_only), so it
+// exercises the actual promotion threshold Show's GetChildren call must
+// clear for a Co-DM.
 func (s *dmGrantEntitySvc) GetChildren(_ context.Context, _ string, role int, _ string) ([]Entity, error) {
 	if role >= int(campaigns.RoleScribe) {
 		return s.children, nil
@@ -78,10 +70,8 @@ func (s *dmGrantEntitySvc) GetChildren(_ context.Context, _ string, role int, _ 
 }
 
 // CheckEntityAccess mirrors entityService.CheckEntityAccess's legacy
-// default-mode branch: a private (dm_only) entity needs role>=RoleScribe.
-// Real Owners (role>=RoleOwner) short-circuit above that in the production
-// code; this stub only needs the Scribe threshold since that's what
-// VisibilityRole()'s Owner promotion must clear for a Co-DM.
+// default-mode branch: a private (dm_only) entity needs role>=RoleScribe,
+// the threshold VisibilityRole()'s Owner promotion must clear for a Co-DM.
 func (s *dmGrantEntitySvc) CheckEntityAccess(_ context.Context, _ string, role int, _ string) (*EffectivePermission, error) {
 	if s.entity.IsPrivate && role < int(campaigns.RoleScribe) {
 		return &EffectivePermission{CanView: false}, nil
@@ -89,12 +79,9 @@ func (s *dmGrantEntitySvc) CheckEntityAccess(_ context.Context, _ string, role i
 	return &EffectivePermission{CanView: true, CanEdit: role >= int(campaigns.RoleScribe)}, nil
 }
 
-// GetBacklinksWithSnippets always returns one entry. In production this
-// query is already scoped by VisibilityRole() (handler.go's BacklinksFragment
-// computes `role` once, at the top, for exactly this call) — the bug this
-// slice fixes is the SECOND, independent role derivation a few lines later
-// for the target entity's own CheckEntityAccess gate, so the list side is
-// deliberately not part of what's under test here.
+// GetBacklinksWithSnippets always returns one entry. Production scopes this
+// query by VisibilityRole() (handler.go's BacklinksFragment computes `role`
+// once, at the top); the list side is not what's under test here.
 func (s *dmGrantEntitySvc) GetBacklinksWithSnippets(_ context.Context, campaignID, _ string, _ int, _ string) ([]BacklinkEntry, error) {
 	return []BacklinkEntry{{
 		Entity:  Entity{ID: "mentioner-1", CampaignID: campaignID, Name: "Secret War Council Minutes"},
@@ -127,12 +114,10 @@ func coDmContext() *campaigns.CampaignContext {
 	}
 }
 
-// TestShow_CoDmCanOpenDmOnlyEntity pins the Show-handler half of the defect:
-// a Co-DM (Player + DM grant) opening a dm_only entity must get the page, not
-// a 404. Before the fix, Show passed int(cc.MemberRole) (Player, role=1) to
-// CheckEntityAccess, which is below the Scribe threshold a dm_only entity
-// requires — so this failed with a 404 AppError even though VisibilityRole()
-// already promotes exactly this viewer to Owner for visibility purposes.
+// TestShow_CoDmCanOpenDmOnlyEntity pins that a Co-DM (Player + DM grant)
+// opening a dm_only entity gets the page, not a 404: Show's
+// CheckEntityAccess call must use cc.VisibilityRole(), which promotes this
+// viewer to Owner for visibility purposes, not the raw MemberRole.
 func TestShow_CoDmCanOpenDmOnlyEntity(t *testing.T) {
 	ent, et := dmOnlyFixture()
 	h := &Handler{service: &dmGrantEntitySvc{entity: ent, etype: et}}
@@ -157,13 +142,10 @@ func TestShow_CoDmCanOpenDmOnlyEntity(t *testing.T) {
 	}
 }
 
-// TestBacklinksFragment_CoDmSeesListAndReachesTarget pins the two-halves-of-
-// one-function defect called out in ADR-057: BacklinksFragment already builds
-// its list with cc.VisibilityRole() (so a Co-DM's backlinks list is
-// populated), but its OWN entity's CheckEntityAccess call a few lines later
-// re-derived int(cc.MemberRole) — so the Co-DM saw evidence the entity has
-// referencing content, then got 404'd trying to load that very fragment.
-// This asserts both halves together: 200, and the populated list in the body.
+// TestBacklinksFragment_CoDmSeesListAndReachesTarget pins that
+// BacklinksFragment's list (built with cc.VisibilityRole()) and its own
+// entity's CheckEntityAccess call use the same promoted role for a Co-DM:
+// 200, with the populated list in the body, not a 404 on the entity itself.
 func TestBacklinksFragment_CoDmSeesListAndReachesTarget(t *testing.T) {
 	ent, et := dmOnlyFixture()
 	h := &Handler{service: &dmGrantEntitySvc{entity: ent, etype: et}}
@@ -189,16 +171,10 @@ func TestBacklinksFragment_CoDmSeesListAndReachesTarget(t *testing.T) {
 	}
 }
 
-// TestShow_CoDmSeesDmOnlyChildren pins the entity page's OTHER half of the
-// ADR-057 review finding: Show's own CheckEntityAccess call (a few lines above
-// GetChildren) is already promoted via cc.VisibilityRole(), but the GetChildren
-// call passed the raw cc.MemberRole -- so a Co-DM who is correctly let onto a
-// dm_only PARENT page then saw that page's own dm_only children silently
-// dropped from the Sub-pages section (line 604 and line 617 must agree, per
-// the P1FIX dispatch). Before the fix this failed because GetChildren's stub
-// (mirroring the real repository's visibilityFilter) excludes a dm_only child
-// below the RoleScribe threshold, and int(cc.MemberRole) for this Co-DM
-// (Player) is below it.
+// TestShow_CoDmSeesDmOnlyChildren pins that a Co-DM let onto a dm_only
+// parent page also sees that page's dm_only children in the Sub-pages
+// section: Show's GetChildren call must use cc.VisibilityRole(), the same
+// promoted role as its CheckEntityAccess call, not the raw MemberRole.
 func TestShow_CoDmSeesDmOnlyChildren(t *testing.T) {
 	ent, et := dmOnlyFixture()
 	child := Entity{

@@ -1,26 +1,8 @@
-// dm_grant_egress_test.go — ADR-057 slice 2 review finding (P1FIX dispatch).
-//
-// dm_grant_visibility_test.go's own header states the asymmetry by design:
-// visibilityRoleFor promotes ONLY the CheckEntityAccess call inside GetEntity;
-// `role` itself (h.resolveRole(c)'s return value) stays the caller's raw
-// member role for everything that follows — GM-only/owner-only field
-// stripping (stripEntitiesFieldsForEgress / FilterRestrictedFields) and
-// inline-secret redaction (stripEntitySecretsForEgress). Nothing pinned that
-// second half. A future "obvious cleanup" — e.g. reassigning
-// `role = h.visibilityRoleFor(...)` once, right after CheckEntityAccess, so
-// "the promoted role" is used consistently for the rest of the function —
-// would silently ship GM notes and DM secret prose to every Co-DM, and every
-// existing test in this package would stay green because they only assert
-// the CanView/200 outcome (see TestGetEntity_CoDmCanReadDmOnlyEntity).
-//
-// This test drives the same Co-DM shape (Player + DM grant) through the real
-// GetEntity handler and asserts the gm_only field value and the inline secret
-// are both absent from the response. The stub CheckEntityAccess reproduces
-// the real service's legacy default-mode rule (Scribe+ required for a
-// private entity) exactly like dm_grant_visibility_test.go's stub — the
-// promotion threshold under test is genuine, not an arbitrary sentinel — and
-// neither stub encodes the stripping rule itself: FilterRestrictedFields and
-// stripEntitySecretsForEgress are the real, unstubbed production functions.
+// dm_grant_egress_test.go pins the second half of the ADR-057 asymmetry:
+// visibilityRoleFor promotes only the CheckEntityAccess call in GetEntity, so
+// a Co-DM (Player + DM grant) gets in, but `role` stays unpromoted for
+// gm_only field stripping (FilterRestrictedFields) and inline-secret
+// redaction (stripEntitySecretsForEgress) — those must still strip for them.
 package syncapi
 
 import (
@@ -63,11 +45,9 @@ func (s *stubEntitySvcForDmGrantEgress) CheckEntityAccess(_ context.Context, _ s
 	return &entities.EffectivePermission{CanView: true, CanEdit: role >= int(campaigns.RoleScribe)}, nil
 }
 
-// TestGetEntity_CoDmStillGetsGMFieldsAndSecretsStripped pins the second half
-// of the ADR-057 asymmetry: a Co-DM (Player + DM grant) reading a dm_only
-// entity is let in by the promoted CheckEntityAccess call, but the response
-// must still have its gm_only field value and inline secret stripped, because
-// `role` (Player) is deliberately left unpromoted for that decision.
+// TestGetEntity_CoDmStillGetsGMFieldsAndSecretsStripped asserts a Co-DM
+// reading a dm_only entity gets its gm_only field and inline secret stripped
+// despite the promoted CanView check letting them read the entity.
 func TestGetEntity_CoDmStillGetsGMFieldsAndSecretsStripped(t *testing.T) {
 	secretHTML := `<p>The tavern is quiet.</p><span data-secret="true">The barkeep is a spy.</span>`
 	ent := &entities.Entity{

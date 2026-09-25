@@ -8,9 +8,8 @@ import (
 // The probe library is the only part of the diagnostics that an operator runs
 // with their own hands, unsupervised, from memory. That makes its PROSE the
 // deliverable: a command whose output is truthful about what it measured and
-// misleading about what the reader wanted to know is worse than no command, and
-// both wrong turns of the 2026-08-11 incident were exactly that. These tests
-// pin the warnings, not the commands.
+// misleading about what the reader wanted to know is worse than no command.
+// These tests pin the warnings, not the commands.
 
 // probeByID is a small lookup so a failure names the probe rather than an index.
 func probeByID(t *testing.T, id string) Probe {
@@ -24,11 +23,9 @@ func probeByID(t *testing.T, id string) Probe {
 	return Probe{}
 }
 
-// TestProbeLabelTrapIsAnnotated pins the first wrong turn. The image-digest
-// probe is the one an operator reaches for when asking "which build is this?",
-// and its answer was read as evidence about a running binary that it cannot
-// provide. The warning has to be attached to the probe itself, because the
-// operator reading it will have a `docker inspect` window already open.
+// TestProbeLabelTrapIsAnnotated pins that the image-digest probe — the one an
+// operator reaches for when asking "which build is this?" — warns that its
+// output is not evidence about the running binary.
 func TestProbeLabelTrapIsAnnotated(t *testing.T) {
 	p := probeByID(t, "image-digest")
 
@@ -112,9 +109,9 @@ func TestSupersededProbesAreAnnotatedNotDeleted(t *testing.T) {
 	}
 }
 
-// TestNewIncidentProbesExist pins the probes the incident proved were needed:
-// was the container ever recreated, and what does the binary's own mtime look
-// like from outside the process.
+// TestNewIncidentProbesExist pins two probes: was the container ever
+// recreated, and what does the binary's own mtime look like from outside
+// the process.
 func TestNewIncidentProbesExist(t *testing.T) {
 	restart := probeByID(t, "container-restart-time")
 	if !strings.Contains(restart.Command, "StartedAt") {

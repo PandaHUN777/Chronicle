@@ -1,20 +1,8 @@
-// sync_pull_cursor_test.go is the regression for the unreachable-tail bug in
-// POST /api/v1/campaigns/:id/sync (sweep R4 stage 18).
-//
-// Fix id: backend/syncapi-pull-1000-cap-no-cursor.
-//
-// The pull walked the campaign's entity list internally, page 1 to
-// syncMaxPullPages, and stopped. `has_more` reported the truth, but nothing
-// in the request could act on it: `since` is a FILTER over the list, not a
-// position in it, so the next request re-walked the same first
-// syncMaxPullPages*syncPageSize entities. Any entity past that point in list
-// order could never reach the VTT — not slowly, not eventually, never.
-//
-// The fix keeps the cap as a page size and adds a cursor. What is pinned
-// here: the tail is reachable in a bounded number of requests, the cursor is
-// only emitted when there is more, and a bad cursor is refused rather than
-// silently restarting the walk (a silent restart looks exactly like success
-// while the tail stays unreachable — the same lie in a new place).
+// sync_pull_cursor_test.go pins that POST /api/v1/campaigns/:id/sync's
+// paged pull can reach a campaign's entire entity list: the tail past
+// syncMaxPullPages*syncPageSize is reachable via cursor in a bounded number
+// of requests, a cursor is emitted only when there is more, and a bad cursor
+// is refused (400) rather than silently restarting the walk.
 package syncapi
 
 import (

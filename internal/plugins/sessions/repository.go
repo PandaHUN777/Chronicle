@@ -37,14 +37,14 @@ type SessionRepository interface {
 	FindRSVPToken(ctx context.Context, tokenStr string) (*RSVPToken, error)
 	MarkRSVPTokenUsed(ctx context.Context, tokenStr string) error
 
-	// Availability scheduler (C-SCHED-P1). Recurring per-member blocks +
-	// per-date exceptions live in their own tables (member_availability,
+	// Availability scheduler. Recurring per-member blocks + per-date
+	// exceptions live in their own tables (member_availability,
 	// availability_exceptions) — see availability_repository.go.
 	ListUserAvailability(ctx context.Context, campaignID, userID string) ([]AvailabilityBlock, error)
 	ListCampaignAvailability(ctx context.Context, campaignID string) ([]AvailabilityBlock, error)
 	ReplaceUserAvailability(ctx context.Context, campaignID, userID, tz string, blocks []AvailabilityBlock) error
-	// ListAnsweredUserIDs is the answered-or-not store (C-RSVP-P9): who has
-	// saved a pattern at all, keyed by user id. Absence of blocks means
+	// ListAnsweredUserIDs is the answered-or-not store: who has saved a
+	// pattern at all, keyed by user id. Absence of blocks means
 	// "unavailable", so without this the roster cannot tell silence from a "no".
 	ListAnsweredUserIDs(ctx context.Context, campaignID string) (map[string]time.Time, error)
 	ListUserExceptions(ctx context.Context, campaignID, userID string) ([]AvailabilityException, error)
@@ -54,15 +54,14 @@ type SessionRepository interface {
 	ReplaceDayExceptions(ctx context.Context, campaignID, userID, onDate string, excs []AvailabilityException) error
 	DeleteException(ctx context.Context, campaignID, userID, exceptionID string) error
 
-	// Slot proposals + responses + tokens (C-SCHED-P2). Own tables
-	// (slot_proposals, slot_proposal_options, slot_proposal_responses,
-	// slot_proposal_tokens) — never session_attendees — see
-	// proposals_repository.go.
+	// Slot proposals + responses + tokens. Own tables (slot_proposals,
+	// slot_proposal_options, slot_proposal_responses, slot_proposal_tokens) —
+	// never session_attendees — see proposals_repository.go.
 	CreateProposal(ctx context.Context, p *SlotProposal, options []SlotProposalOption) error
 	GetProposal(ctx context.Context, campaignID, proposalID string) (*SlotProposal, []SlotProposalOption, error)
 	// FindProposalByID loads a proposal by id alone (no campaign scope) for the
 	// emailed-token redeem path; SetProposalWinnerAndClose marks the winner +
-	// closes the proposal atomically (C-SCHED-P3).
+	// closes the proposal atomically.
 	FindProposalByID(ctx context.Context, proposalID string) (*SlotProposal, error)
 	SetProposalWinnerAndClose(ctx context.Context, proposalID, winningOptionID string) error
 	ListProposals(ctx context.Context, campaignID string) ([]SlotProposal, error)
@@ -74,8 +73,8 @@ type SessionRepository interface {
 	FindProposalToken(ctx context.Context, tokenStr string) (*SlotProposalToken, error)
 	MarkProposalTokenUsed(ctx context.Context, tokenStr string) error
 
-	// Scheduler-scoped notifications (C-SCHED-P2). Own table (notifications);
-	// see notifications_repository.go.
+	// Scheduler-scoped notifications. Own table (notifications); see
+	// notifications_repository.go.
 	CreateNotification(ctx context.Context, n *Notification) error
 	ListNotifications(ctx context.Context, userID string, limit int) ([]Notification, error)
 	CountUnreadNotifications(ctx context.Context, userID string) (int, error)
@@ -301,28 +300,10 @@ func (r *sessionRepository) AddAttendee(ctx context.Context, sessionID, userID, 
 }
 
 // UpdateAttendeeStatus records a user's RSVP status, CREATING the attendee row
-// if they do not have one yet.
-//
-// IT IS AN UPSERT, AND BOTH HALVES OF THAT ARE FIXES.
-//
-// 1. It used to be a bare UPDATE whose RowsAffected==0 was reported as
-//    "attendee not found". MySQL/MariaDB's RowsAffected counts CHANGED rows,
-//    not MATCHED rows (the driver is not opened with clientFoundRows), and
-//    responded_at = NOW() has one-second resolution — so re-submitting the SAME
-//    status within one second changed nothing and the endpoint answered 404
-//    about a row sitting right there. Reachable by double-tapping the Going
-//    button, by double-submitting the emailed confirm form (where it renders as
-//    "RSVP Failed — attendee not found"), and by any client retry. Confirmed
-//    against MariaDB. Timing-dependent by construction, which is worse than
-//    deterministic: it gets reported as "the RSVP thing is flaky" and never
-//    reproduced on demand.
-//
-// 2. InviteAll runs only at session-creation time and no route adds an attendee
-//    afterwards, so a member who joined the campaign after a session existed had
-//    no row, no RSVP control on the page, and a 404 if they posted anyway — with
-//    no Director-side action to fix it either. The only escape was deleting and
-//    recreating the session, losing its notes, recap and entity links. Creating
-//    the row on RSVP is what makes a late joiner a first-class attendee.
+// if they do not have one yet (an upsert rather than a bare UPDATE, since
+// MariaDB's RowsAffected counts changed rows, not matched rows, and a member
+// who joined after the session was created would otherwise have no row and no
+// way to RSVP).
 //
 // MEMBERSHIP IS THE CALLER'S TO ENFORCE, and both callers do: the in-app route
 // rides campaigns.RequireRole(RolePlayer), and the emailed-token path rechecks
@@ -527,17 +508,10 @@ func (r *sessionRepository) FindRSVPToken(ctx context.Context, tokenStr string) 
 // normal outcome, not an internal error: the winner already applied the action.
 var ErrRSVPTokenSpent = apperror.NewBadRequest("this RSVP link has already been used")
 
-// MarkRSVPTokenUsed consumes an RSVP token.
-//
-// The `used_at IS NULL` predicate is what makes consumption ATOMIC: two
-// concurrent POSTs of the same emailed link race on this one UPDATE and exactly
-// one sees a non-zero RowsAffected. Without it — as this was written — both
-// submissions validated, both applied, and neither caller could tell, because
-// consuming an already-spent token returned nil. The single-use promise the
-// email makes ("These links expire in 7 days") was not enforced at all, and
-// used_at was overwritten so the audit of when the link was really spent was
-// lost too. The calendar plugin's twin (calendar/rsvp_repository.go) already had
-// both halves; this is the same shape.
+// MarkRSVPTokenUsed consumes an RSVP token. The `used_at IS NULL` predicate
+// is what makes consumption ATOMIC: two concurrent POSTs of the same emailed
+// link race on this one UPDATE and exactly one sees a non-zero RowsAffected,
+// enforcing the single-use promise the email makes.
 func (r *sessionRepository) MarkRSVPTokenUsed(ctx context.Context, tokenStr string) error {
 	res, err := r.db.ExecContext(ctx,
 		`UPDATE session_rsvp_tokens SET used_at = NOW() WHERE token = ? AND used_at IS NULL`, tokenStr)

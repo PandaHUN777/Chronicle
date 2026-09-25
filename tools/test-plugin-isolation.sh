@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # test-plugin-isolation.sh — self-tests for tools/check-plugin-isolation.sh.
 #
-# The guard went unnoticed-red for nine consecutive commits during sweep R4
-# (stages 16..25) because nothing ran it and nothing tested it. Two things
-# close that: CI already invokes the guard, and this script proves the guard
-# still bites — in particular that amendment R4-S26-A (const-registry files)
-# is an exemption for DECLARATIONS ONLY and not a back door for call sites.
+# Proves the guard still bites — in particular that its const-registry-file
+# exemption is for declarations only, not a back door for call sites.
 #
 # Each case builds a throwaway git repo whose paths mirror the real ones the
 # guard's allowlists key on, commits a base on `main`, adds lines on a branch,
@@ -80,8 +77,8 @@ run_case "const declaration in a const-registry file is allowed" \
   0 "${registry}" "	SectionCalendar = \"${slug}\""
 
 # 2. THE ANTI-BYPASS. The same slug on a call-site line in the SAME file must
-#    still fail. A blanket always_allowed_prefixes entry would pass this, which
-#    is exactly why amendment R4-S26-A exists instead.
+#    still fail. A blanket always_allowed_prefixes entry would pass this,
+#    which is why the guard uses a narrower per-line exemption instead.
 run_case "call site in a const-registry file still fails" \
   1 "${registry}" "	report.Fail(\"${slug}\", \"x\", n, e)"
 

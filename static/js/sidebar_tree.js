@@ -308,11 +308,9 @@
     // --- Drag and Drop ---
     setupDragAndDrop(container, campaignId);
 
-    // Preserve reorg state across HTMX tree re-inits. If reorg mode is
-    // still active (body class set by sidebar_reorg.js), re-apply the
-    // data attribute and drag handles on the newly created container.
-    // This handles both the case where the old container had the attribute
-    // and when the tree was replaced by an HTMX swap during reorg mode.
+    // Preserve reorg state across HTMX tree re-inits. If reorg mode is still
+    // active (body class set by sidebar_editor.js), re-apply the data
+    // attribute and drag handles on the newly created container.
     if (container.hasAttribute('data-reorg-active') || document.body.classList.contains('sidebar-reorg-active')) {
       container.setAttribute('data-reorg-active', 'true');
       updateDraggable(container, true);
@@ -671,19 +669,18 @@
 
   /**
    * Compute the 0-based index where a dragged entity should land among its
-   * destination siblings. The server treats this as a desired index, re-sequences
-   * the whole sibling set densely, and persists 0..N — so this MUST be a position
-   * index, never a midpoint sort_order (the old midpoint contract collided with
-   * neighbors and let the name tiebreak silently revert the drop).
+   * destination siblings. The server treats this as a desired index and
+   * re-sequences the whole sibling set densely (0..N), so this MUST be a
+   * position index, never a midpoint sort_order.
    *
    *   - before the first sibling → 0
    *   - before sibling k         → k
    *   - append (position !== 'before') → siblings.length
    *
-   * draggedId (optional) is the id being moved. When it already sits *before* the
-   * target in this same list, removing it on the server shifts the target left by
-   * one; we subtract so the moved item lands immediately before the target rather
-   * than one slot too late (the off-by-one that would reintroduce a visible snap).
+   * draggedId (optional) is the id being moved. When it already sits *before*
+   * the target in this same list, removing it on the server shifts the
+   * target left by one; we subtract so the moved item lands immediately
+   * before the target rather than one slot too late.
    */
   function calculateTargetIndex(targetNode, position, draggedId) {
     var siblings = targetNode.parentNode.querySelectorAll(':scope > .sidebar-tree-node');
@@ -1041,10 +1038,9 @@
     var targetId = targetNode.getAttribute('data-entity-id') || targetNode.getAttribute('data-node-id');
     var targetParentId = targetNode.getAttribute('data-parent-node-id') || targetNode.getAttribute('data-parent-id') || null;
     // The reorder API resequences the sibling set densely and treats sort_order
-    // in the body as a 0-based sibling INDEX, not a raw stored sort_order (#477
-    // contract). Compute the target's current sibling index so the new folder
-    // lands exactly where the target was — sending the stored data-sort-order
-    // could misplace the folder on the first post-upgrade drag (0d).
+    // in the body as a 0-based sibling index, not a raw stored sort_order.
+    // Compute the target's current sibling index so the new folder lands
+    // exactly where the target was.
     var targetIndex = calculateTargetIndex(targetNode, 'before', null);
 
     // Read entity type from the tree container. This is the drilled category's

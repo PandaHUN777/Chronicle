@@ -1,40 +1,23 @@
 package app
 
-// map_audience_parity_test.go — the per-user map visibility predicate exists
-// in THREE places, and this test is the only thing that keeps them honest.
+// map_audience_parity_test.go keeps three independent restatements of the
+// per-user map visibility predicate in lockstep: maps' ListMarkers /
+// ListDrawings SQL, maps.VisibilityRules.Allows, and
+// websocket.Message.AudienceAllows (which cannot call the Go restatement —
+// internal/websocket must not import plugin types, and maps must not import
+// the hub). If the socket's predicate and the list's predicate disagree, a
+// marker is more or less visible over the wire than the page shows. Run
+// through both implementations against one table of cases, asserting each
+// against its documented answer independently — two that drifted together
+// would still agree with each other.
 //
-// Security item S1 closed a leak where the WebSocket publisher ignored a
-// marker's allowed_users / denied_users and the hub delivered a marker to a
-// player it was explicitly hidden from. The fix filters per recipient in the
-// hub. But the rule itself now lives in:
+// The contract has two defaults: with only denied_users set, an unlisted
+// user is INCLUDED (default-allow); once allowed_users is non-empty it is a
+// strict allowlist and that user is EXCLUDED (default-deny), per ListMarkers'
+// SQL.
 //
-//  1. SQL — maps' ListMarkers and ListDrawings non-owner branches, which is
-//     what the HTTP list endpoints actually enforce.
-//  2. Go — maps.VisibilityRules.Allows, the in-process restatement.
-//  3. Go — websocket.Message.AudienceAllows, used by the hub's fan-out.
-//
-// (3) cannot call (2): internal/websocket is generic transport and must not
-// import a plugin's types, and maps must not import the hub. So the
-// duplication is deliberate and unavoidable — which makes drift the risk.
-// If the socket's predicate and the list's predicate disagree, a marker
-// becomes more or less visible over the wire than the page shows, and that
-// is precisely the leak S1 existed to close, reopened from the other side.
-//
-// Both implementations carry comments saying they must stay in lockstep. A
-// comment is not a guard. internal/app is the one package that imports both,
-// so the guard lives here: one table of cases, run through both, asserting
-// they agree AND that each returns the documented answer. The second half
-// matters — two implementations that drift together would agree with each
-// other and still be wrong, so the table states the contract independently.
-//
-// The contract has TWO defaults, which is the part that is easy to get
-// backwards: with only denied_users set, a user named in neither list is
-// INCLUDED (default-allow); once allowed_users is non-empty it is a strict
-// allowlist and that same user is EXCLUDED (default-deny). Taken from
-// ListMarkers' SQL, not invented here.
-//
-// If this test fails, do not "fix" it by editing the expectation. Find which
-// of the three copies moved, and decide whether the SQL or the Go is right.
+// A failure means one of the three copies moved — decide whether the SQL or
+// the Go is right; do not edit the expectation to match.
 
 import (
 	"testing"

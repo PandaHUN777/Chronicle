@@ -67,8 +67,7 @@ type App struct {
 
 	// registeredPlugins is the metadata registry of plugins contributing
 	// to this App. Populated inline from RegisterRoutes at each plugin's
-	// setup point. Per cordinator/decisions/2026-05-23-plugin-registration.md
-	// + NW-2.2 Chunk A.
+	// setup point.
 	registeredPlugins []PluginRegistration
 }
 
@@ -82,14 +81,11 @@ func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *databa
 	e.HidePort = true
 
 	// Configure trusted reverse proxy IPs so c.RealIP() returns the actual
-	// client IP instead of the proxy's IP. Critical for rate limiting, audit
-	// logging, and abuse detection.
-	//
-	// The list is CONFIGURATION rather than a literal, because the deployment
-	// that needs it changed is the one that cannot rebuild: a proxy reaching
-	// Chronicle from a mesh address lands outside every private range here and
-	// makes every visitor look like the proxy. A bad entry fails startup rather
-	// than being skipped, so the failure is never a silently wrong client IP.
+	// client IP instead of the proxy's IP — needed for rate limiting, audit
+	// logging, and abuse detection to see the real visitor. The list is
+	// configuration, not a literal, because a proxy on a non-private address
+	// would otherwise never be recognized. A bad entry fails startup rather
+	// than being skipped, so it never yields a silently wrong client IP.
 	if err := middleware.TrustedProxies(e, cfg.TrustedProxies); err != nil {
 		return nil, fmt.Errorf("trusted proxy configuration: %w", err)
 	}
@@ -111,12 +107,11 @@ func New(cfg *config.Config, db *sql.DB, rdb *redis.Client, pluginHealth *databa
 
 	// Serve static files (CSS, JS, vendor libs, fonts, images).
 	//
-	// C-ASSET-VERSIONING: StaticCache turns the `?v=<digest>` tokens that
-	// layouts.AssetURL stamps onto every template-emitted asset URL into a real
-	// caching policy — immutable for versioned requests, forced revalidation for
-	// bare ones. Registered as global middleware (rather than on a /static
-	// group) so it covers BOTH this on-disk mount and every plugin embed mount
-	// registered later in mountPluginStatic; the middleware itself is a no-op
+	// StaticCache turns the `?v=<digest>` tokens that layouts.AssetURL stamps
+	// onto every template-emitted asset URL into a caching policy — immutable
+	// for versioned requests, forced revalidation for bare ones. Registered
+	// as global middleware, not on a /static group, so it also covers every
+	// plugin embed mount registered later in mountPluginStatic; it is a no-op
 	// for non-/static paths.
 	e.Use(middleware.StaticCache(layouts.StaticURLPrefix))
 	e.Static("/static", "static")
@@ -191,12 +186,9 @@ func (a *App) errorHandler(err error, c echo.Context) {
 	code := http.StatusInternalServerError
 	message := "An unexpected error occurred"
 
-	// kind records WHICH of the branches below claimed the error, purely for
-	// the in-memory error ring. On the wire a deliberate 500 from a service and
-	// a raw error that escaped a handler are indistinguishable; to whoever has
-	// to fix it they are completely different, and "raw" is the one that is
-	// almost always a bug. Default raw: an error matching neither branch is by
-	// definition the unhandled case.
+	// kind records which branch below claimed the error, for the in-memory
+	// error ring: a deliberate AppError/HTTPError vs. a raw error that
+	// escaped a handler (almost always a bug). Defaults to raw.
 	kind := observability.KindRaw
 
 	// Check if it's our domain error type.
@@ -221,8 +213,6 @@ func (a *App) errorHandler(err error, c echo.Context) {
 	}
 
 	// Always log server errors (5xx) so silent failures are visible.
-	// Previously, AppError with Internal==nil and echo.HTTPError from
-	// panic recovery were both swallowed with no log output.
 	if code >= http.StatusInternalServerError {
 		slog.Error("server error",
 			slog.Int("code", code),
@@ -233,39 +223,21 @@ func (a *App) errorHandler(err error, c echo.Context) {
 		)
 	}
 
-	// Also record the error somewhere an admin can READ it without shell
-	// access. The log line above only reaches stdout, so answering "what broke
-	// overnight?" has always required getting onto the host and running
-	// `docker logs`; the host.errors / host.errors-summary diagnostics read
-	// this ring instead. RecordHTTPError applies its own policy (5xx only) and
-	// stores the route TEMPLATE rather than the requested path, because
-	// Chronicle routes /rsvp/:token and a concrete path would carry a live
-	// credential into pasteable output.
-	//
-	// It is placed here — after the status is known, before anything is
-	// written — deliberately: it must observe the SAME code and error the
-	// client is about to be sent, and it must not be able to change them. It
-	// returns a value only for tests; the response path below is untouched.
+	// Record the error into the in-memory ring the host.errors diagnostics
+	// read, so it's visible without shell access. RecordHTTPError applies
+	// its own policy (5xx only) and stores the route TEMPLATE (c.Path()),
+	// not the requested path, because a concrete path like /rsvp/:token
+	// would carry a live credential into pasteable output. Placed here,
+	// after the status is known and before anything is written, so it
+	// observes exactly the code and error the client is about to receive.
 	_ = observability.RecordHTTPError(code, c.Request().Method, c.Path(), c.Request().URL.Path, kind, err)
 
-	// API requests always get JSON.
-	//
-	// `error` carries the MACHINE-READABLE condition, `message` the prose. The
-	// two field roles are the ones the Foundry module already reads
-	// (api-client.mjs: `err.code = parsed.error`, `err.serverMessage =
-	// parsed.message`), and the ones the calendar blackout response has used
-	// since 2026-08-21 (`{"error":"calendar_rebuilding", …}`).
-	//
-	// It used to emit http.StatusText(code) here unconditionally, which meant
-	// every domain error arrived at a client as the bare status word. A caller
-	// that wanted to tell "the Sync API toggle is off" from "you lack
-	// permission" — both 403 — had only the prose to go on, so
-	// syncapi.RequireSyncAPIAddon's `sync_api_disabled` type never reached the
-	// wire and its own ADR's promise that "a client can name the condition
-	// instead of parsing prose" was false as shipped.
-	//
-	// StatusText remains the fallback for an error that is not an AppError
-	// (Echo's router 404s, panic recovery), which have no type to offer.
+	// API requests always get JSON. `error` carries the MACHINE-READABLE
+	// condition (e.g. `sync_api_disabled`, `calendar_rebuilding`), `message`
+	// the prose — callers like the Foundry module's api-client.mjs read
+	// `err.code` separately from `err.serverMessage`, so an AppError's Type
+	// must reach the wire distinctly from its message. StatusText is the
+	// fallback for errors with no type to offer (router 404s, panic recovery).
 	if isAPIRequest(c) {
 		errorField := http.StatusText(code)
 		if appErr != nil && appErr.Type != "" {
@@ -280,10 +252,9 @@ func (a *App) errorHandler(err error, c echo.Context) {
 
 	// For HTMX requests, redirect to login on 401 — but ONLY for boosted
 	// navigations (real page moves, where landing on /login is what the user
-	// needs). A lazily-loaded FRAGMENT that 401s must NOT hijack the page:
-	// on a public campaign an anonymous visitor's stray authed widget call
-	// was HX-Redirecting the whole browser to /login (cordinator#30 r2).
-	// Fragment 401s fall through to the 4xx toast branch below instead.
+	// needs). A lazily-loaded FRAGMENT that 401s must NOT hijack the page
+	// (e.g. an anonymous visitor's stray authed widget call on a public
+	// campaign): fragment 401s fall through to the 4xx toast branch instead.
 	if isHTMXRequest(c) {
 		if code == http.StatusUnauthorized && c.Request().Header.Get("HX-Boosted") == "true" {
 			c.Response().Header().Set("HX-Redirect", "/login")

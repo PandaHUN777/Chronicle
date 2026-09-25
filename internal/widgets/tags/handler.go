@@ -16,12 +16,10 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// EntityGate is the narrow cross-plugin seam the tags widget uses to honor entity
-// visibility + campaign binding on the public per-entity tag read, without
-// importing the entities repo (plugin-isolation). Implemented by an adapter over
-// the entity service (wired in app/routes.go). Introduced by
-// cordinator/dispatches/chronicle/C-PUBLIC-VIEW-FIX-R2.md (extra hole found in
-// Step-0: GetEntityTags leaked private-entity tag names + was cross-campaign).
+// EntityGate is the narrow cross-plugin seam the tags widget uses to honor
+// entity visibility + campaign binding on the public per-entity tag read,
+// without importing the entities repo (plugin isolation). Implemented by an
+// adapter over the entity service (wired in app/routes.go).
 type EntityGate interface {
 	// ResolveViewableEntity returns the entity's owning campaign ID and whether
 	// the viewer (role, userID) may view it. Missing entity → not-found error.
@@ -154,8 +152,8 @@ func (h *Handler) UpdateTag(c echo.Context) error {
 		return apperror.NewNotFound("tag not found")
 	}
 
-	// PARTIAL update: absent preserves, a present value replaces (sweep R4 /
-	// ADR-056). A rename that omits color/dmOnly must not clobber them.
+	// PARTIAL update: absent preserves, a present value replaces (ADR-056).
+	// A rename that omits color/dmOnly must not clobber them.
 	var req UpdateTagRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
 		return apperror.NewBadRequest("invalid JSON body")
@@ -272,10 +270,9 @@ func (h *Handler) GetEntityTags(c echo.Context) error {
 		// Fail closed: a missing gate must never serve ungated entity tags.
 		return apperror.NewInternal(errors.New("tags: entity gate not configured"))
 	}
-	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
-	// cc.MemberRole. canSeeDmOnly (used just below) already checks
-	// cc.IsDmGranted directly for dm_only tag content, but this gate used to
-	// 404 a Co-DM before canSeeDmOnly's branch could ever run.
+	// Use cc.VisibilityRole(), not the raw cc.MemberRole, so a Co-DM (Player +
+	// DM grant) clears this gate before canSeeDmOnly checks IsDmGranted below
+	// (ADR-057).
 	campaignID, canView, err := h.entityGate.ResolveViewableEntity(
 		c.Request().Context(), entityID, int(cc.VisibilityRole()), auth.GetUserID(c))
 	if err != nil {

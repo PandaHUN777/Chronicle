@@ -8,9 +8,8 @@ import (
 	"testing"
 )
 
-// TestMultipartUploads_RequireAuth is a regression guard for the
-// "every multipart upload must be authenticated" rule the Coordinator
-// asked for in Task C4.
+// TestMultipartUploads_RequireAuth is a regression guard for "every
+// multipart upload must be authenticated".
 //
 // It walks the codebase for files containing `c.FormFile(` (the standard
 // Echo multipart entry point) and asserts each one's package wires its
@@ -27,12 +26,11 @@ import (
 //     Mitigated by the convention that each package owns one routes.go
 //     and developers don't typically register routes from random files.
 //
-// The audit table below documents every multipart endpoint and the
-// auth chain it actually has, as of the C4 audit. If a row in the table
-// disappears from the codebase or a new row needs adding, this test will
-// fail (because the package list comes from a live grep, not the table).
+// The audit table below documents every multipart endpoint and the auth
+// chain it actually has. The package list itself comes from a live grep,
+// not the table, so a new or removed route still fails the test.
 //
-// AUDITED MULTIPART ROUTES (April 2026 / PR for Task C4):
+// AUDITED MULTIPART ROUTES:
 //
 //	Route                                                   Auth chain
 //	-----                                                   ----------

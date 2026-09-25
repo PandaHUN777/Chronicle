@@ -224,7 +224,7 @@ func PreviewFromPackage(installPath string) (*PreviewResult, error) {
 	// Load data provider to count items. A nil sink keeps this dry-run
 	// preview from mutating the global admin-diagnostics ring — a bad data
 	// file in a package an admin is merely inspecting shouldn't evict real
-	// load history. (C-SYSTEMS-REF-SLUG-FIX-R2)
+	// load history.
 	dataDir := installPath + "/data"
 	provider, err := newJSONProvider(manifest.ID, dataDir, nil)
 	if err != nil {
@@ -429,7 +429,6 @@ func readManifestFromZipFile(f *zip.File) (*SystemManifest, error) {
 // the package would actually produce (id/slug fallback, missing-id and
 // duplicate-id items dropped). Diagnostics are suppressed (nil sink): a
 // preview is a dry run and must not mutate the global diagnostics ring.
-// (C-SYSTEMS-REF-SLUG-FIX-R2)
 func readItemsFromZipFile(f *zip.File, moduleID, category string) ([]ReferenceItem, error) {
 	rc, err := f.Open()
 	if err != nil {

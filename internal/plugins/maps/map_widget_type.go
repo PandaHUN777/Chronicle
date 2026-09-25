@@ -1,10 +1,7 @@
-// map_widget_type.go — registers "map" with the widget-binding framework
-// (C-WIDGET-BINDING-P3a-MAPS). Maps is the original precedent: `entity.map_id`
-// + AssignMap is the hardcoded per-entity→instance binding the whole framework
-// generalizes. This makes maps a first-class WidgetType so a widget_bindings
-// row (widget_type="map") takes precedence over the legacy column — while an
-// unbound entity still resolves via entity.map_id (the block closure's
-// fallback), exactly as today.
+// map_widget_type.go registers "map" with the widget-binding framework: a
+// widget_bindings row (widget_type="map") takes precedence over the legacy
+// entity.map_id column, while an unbound entity still resolves via
+// entity.map_id (the block closure's fallback).
 package maps
 
 import (
@@ -73,8 +70,7 @@ func (w *mapWidgetType) DefaultInstance(ctx context.Context, host widgetbindings
 	return "", false, nil
 }
 
-// ListInstances returns the campaign's maps for the create-or-pick UI
-// (C-WIDGET-BINDING-P4b), replacing the bespoke BlockEntityMapPicker grid.
+// ListInstances returns the campaign's maps for the create-or-pick UI.
 func (w *mapWidgetType) ListInstances(ctx context.Context, campaignID string, role int) ([]widgetbindings.InstanceRef, error) {
 	ms, err := w.svc.ListMaps(ctx, campaignID)
 	if err != nil {
@@ -101,13 +97,12 @@ func (w *mapWidgetType) CreateInstance(ctx context.Context, campaignID string, i
 	return m.ID, nil
 }
 
-// RenderBlock re-renders the map_editor block for an in-place HTMX swap
-// (C-WIDGET-BINDING-P4b). This is where the map_editor block's three render
-// branches (embed / choose / empty) now live — moved out of the routes.go
-// closure so the binding handler can re-render after a bind/unbind. The
-// resolved instance is rc.Resolution.InstanceID (the binding, or the legacy
-// entity.map_id fallback the closure folds in on first render). Wrapped in
-// BlockHost for the stable swap target.
+// RenderBlock re-renders the map_editor block for an in-place HTMX swap: the
+// three render branches (embed / choose / empty) live here so the binding
+// handler can re-render after a bind/unbind. The resolved instance is
+// rc.Resolution.InstanceID (the binding, or the legacy entity.map_id
+// fallback folded in on first render). Wrapped in BlockHost for the stable
+// swap target.
 //
 // JS NOTE: the embed's Leaflet init is an inline IIFE in MapEditorBody; the
 // entity-map data-widget re-mounts on htmx:afterSettle but the inline IIFE does
@@ -144,7 +139,7 @@ func (w *mapWidgetType) renderInner(ctx context.Context, rc widgetbindings.Block
 		}
 	}
 	// No (valid) map: players get the friendly empty state; Scribe+ get the
-	// generic create-or-pick affordance (replaces the bespoke picker grid).
+	// generic create-or-pick affordance.
 	if !isScribe {
 		return BlockEntityMapEmpty()
 	}

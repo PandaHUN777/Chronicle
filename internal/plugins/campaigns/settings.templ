@@ -23,14 +23,13 @@ func welcomeMessageJS(cc *CampaignContext) string {
 // jsEsc escapes a string for safe embedding inside a single-quoted
 // JavaScript string literal in an Alpine.js attribute expression. It
 // mirrors the entities plugin's helper of the same name and is
-// re-declared locally rather than imported to keep the campaigns plugin
-// free of a cross-plugin dependency (core-tenets §T-B2, plugin isolation).
+// re-declared locally rather than imported to keep plugins isolated.
 //
 // Escaping the single quote and backslash is what defeats the Settings
-// `?tab=` reflected-XSS vector (SEC-1) at the sink: templ HTML-escapes
-// the attribute and the browser HTML-decodes it before Alpine evaluates
-// it as JS, but a backslash is not an HTML metacharacter, so `\'` stays
-// an escaped quote through that round-trip and cannot break the literal.
+// `?tab=` reflected-XSS vector at the sink: templ HTML-escapes the
+// attribute and the browser HTML-decodes it before Alpine evaluates it
+// as JS, but a backslash is not an HTML metacharacter, so `\'` stays an
+// escaped quote through that round-trip and cannot break the literal.
 func jsEsc(s string) string {
 	result := ""
 	for _, c := range s {
@@ -81,13 +80,9 @@ func systemOptionsJSON(opts []SystemOption) string {
 // in already role-filtered + sort-ordered. The page iterates the list
 // for the tab bar AND the content blocks — no hardcoded tab refs here,
 // which lets plugins contribute additional tabs via the campaigns
-// handler's RegisterSettingsTab without forking this file.
-//
-// Parameters dropped vs the pre-refactor signature: entityTypes (was
-// dead — never referenced inside the templ), members / addons /
-// smtpConfigured / systemOptions (each captured inside its tab's
-// Content closure now). transfer + csrfToken remain because they're
-// used by the pre-tab banners.
+// handler's RegisterSettingsTab without forking this file. transfer +
+// csrfToken are used by the pre-tab banners; per-tab data is captured
+// inside each tab's own Content closure.
 templ CampaignSettingsPage(cc *CampaignContext, transfer *OwnershipTransfer, csrfToken, errMsg, activeTab string, tabs []SettingsTab) {
 	@layouts.App(cc.Campaign.Name + " - Settings") {
 		<div class="max-w-4xl mx-auto" x-data={ fmt.Sprintf("{ tab: '%s' }", jsEsc(activeTab)) }>
@@ -141,10 +136,7 @@ templ settingsTabButton(t SettingsTab) {
 }
 
 // settingsActivityTab is the Activity tab's content: a lazy-loaded
-// HTMX fragment that fetches the activity feed on intersect. Extracted
-// from the previously-inline content during the SettingsTab refactor
-// so every tab in the registry follows the same "Content is a
-// templ.Component" shape.
+// HTMX fragment that fetches the activity feed on intersect.
 templ settingsActivityTab(cc *CampaignContext) {
 	<div id="activity-content" hx-get={ fmt.Sprintf("/campaigns/%s/activity/fragment", cc.Campaign.ID) } hx-trigger="intersect once" hx-swap="innerHTML">
 		<div class="text-center py-12 text-fg-muted text-sm"><i class="fa-solid fa-spinner fa-spin mr-1"></i> Loading activity...</div>
@@ -273,14 +265,13 @@ templ settingsGeneralTab(cc *CampaignContext, csrfToken, systemOptionsJSON strin
 						<p class="text-xs text-fg-secondary">New entities are hidden from players until explicitly revealed.</p>
 					</div>
 				</label>
-				// "Private" (creator-only) was removed here — ADR-056. Storage has
-				// exactly one flag (entities.is_private), so it was DM Only under a
-				// second name that promised a creator-only behavior nothing
-				// implemented. A campaign already storing "private" keeps behaving
-				// exactly as it does today (DefaultVisibilityPrivate in model.go
-				// still collapses to is_private=true); only the option to CHOOSE it
-				// is gone. Real creator-only visibility exists per-entity via
-				// "custom" mode with a user-subject grant, for the DM who wants it.
+				// "Private" (creator-only) is not offered as a choice here (ADR-056):
+				// storage has exactly one flag (entities.is_private), so it was DM
+				// Only under a second name promising behavior nothing implemented.
+				// A campaign already storing "private" still collapses to
+				// is_private=true (DefaultVisibilityPrivate in model.go). Real
+				// creator-only visibility exists per-entity via "custom" mode with
+				// a user-subject grant.
 				<div class="flex items-center gap-2 pt-1">
 					<span x-show="saving" class="text-xs text-fg-muted"><i class="fa-solid fa-spinner fa-spin"></i> Saving...</span>
 					<span x-show="saved" x-transition class="text-xs text-green-600">Saved</span>
@@ -656,10 +647,9 @@ templ settingsIntegrationsTab(cc *CampaignContext, csrfToken, baseURL string) {
 			<h2 class="text-sm font-semibold text-fg mb-3">VTT Setup Guides</h2>
 			<div class="space-y-2">
 				// Per-VTT setup guides live in their owning plugins
-				// and lazy-load via HTMX. campaigns stays VTT-agnostic
-				// per Pillar 2 / NW-2.2 Chunk D. The wrapping card +
-				// alpine `guide` state stay generic so multiple VTTs
-				// can share the disclosure UI.
+				// and lazy-load via HTMX; campaigns stays VTT-agnostic.
+				// The wrapping card + alpine `guide` state stay generic
+				// so multiple VTTs can share the disclosure UI.
 				if baseURL != "" {
 					<div
 						hx-get={ fmt.Sprintf("/campaigns/%s/foundry-vtt/setup-guide-fragment", cc.Campaign.ID) }
@@ -748,11 +738,6 @@ templ settingsIntegrationsTab(cc *CampaignContext, csrfToken, baseURL string) {
 func pluginURL(campaignID, slug string) string {
 	switch slug {
 	case "calendar":
-		// C-CALV4-V2SUNSET R2-4 ([VS-2] SIGNED). The stale C-CAL-V1-V2-CUTOVER
-		// comment claiming "the calendar's main page is now the V2 shell" is
-		// dropped with the href it justified: it has been false since the Bench
-		// shipped, and the nav sidebar and the Extensions hub have both pointed
-		// at /apps/calendar since then.
 		return fmt.Sprintf("/campaigns/%s/apps/calendar", campaignID)
 	case "maps":
 		return fmt.Sprintf("/campaigns/%s/maps", campaignID)
@@ -771,16 +756,12 @@ func pluginURL(campaignID, slug string) string {
 	}
 }
 
-// pluginDescription and PluginHubPage were removed here (ADR-056 dead-code
-// sweep). Neither had a caller anywhere in the tree (`@PluginHubPage` /
-// `PluginHubPage(` matched zero .templ/.go files, verified before deleting):
-// PluginHub (handler.go) now just redirects to /extensions, and the one
-// per-addon description this file still renders (pluginHubCard, below) reads
-// PluginHubAddon.Description — sourced from the addons service's single
-// builtinAddons copy — instead of a second hand-maintained switch statement.
-// PluginHubListContent/pluginHubCard themselves are NOT dead: PluginHubFragment
-// (handler.go) still calls PluginHubListContent and is wired to a live route
-// (GET /campaigns/:id/plugins/fragment, routes.go) — kept as-is.
+// PluginHub (handler.go) redirects to /extensions; the per-addon
+// description pluginHubCard renders below reads PluginHubAddon.Description,
+// sourced from the addons service's single builtinAddons copy (ADR-056).
+// PluginHubListContent/pluginHubCard are still live: PluginHubFragment
+// (handler.go) calls PluginHubListContent via GET
+// /campaigns/:id/plugins/fragment.
 
 // PluginHubListContent renders the addon list (for HTMX partial swaps after toggling).
 templ PluginHubListContent(cc *CampaignContext, addons []PluginHubAddon, isOwner bool, csrfToken string) {

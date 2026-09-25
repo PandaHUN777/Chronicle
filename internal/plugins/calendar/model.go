@@ -29,14 +29,14 @@ type UpdateEventVisibilityInput struct {
 }
 
 // UpdateCalendarVisibilityInput is the validated input for updating a
-// calendar's per-calendar visibility (C-CAL-DASHBOARD-W5b). Same shape as the
-// event one — the calendar reuses the event visibility model + resolver.
+// calendar's per-calendar visibility. Same shape as the event one — the
+// calendar reuses the event visibility model + resolver.
 type UpdateCalendarVisibilityInput struct {
 	Visibility      string  `json:"visibility"`
 	VisibilityRules *string `json:"visibility_rules"`
 }
 
-// CalendarEventDate is a lightweight (calendar, date, name) tuple from the W5d
+// CalendarEventDate is a lightweight (calendar, date, name) tuple from the
 // batch upcoming read — kept minimal so the cross-calendar query stays cheap.
 type CalendarEventDate struct {
 	CalendarID string
@@ -46,9 +46,9 @@ type CalendarEventDate struct {
 	Name       string
 }
 
-// CalendarUpcoming is a calendar's next upcoming event + a short agenda
-// (C-CAL-DASHBOARD-W5d), computed from the batch read relative to that
-// calendar's own current date. Next is nil when the calendar has none upcoming.
+// CalendarUpcoming is a calendar's next upcoming event + a short agenda,
+// computed from the batch read relative to that calendar's own current date.
+// Next is nil when the calendar has none upcoming.
 type CalendarUpcoming struct {
 	Next   *CalendarEventDate
 	Agenda []CalendarEventDate
@@ -82,40 +82,32 @@ type Calendar struct {
 	LeapYearOffset int     `json:"leap_year_offset"`
 	SortOrder      int     `json:"sort_order"`
 	IsDefault      bool    `json:"is_default"`
-	// Persisted live mood-tint wash (migration 008 /
-	// C-CAL-WORLDSTATE-SERVER-MODEL). Both nil = no mood set. D2 is a
-	// page-load read, so plain nullable columns suffice.
+	// Persisted live mood-tint wash. Both nil = no mood set.
 	MoodTintColor     *string  `json:"mood_tint_color,omitempty"`
 	MoodTintIntensity *float64 `json:"mood_tint_intensity,omitempty"`
-	// Per-calendar visibility (C-CAL-DASHBOARD-W5a, migration 010). Mirrors the
-	// event model: Visibility is "everyone" | "dm_only"; VisibilityRules is the
-	// optional {allowed_users,denied_users} JSON allow/deny override. Default
-	// "everyone" = visible to all members (the DB default; existing calendars
-	// unaffected). Resolved by canUserView / filterCalendarsByUser.
+	// Per-calendar visibility, mirroring the event model: Visibility is
+	// "everyone" | "dm_only"; VisibilityRules is the optional
+	// {allowed_users,denied_users} JSON allow/deny override. Resolved by
+	// canUserView / filterCalendarsByUser.
 	Visibility      string  `json:"visibility"`
 	VisibilityRules *string `json:"visibility_rules,omitempty"`
-	// Real-time (wall-clock) mode (C-REAL-CALENDAR-P1, migration 012). A flag
-	// on `reallife` mode, NOT a new mode (RC-1): TracksRealTime=1 makes the
-	// loader compute Current* from the wall clock in RealTimeZone and the
-	// date-writers reject manual changes; =0 is today's stored-not-computed
-	// behavior. RealTimeZone is the IANA anchor (nil = not set; REQUIRED at
-	// enable per RC-2, enforced by P2's enable flow). Tagged json:"-" so P1
-	// adds zero wire exposure — the deliberate `tracks_real_time` sync signal
-	// is P2 (RC-4). Read/written by the repository; consumed server-side only.
+	// Real-time (wall-clock) mode: a flag on `reallife` mode, not a separate
+	// mode. TracksRealTime=1 makes the loader compute Current* from the wall
+	// clock in RealTimeZone and the date-writers reject manual changes; =0 is
+	// stored-not-computed. RealTimeZone is the IANA anchor, required at enable.
+	// Tagged json:"-": not wire-exposed directly, consumed server-side only.
 	TracksRealTime bool    `json:"-"`
 	RealTimeZone   *string `json:"-"`
-	// The real-date anchor (C-CALV4-ANCHOR, migration 018): one in-world date
-	// and the Gregorian date it equals, from which every other day follows by
-	// AbsoluteDay arithmetic. See real_date_anchor.go for the whole idea and
-	// for why the NAMED date is stored rather than a day count.
+	// The real-date anchor: one in-world date and the Gregorian date it
+	// equals, from which every other day follows by AbsoluteDay arithmetic.
+	// See real_date_anchor.go.
 	//
-	// ALL FOUR OR NONE — a partial anchor maps nothing, so HasRealAnchor()
+	// All four or none — a partial anchor maps nothing, so HasRealAnchor()
 	// requires the set and the service refuses to write a subset.
 	//
-	// Serialized, unlike the real-time pair above: this is a fact about the
-	// world the owner authored, and the Foundry module and the export both have
-	// a legitimate need to know which real date a session lands on. It carries
-	// no zone and no time — see real_date_anchor.go on why that is deliberate.
+	// Serialized, unlike the real-time pair above: the Foundry module and the
+	// export both need to know which real date a session lands on. It carries
+	// no zone and no time.
 	AnchorYear     *int       `json:"anchor_year,omitempty"`
 	AnchorMonth    *int       `json:"anchor_month,omitempty"`
 	AnchorDay      *int       `json:"anchor_day,omitempty"`
@@ -133,8 +125,8 @@ type Calendar struct {
 	Cycles          []Cycle         `json:"cycles,omitempty"`
 	Festivals       []Festival      `json:"festivals,omitempty"`
 	// Weather is nil when no row exists in calendar_weather for this
-	// calendar. Added in C-CAL-WCF-UI so the settings page can render
-	// the current state without a second handler-side fetch.
+	// calendar, so the settings page can render current state without a
+	// second handler-side fetch.
 	Weather *Weather `json:"weather,omitempty"`
 }
 
@@ -149,15 +141,13 @@ func (c *Calendar) IsRealLife() bool {
 	return c.Mode == ModeRealLife
 }
 
-// UsesRealTime reports whether this calendar computes its current date from the
-// wall clock (and rejects manual date changes). It is the single predicate that
-// gates the real-time seam, the manual-date-write guard, AND the stdlib month
-// geometry, so all three agree. Keyed on the FLAG (not just the mode): a
-// `reallife`-but-manual calendar (TracksRealTime=0) is byte-for-byte unchanged,
-// which is what makes migration 012 a provably zero-change upgrade for existing
-// calendars (C-REAL-CALENDAR-P1 stop-and-flag #2). RealTimeZone still governs
-// WHICH zone the clock reads; a nil/blank zone is handled by the loader's
-// fail-safe (serve the stored date, never 500).
+// UsesRealTime reports whether this calendar computes its current date from
+// the wall clock (and rejects manual date changes). It is the single
+// predicate gating the real-time seam, the manual-date-write guard, and the
+// stdlib month geometry, so all three agree. Keyed on the flag, not just the
+// mode, so a `reallife`-but-manual calendar (TracksRealTime=0) behaves exactly
+// as before real-time support existed. A nil/blank RealTimeZone is handled by
+// the loader's fail-safe (serve the stored date, never 500).
 func (c *Calendar) UsesRealTime() bool {
 	return c.Mode == ModeRealLife && c.TracksRealTime
 }
@@ -199,12 +189,11 @@ func (c *Calendar) YearLengthForYear(year int) int {
 // accounting for leap year extra days.
 //
 // Real-time calendars (UsesRealTime) derive month length from the proleptic
-// Gregorian stdlib (daysInGregorianMonth — correct 4/100/400 leap rule) instead
-// of the configurable LeapYearEvery/IsLeapYear fields, which cannot express
-// Gregorian (with LeapYearEvery=4 they render Feb 2100 as 29). Only flagged
-// real-time calendars take this branch — fantasy AND reallife-but-manual
-// calendars keep their configured geometry unchanged (C-REAL-CALENDAR-P1 scope
-// item 5 + stop-and-flag #2). daysInGregorianMonth takes a 1-indexed month.
+// Gregorian stdlib (daysInGregorianMonth — correct 4/100/400 leap rule)
+// instead of the configurable LeapYearEvery/IsLeapYear fields, which cannot
+// express Gregorian (with LeapYearEvery=4 they render Feb 2100 as 29). Only
+// flagged real-time calendars take this branch — fantasy and
+// reallife-but-manual calendars keep their configured geometry unchanged.
 func (c *Calendar) MonthDays(monthIdx int, year int) int {
 	if monthIdx < 0 || monthIdx >= len(c.Months) {
 		return 0
@@ -224,51 +213,37 @@ func (c *Calendar) WeekLength() int {
 	return len(c.Weekdays)
 }
 
-// Recurrence type constants — mirror the sessions plugin's vocabulary verbatim
-// (internal/plugins/sessions/model.go) so the two share semantics
-// (C-CAL-EDITOR-EXPANSION PR2). Any other / empty recurrence_type renders ONCE
-// at its stored date, so legacy rows are untouched.
+// Recurrence type constants mirror the sessions plugin's vocabulary
+// (internal/plugins/sessions/model.go) so the two share semantics. Any other
+// or empty recurrence_type renders once at its stored date.
 //
-// THIS BLOCK IS THE ACCEPTED SET, AND IT IS STATED EXACTLY ONCE.
-// CreateEventAPI / UpdateEventAPI validate an inbound recurrence_type against
-// these five constants plus the empty string and reject anything else with a
-// 400 (C-CALV4-GAMEREADY §6, [GR-12]) — before that guard existed the handlers
-// stored "daily", "hourly", "WEEKLY" and "🐉" with a 201 and then fired the
-// event exactly once. Adding a member here widens what the API accepts, so a
-// new constant is a wire-contract change, not a rename.
+// This block is the accepted set, stated exactly once. CreateEventAPI /
+// UpdateEventAPI validate an inbound recurrence_type against these five
+// constants plus the empty string and reject anything else with a 400.
+// Adding a member here widens what the API accepts, so a new constant is a
+// wire-contract change, not a rename.
 const (
 	RecurrenceWeekly   = "weekly"   // every week, on the base date's weekday
 	RecurrenceBiWeekly = "biweekly" // every 2 weeks
 	RecurrenceMonthly  = "monthly"  // same day-of-month each month
 	RecurrenceCustom   = "custom"   // every N weeks (RecurrenceInterval)
-	// RecurrenceYearly is the festival / holy day / birthday unit — the most
-	// common recurring thing in a fantasy calendar, and the one the product
-	// could not express until C-CALV4-GAMEREADY §6 ([GR-11]). Its absence was a
-	// REGRESSION: the pre-v4 calendar was yearly-ONLY (the SQL expansion
-	// removed by recurring_cleanup_test.go), and .ai/data-model.md still
-	// documented the column as "yearly, monthly" while OccursOn dropped the
-	// value on the floor.
-	RecurrenceYearly = "yearly" // same month + day-of-month each year
+	RecurrenceYearly   = "yearly"   // same month + day-of-month each year
 )
 
 // RecurrenceTypes is the accepted set as data, for the handlers' input
-// validation ([GR-12]). It is derived from the constants above rather than
-// re-typed, because two accepted sets in two places is how they diverge — the
-// house rule that keeps this in the handler and OUT of the service is the same
-// rule: one validator, one set.
+// validation. It is derived from the constants above rather than re-typed,
+// so the handler stays the one validator for one set.
 var RecurrenceTypes = []string{
 	RecurrenceWeekly, RecurrenceBiWeekly, RecurrenceMonthly,
 	RecurrenceCustom, RecurrenceYearly,
 }
 
 // IsSupportedRecurrenceType reports whether t is a recurrence_type the engine
-// actually expands. The empty string is accepted and means "not recurring" —
-// calendar_daycard.js's `once` branch writes exactly that, deliberately, so the
-// type and is_recurring land consistent (a JSON null cannot clear the column).
+// actually expands. The empty string is accepted and means "not recurring".
 //
-// The comparison is EXACT AND CASE-SENSITIVE by ruling: a case-different
-// "WEEKLY" from an integration is rejected loudly rather than coerced, because
-// coercion turns an undocumented spelling into a supported one.
+// The comparison is exact and case-sensitive by design: a case-different
+// "WEEKLY" from an integration is rejected loudly rather than coerced, since
+// coercion would turn an undocumented spelling into a supported one.
 func IsSupportedRecurrenceType(t string) bool {
 	if t == "" {
 		return true
@@ -282,22 +257,17 @@ func IsSupportedRecurrenceType(t string) bool {
 }
 
 // absDayIndex returns a calendar-absolute day number for (year, month, day).
-// It is the SINGLE place the day-counter choice is made, and both recurrence
-// expansion (OccursOn) and the display weekday column (v2WeekdayIndexFor)
-// consume it, so a weekly event and the grid column it renders on can never
-// disagree. month is 1-based.
+// It is the single place the day-counter choice is made; both recurrence
+// expansion (OccursOn) and the display weekday column consume it, so a weekly
+// event and the grid column it renders on can never disagree. month is
+// 1-based.
 //
 // Real-time (Gregorian) calendars use the proleptic-Gregorian Julian Day
-// Number — a true day counter that advances by exactly one across a leap day
-// (2028-02-29 → 2028-03-01) — instead of the constant-length sum, which counts
-// year*YearLength() and so misses one day per elapsed Gregorian leap year: the
-// constant-length count first drifts +1 at 2028-02-29 (the P1 weekday-drift
-// flag, RC-13.6) and would also collapse Feb 29 and Mar 1 onto the same index
-// (MonthDays reports the Gregorian 29 for February while YearLength()'s months
-// carry the configured 28), double-rendering a weekly event's column. JDN has
-// neither defect. Only FLAGGED real-time calendars branch; fantasy AND
-// reallife-but-manual calendars keep the constant-length geometry byte-for-byte
-// (UsesRealTime()=false → constLenDayIndex, provably unchanged).
+// Number, a true day counter that advances by exactly one across a leap day,
+// instead of the constant-length sum (year*YearLength()), which misses a day
+// per elapsed Gregorian leap year and would collapse Feb 29 and Mar 1 onto the
+// same index. Only flagged real-time calendars take this branch; fantasy and
+// reallife-but-manual calendars keep the constant-length geometry unchanged.
 func (c *Calendar) absDayIndex(year, month, day int) int {
 	if c.UsesRealTime() {
 		return gregorianJDN(year, month, day)
@@ -307,36 +277,17 @@ func (c *Calendar) absDayIndex(year, month, day int) int {
 
 // constLenDayIndex is the fixed-geometry absolute-day counter:
 // year*YearLength() + prior configured month days + day (month 1-based). It is
-// the one home for the constant-length formula that absDayIndex (non-real-time
-// branch), the display weekday path (v2WeekdayIndexFor), and the real-time
-// display calibration's 2026 epoch anchor (realTimeWeekdayIndex) all share, so
-// the geometry can never drift between recurrence and display.
+// the one home for the constant-length formula shared by absDayIndex's
+// non-real-time branch and the display weekday path, so the geometry can
+// never drift between recurrence and display.
 //
-// THE THREE-COUNTER DIVERGENCE (C-CALV4-SPINE-P2, coordinator ruling
-// COMMON §6.4 — documented and PINNED, deliberately NOT fixed in calendar-v4
-// wave 1).
-//
-// Three day counters coexist in this package and they do not agree:
-//
-//  1. Calendar.AbsoluteDay — LEAP-AWARE (it sums YearLengthForYear, which adds
-//     Month.LeapYearDays in a leap year). Consumed by moon phase only.
-//  2. constLenDayIndex (this function) — FIXED geometry: year*YearLength(),
-//     where YearLength() is the plain sum of Month.Days and never adds a leap
-//     day. Consumed by the weekday column and by recurrence.
-//  3. The legacy V1 path, which predates both.
-//
-// Counters 1 and 2 therefore diverge by exactly ONE DAY PER ELAPSED LEAP YEAR,
-// and a per-day moon disc — which takes its absolute day from counter 1 while
-// its grid COLUMN comes from counter 2 — drifts against its own cell by that
-// amount. TestBlockCounterDivergencePin measures it and pins today's numbers.
-//
-// It is not fixed here because making constLenDayIndex intercalary- or
-// leap-aware would shift the weekday column of every calendar already stored in
-// the operator's production database: every weekly event would move to a
-// different column overnight. That is a data-visible product decision with an
-// operator gate, not a rendering fix. Reconciliation is booked as its own
-// dispatch; until then, a change to this function must be deliberate, and the
-// pin exists to make sure it is.
+// This counter and Calendar.AbsoluteDay (which is leap-aware, via
+// YearLengthForYear) diverge by exactly one day per elapsed leap year: a
+// per-day moon disc, which uses AbsoluteDay, can drift against the weekday
+// grid cell, which uses this counter. Reconciling them would shift the
+// weekday column of every calendar in the operator's production database, so
+// it needs an operator-gated migration, not a quiet fix here.
+// TODO(keyxmakerx/Chronicle#741): reconcile the two day counters for V5.
 func (c *Calendar) constLenDayIndex(year, month, day int) int {
 	abs := year * c.YearLength()
 	for i := 0; i < month-1 && i < len(c.Months); i++ {
@@ -345,51 +296,31 @@ func (c *Calendar) constLenDayIndex(year, month, day int) int {
 	return abs + day
 }
 
-// OccursOn reports whether the event lands on (year, month, day) for cal. The
-// SINGLE recurrence-expansion predicate — every grid/list projection routes
-// through it so there is one source of truth (C-CAL-EDITOR-EXPANSION PR2).
+// OccursOn reports whether the event lands on (year, month, day) for cal.
+// It is the single recurrence-expansion predicate; every grid/list projection
+// routes through it so there is one source of truth.
 //
 // Non-recurring events (or a legacy/empty/unknown recurrence_type) match only
-// their stored date — the prior behavior, so existing rows are untouched. The
-// FIVE recurring types expand forward from the base date:
+// their stored date. The five recurring types expand forward from the base
+// date:
 //   - weekly/biweekly/custom: every (interval × week) days, base-anchored, so
 //     each instance shares the base weekday;
 //   - monthly: the same day-of-month every (interval) months, base-anchored,
 //     skipped in months too short for that day (leap-aware via MonthDays);
-//   - yearly: the same month AND day-of-month every (interval) years,
-//     base-anchored, SKIPPED — never clamped — in a year whose month is too
-//     short for that day (a leap day, an intercalary day a cycle omits).
-//
-// ALL THREE families apply recurrence_interval. Monthly did not until
-// C-SWEEP-R4 stage 22, which is why calendar_daycard.js's editor withholds the
-// `every [N]` field from the month unit — that workaround can now be lifted,
-// booked as C-CALV4-MONTHLY-INTERVAL-CONTROL. Yearly was built with the
-// interval already applied (C-CALV4-GAMEREADY §6) precisely so it would never
-// need that fix: a stored "every 4 years" that fires annually is the same
-// class of lie stage 22 had to unwind, and the branch below is stage 22's own
-// arithmetic counted in years.
+//   - yearly: the same month and day-of-month every (interval) years,
+//     base-anchored, skipped — never clamped — in a year whose month is too
+//     short for that day.
 //
 // Recurrence stops at the recurrence-end date (inclusive) and/or after
 // RecurrenceMaxOccurrences.
 //
-// MULTI-DAY EVENTS ARE STILL NOT EXPANDED HERE, AND THE REASON HAS CHANGED.
-// This comment used to end "(the ribbon layer renders their span)", and that
-// sentence was FALSE in the code that made it: V2 had a ribbon layer, v4 never
-// built one, so a five-day festival marked exactly one cell and the day card —
-// which is built from those marks — told a GM standing inside a siege that
-// there were "No events on this day". A comment stating an invariant the
-// product does not hold is how the next hand re-derives the bug, so it is
-// corrected in the same commit that fixes the behaviour (C-CALV4-GAMEREADY §3,
-// [GR-5]).
-//
-// The span is now matched by blockEventSpansDate in block_projection.go,
-// BESIDE this predicate rather than inside it, and deliberately: OccursOn
-// answers "does the recurrence rule put an instance here", which is a different
-// question from "is this day inside the stored window", and every other
-// consumer of OccursOn (the week/day lists, the entity ties, the upcoming
-// index) has its own idea of how a span should read. Widening this predicate
-// would have changed all of them silently. The RENDERING of the span as one
-// continuous bar remains unbuilt and is booked as C-CALV4-SPAN-RIBBON.
+// Multi-day events are not expanded here: OccursOn answers "does the
+// recurrence rule put an instance here", a different question from "is this
+// day inside the stored window". Each consumer of OccursOn has its own idea
+// of how a multi-day span should read, so widening this predicate would
+// change all of them silently.
+// TODO(keyxmakerx/Chronicle#741): render a multi-day event's span as one
+// continuous bar (currently only its start date gets marked).
 func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {
 	onBase := e.Year == year && e.Month == month && e.Day == day
 	if !e.IsRecurring || e.RecurrenceType == nil || cal == nil {
@@ -413,18 +344,13 @@ func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {
 		}
 	}
 
-	// YEARLY — the festival branch (C-CALV4-GAMEREADY §6, [GR-11]).
+	// YEARLY — the festival branch.
 	//
-	// A MISSING DAY IS SKIPPED, NEVER CLAMPED, and that is the whole ruling.
-	// Where the base day does not exist in a later year — a leap day, an
-	// intercalary day a cycle omits — the occurrence simply does not happen.
-	// Clamping it forward or back would put the holy day on the WRONG DAY
-	// without telling anyone, and a GM plans around the date they authored; an
-	// absent occurrence is visibly absent and can be answered with a one-off,
-	// while a moved one is a silent wrong answer at the table. MonthDays
-	// already answers "does this day exist in this year" (it folds in
-	// LeapYearDays and the Gregorian path), so this is a lookup, not new
-	// arithmetic.
+	// A missing day is skipped, never clamped: where the base day does not
+	// exist in a later year (a leap day, an intercalary day a cycle omits),
+	// the occurrence simply does not happen, rather than silently landing on
+	// the wrong day. MonthDays already answers "does this day exist in this
+	// year", so this is a lookup, not new arithmetic.
 	if *e.RecurrenceType == RecurrenceYearly {
 		if month != e.Month || day != e.Day || day > cal.MonthDays(month-1, year) {
 			return false
@@ -437,12 +363,9 @@ func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {
 		if n < 0 || n%step != 0 {
 			return false
 		}
-		// The cap counts OCCURRENCES, not years — n/step is the 0-based
+		// The cap counts occurrences, not years — n/step is the 0-based
 		// occurrence index, the same quantity the monthly and week-based
-		// branches compare. With the default interval of 1 the two are
-		// identical, which is why "MaxOccurrences counts years" and "counts
-		// occurrences" say the same thing for every event either editor can
-		// author.
+		// branches compare.
 		if e.RecurrenceMaxOccurrences != nil && n/step >= *e.RecurrenceMaxOccurrences {
 			return false
 		}
@@ -453,19 +376,11 @@ func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {
 		if day != e.Day || day > cal.MonthDays(month-1, year) {
 			return false
 		}
-		// MONTHLY HONOURS recurrence_interval, and did not used to
-		// (C-SWEEP-R4 stage 22). The branch checked the day-of-month and the
-		// occurrence cap and returned, so an event stored as "every 3 months"
-		// was accepted, persisted, and then expanded EVERY month — the rule the
-		// operator authored was not the rule they got. The week-based branch
-		// below has always applied its interval through recurrenceWeeks; this is
-		// the same idea, counted in months rather than weeks, and it is the ONLY
-		// difference between the two.
-		//
-		// step 1 is exactly the old behaviour, so a monthly event with no
-		// interval, a zero, or a negative one does not move. Only a stored
-		// interval of 2 or more expands differently than it did — see the
-		// commit for stage 22 for which rows those are.
+		// Monthly honours recurrence_interval the same way the week-based
+		// branch below applies its interval through recurrenceWeeks — counted
+		// in months rather than weeks.
+		// A monthly event with no interval, a zero, or a negative one does not
+		// move; only a stored interval of 2 or more changes the expansion.
 		step := 1
 		if e.RecurrenceInterval != nil && *e.RecurrenceInterval > 1 {
 			step = *e.RecurrenceInterval
@@ -474,14 +389,10 @@ func (e Event) OccursOn(cal *Calendar, year, month, day int) bool {
 		if n < 0 || n%step != 0 {
 			return false
 		}
-		// THE CAP COUNTS OCCURRENCES, NOT MONTHS. n is the whole-month offset
-		// from the base date, so with an interval it overcounts by exactly the
-		// step: "every 3 months, 4 times" would have stopped after 4 MONTHS —
-		// i.e. after the 2nd occurrence. n/step is the 0-based occurrence index,
-		// which is the same quantity `diff/stride` is in the week-based branch,
-		// so the two branches now read the cap the same way. This half was
-		// booked as un-fixable until the interval fork was settled; settling it
-		// unblocked it.
+		// The cap counts occurrences, not months: n is the whole-month offset
+		// from the base date, so with an interval it must be divided by step
+		// to get the 0-based occurrence index — the same quantity `diff/stride`
+		// is in the week-based branch below.
 		if e.RecurrenceMaxOccurrences != nil && n/step >= *e.RecurrenceMaxOccurrences {
 			return false
 		}
@@ -570,36 +481,20 @@ func (c *Calendar) EraForYear(year int) *Era {
 // AbsoluteDay returns the total number of days from year 0 day 0 to the given
 // date (year, month 1-indexed, day). Used for moon phase calculation.
 //
-// THE YEAR TERM IS CLOSED-FORM AND THAT IS A DENIAL-OF-SERVICE FIX, not a
-// micro-optimisation. This function used to sum YearLengthForYear over every
-// year from 0, so its cost was O(year) — and `year` arrives straight off an
-// unauthenticated query string on three public seed routes
-// (calendar/worldstate_handler.go GetWorldState, calendar/handler_v2.go's
-// cursor, syncapi/calendar_api_handler.go GetWorldState), which all feed it to
-// BuildWorldStateSeed → moonSeeds → here. Measured on the 12-month/366-day
-// fixture in TestAbsoluteDayClosedFormIsNotLinear: `?year=2000000000` burned
-// **53.5 s of CPU in a single request** (100000000 → 2.7 s, 250000 → 7.9 ms).
-// Closed form retires all three at once: the same call is now ~40 ns and a
-// campaign legitimately set in year 250000 — or 2000000000 — still resolves
-// exactly the date it did before.
+// The year term MUST stay closed-form: `year` reaches this from unauthenticated
+// query strings on public seed routes, and a per-year summation loop is an
+// O(year) denial-of-service (TestAbsoluteDayClosedFormIsNotLinear). Do not
+// reintroduce a bound on the input instead — a fantasy calendar's year number
+// is authored data, so the fix belongs in the algorithm.
 //
-// NO INPUT WINDOW WAS INVENTED. Bounding `?year` would have been the cheap fix
-// and it is the wrong one: a fantasy calendar's year number is authored data,
-// the three entry points would each need the same arbitrary constant, and the
-// next caller that reaches AbsoluteDay from somewhere other than a handler
-// would still be linear. Fixing the algorithm needs no constant and no
-// coordination. No context plumbing is needed either, for the same reason:
-// after this change the function contains no unbounded loop to cancel — the
-// surviving month loop is bounded by len(c.Months).
-//
-// The arithmetic is EXACTLY the loop's, term for term, so no stored date moves:
+// The arithmetic is exactly the loop's, term for term, so no stored date moves:
 //
 //	Σ_{y=0}^{year-1} YearLengthForYear(y)
 //	  = Σ (YearLength() + leapExtraDays if IsLeapYear(y))
 //	  = year·YearLength() + leapExtraDays·|{y ∈ [0,year) : IsLeapYear(y)}|
 //
-// and leapYearsBefore counts that set in O(1) (see its own comment). A negative
-// or zero `year` contributes nothing, which is what the `y < year` loop did.
+// and leapYearsBefore counts that set in O(1). A negative or zero `year`
+// contributes nothing.
 func (c *Calendar) AbsoluteDay(year, month, day int) int {
 	total := 0
 	// Add full years — closed form, see the function comment.
@@ -682,10 +577,8 @@ type Weekday struct {
 // Moon is a celestial body with a phase cycle used for moon phase display.
 //
 // BaseDesign / Tint / PhaseSource / Size / OrbitSpeed are the moon-library
-// render params (migration 008 / C-CAL-WORLDSTATE-SERVER-MODEL). They mirror
-// the showcase's MOON_DESIGNS parameters so a moon's appearance can be
-// authored rather than hardcoded in JS. Existing moons read the column
-// defaults ('moon-realistic-selene' / null / 'css-clip' / 1 / 1).
+// render params, mirroring the showcase's MOON_DESIGNS parameters so a
+// moon's appearance can be authored rather than hardcoded in JS.
 type Moon struct {
 	ID          int     `json:"id"`
 	CalendarID  string  `json:"calendar_id"`
@@ -792,14 +685,14 @@ func (s *Season) ContainsDate(month, day int) bool {
 
 // Era is a named time period spanning a range of years (e.g. "First Age", "Age of Fire").
 type Era struct {
-	ID         int     `json:"id"`
-	CalendarID string  `json:"calendar_id"`
-	Name       string  `json:"name"`
-	StartYear  int     `json:"start_year"`
-	EndYear    *int    `json:"end_year,omitempty"` // nil = ongoing
+	ID          int     `json:"id"`
+	CalendarID  string  `json:"calendar_id"`
+	Name        string  `json:"name"`
+	StartYear   int     `json:"start_year"`
+	EndYear     *int    `json:"end_year,omitempty"` // nil = ongoing
 	Description *string `json:"description,omitempty"`
-	Color      string  `json:"color"`
-	SortOrder  int     `json:"sort_order"`
+	Color       string  `json:"color"`
+	SortOrder   int     `json:"sort_order"`
 }
 
 // IsOngoing returns true if this era has no end year (still in progress).
@@ -816,22 +709,22 @@ func (e *Era) ContainsYear(year int) bool {
 // Description stores ProseMirror JSON for rich text editing; DescriptionHTML
 // stores pre-rendered sanitized HTML for display (same pattern as entity entries).
 type Event struct {
-	ID              string    `json:"id"`
-	CalendarID      string    `json:"calendar_id"`
-	EntityID        *string   `json:"entity_id,omitempty"`
-	Name            string    `json:"name"`
-	Description     *string   `json:"description,omitempty"`
-	DescriptionHTML *string   `json:"description_html,omitempty"`
-	Year            int       `json:"year"`
-	Month          int       `json:"month"`
-	Day            int       `json:"day"`
-	StartHour      *int      `json:"start_hour,omitempty"`
-	StartMinute    *int      `json:"start_minute,omitempty"`
-	EndYear        *int      `json:"end_year,omitempty"`
-	EndMonth       *int      `json:"end_month,omitempty"`
-	EndDay         *int      `json:"end_day,omitempty"`
-	EndHour        *int      `json:"end_hour,omitempty"`
-	EndMinute      *int      `json:"end_minute,omitempty"`
+	ID                       string  `json:"id"`
+	CalendarID               string  `json:"calendar_id"`
+	EntityID                 *string `json:"entity_id,omitempty"`
+	Name                     string  `json:"name"`
+	Description              *string `json:"description,omitempty"`
+	DescriptionHTML          *string `json:"description_html,omitempty"`
+	Year                     int     `json:"year"`
+	Month                    int     `json:"month"`
+	Day                      int     `json:"day"`
+	StartHour                *int    `json:"start_hour,omitempty"`
+	StartMinute              *int    `json:"start_minute,omitempty"`
+	EndYear                  *int    `json:"end_year,omitempty"`
+	EndMonth                 *int    `json:"end_month,omitempty"`
+	EndDay                   *int    `json:"end_day,omitempty"`
+	EndHour                  *int    `json:"end_hour,omitempty"`
+	EndMinute                *int    `json:"end_minute,omitempty"`
 	IsRecurring              bool    `json:"is_recurring"`
 	RecurrenceType           *string `json:"recurrence_type,omitempty"`
 	RecurrenceInterval       *int    `json:"recurrence_interval,omitempty"`
@@ -843,24 +736,20 @@ type Event struct {
 	Visibility               string  `json:"visibility"`
 	VisibilityRules          *string `json:"visibility_rules,omitempty"`
 	Category                 *string `json:"category,omitempty"`
-	// Tier references one of the campaign's event_tier_definitions
-	// by slug (PR #358 migration 004 added the calendar_events.tier
-	// column; Wave 1.6 closes the Go-side plumbing per PR #368
-	// stop-and-flag #2). Nil means "use platform default" —
-	// render-time fallback per V2 design §C1 three-tier model.
-	Tier                     *string `json:"tier,omitempty"`
-	Color                    *string `json:"color,omitempty"`
-	Icon                     *string `json:"icon,omitempty"`
-	AllDay                   bool    `json:"all_day"`
-	// CollectRSVPs is the per-event RSVP opt-in (C-CAL-RSVP-P1, migration 013).
-	// Read-only on this aggregate: the WRITE goes through RSVPRepository
-	// .SetCollectRSVPs, deliberately OFF the shared UpdateEvent path so the
-	// drawer's lossless quick-save (which re-sends the whole stored event shape)
-	// can never clobber the flag.
-	CollectRSVPs             bool    `json:"collect_rsvps"`
-	CreatedBy                *string `json:"created_by,omitempty"`
-	CreatedAt                time.Time `json:"created_at"`
-	UpdatedAt                time.Time `json:"updated_at"`
+	// Tier references one of the campaign's event_tier_definitions by slug.
+	// Nil means "use platform default" (render-time fallback).
+	Tier   *string `json:"tier,omitempty"`
+	Color  *string `json:"color,omitempty"`
+	Icon   *string `json:"icon,omitempty"`
+	AllDay bool    `json:"all_day"`
+	// CollectRSVPs is the per-event RSVP opt-in. Read-only on this aggregate:
+	// writes go through RSVPRepository.SetCollectRSVPs, deliberately off the
+	// shared UpdateEvent path, so a quick-save that re-sends the whole stored
+	// event shape can never clobber the flag.
+	CollectRSVPs bool      `json:"collect_rsvps"`
+	CreatedBy    *string   `json:"created_by,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 
 	// Joined fields for display (populated by some queries).
 	EntityName  string `json:"entity_name,omitempty"`
@@ -975,13 +864,12 @@ type UpdateCalendarInput struct {
 	SecondsPerMinute int
 	LeapYearEvery    int
 	LeapYearOffset   int
-	// Real-time settings (C-REAL-CALENDAR-P2). SetRealTime is nil for every caller
-	// that does not manage the flag (PutDate, worldstate advance/time, seed/create)
-	// so their update preserves the stored TracksRealTime/RealTimeZone — a *bool so
-	// "absent" (leave unchanged) is distinct from "false" (disable), mirroring the
-	// Description/EpochName null-preserve pattern above. The settings form sets it to
-	// enable or disable. RealTimeZone is the IANA anchor, REQUIRED and validated when
-	// enabling (RC-2); ignored and cleared when disabling.
+	// SetRealTime is nil for every caller that does not manage the flag (e.g.
+	// PutDate, worldstate advance/time, seed/create), so their update
+	// preserves the stored TracksRealTime/RealTimeZone — a *bool so "absent"
+	// (leave unchanged) is distinct from "false" (disable). RealTimeZone is
+	// the IANA anchor, required and validated when enabling; ignored and
+	// cleared when disabling.
 	SetRealTime  *bool
 	RealTimeZone *string
 }
@@ -1013,33 +901,21 @@ type CreateEventInput struct {
 	VisibilityRules          *string
 	Category                 *string
 	// Tier — campaign tier definition slug; nil = use platform default
-	// at render. PR #358 schema column + Wave 1.6 Go-side plumbing.
-	Tier                     *string
-	Color                    *string
-	Icon                     *string
-	AllDay                   bool
-	CreatedBy                string
+	// at render.
+	Tier      *string
+	Color     *string
+	Icon      *string
+	AllDay    bool
+	CreatedBy string
 }
 
 // UpdateEventInput is the validated input for updating an event.
 //
-// PARTIAL update, per the contract ruled on 2026-08-07 (sweep R4): an
-// ABSENT key preserves the stored value, an EXPLICIT null clears it, a
-// present value replaces it.
-//
-// C-CAL-NULL-PRESERVE got eighteen of these right in 2026-05 by making them
-// nil-preserving pointers. It could not fix the rest, and said so: a plain
-// pointer collapses "absent" and "null", so the value-typed fields were
-// left unguarded on the grounds that they have no absent state — which was
-// true of the TYPE, not of the wire. The Foundry calendar-sync sends
-// five-key bodies from three separate paths, and every one of them silently
-// set is_recurring=false and all_day=false on somebody's event.
-//
-// EntityID is the field C-ENTITY-LINK-DESIGN parked. The parking asked that
-// a caller keep the ability to CLEAR the link, which nil-preserve would
-// have taken away. patch.Field gives both: an explicit null still clears
-// (TestUpdateEvent_EntityIDStillClearsOnNil still passes, in its own
-// vocabulary), while a body that never mentions entity_id stops unlinking.
+// Partial update: an absent key preserves the stored value, an explicit null
+// clears it, a present value replaces it (internal/patch's Field type). Every
+// field uses patch.Field, including EntityID: a plain nil-preserving pointer
+// would have made the link impossible to clear, so it needs the three-way
+// absent/null/value distinction like the rest.
 type UpdateEventInput struct {
 	Name                     patch.Field[string]
 	Description              patch.Field[string]
@@ -1130,19 +1006,19 @@ type EventCategoryInput struct {
 // Weather represents the current weather state for a calendar.
 // Set manually by the GM or synced from external tools (Calendaria).
 type Weather struct {
-	ID                     int      `json:"id"`
-	CalendarID             string   `json:"calendar_id"`
-	PresetID               *string  `json:"preset_id,omitempty"`
-	PresetLabel            *string  `json:"preset_label,omitempty"`
-	Icon                   *string  `json:"icon,omitempty"`
-	Color                  *string  `json:"color,omitempty"`
-	TemperatureCelsius     *float64 `json:"temperature_celsius,omitempty"`
-	Wind                   *Wind    `json:"wind,omitempty"`
-	Precipitation          *Precipitation `json:"precipitation,omitempty"`
-	ZoneID                 *string  `json:"zone_id,omitempty"`
-	ZoneName               *string  `json:"zone_name,omitempty"`
-	Description            *string  `json:"description,omitempty"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	ID                 int            `json:"id"`
+	CalendarID         string         `json:"calendar_id"`
+	PresetID           *string        `json:"preset_id,omitempty"`
+	PresetLabel        *string        `json:"preset_label,omitempty"`
+	Icon               *string        `json:"icon,omitempty"`
+	Color              *string        `json:"color,omitempty"`
+	TemperatureCelsius *float64       `json:"temperature_celsius,omitempty"`
+	Wind               *Wind          `json:"wind,omitempty"`
+	Precipitation      *Precipitation `json:"precipitation,omitempty"`
+	ZoneID             *string        `json:"zone_id,omitempty"`
+	ZoneName           *string        `json:"zone_name,omitempty"`
+	Description        *string        `json:"description,omitempty"`
+	UpdatedAt          time.Time      `json:"updated_at"`
 }
 
 // Wind describes wind speed and direction.
@@ -1161,20 +1037,20 @@ type Precipitation struct {
 
 // WeatherInput is the input for setting weather state.
 type WeatherInput struct {
-	PresetID           *string  `json:"preset_id"`
-	PresetLabel        *string  `json:"preset_label"`
-	Icon               *string  `json:"icon"`
-	Color              *string  `json:"color"`
-	TemperatureCelsius *float64 `json:"temperature_celsius"`
-	WindSpeedKPH       *float64 `json:"wind_speed_kph"`
-	WindSpeedTier      *string  `json:"wind_speed_tier"`
-	WindDirection      *string  `json:"wind_direction"`
-	WindDirectionDeg   *int     `json:"wind_direction_degrees"`
-	PrecipitationType  *string  `json:"precipitation_type"`
+	PresetID               *string  `json:"preset_id"`
+	PresetLabel            *string  `json:"preset_label"`
+	Icon                   *string  `json:"icon"`
+	Color                  *string  `json:"color"`
+	TemperatureCelsius     *float64 `json:"temperature_celsius"`
+	WindSpeedKPH           *float64 `json:"wind_speed_kph"`
+	WindSpeedTier          *string  `json:"wind_speed_tier"`
+	WindDirection          *string  `json:"wind_direction"`
+	WindDirectionDeg       *int     `json:"wind_direction_degrees"`
+	PrecipitationType      *string  `json:"precipitation_type"`
 	PrecipitationIntensity *float64 `json:"precipitation_intensity"`
-	ZoneID             *string  `json:"zone_id"`
-	ZoneName           *string  `json:"zone_name"`
-	Description        *string  `json:"description"`
+	ZoneID                 *string  `json:"zone_id"`
+	ZoneName               *string  `json:"zone_name"`
+	Description            *string  `json:"description"`
 }
 
 // WeatherZone is a per-calendar climate region definition (e.g.
@@ -1184,19 +1060,16 @@ type WeatherInput struct {
 // season_overrides map) and Chronicle stores it verbatim with a small
 // validation helper (see service.go validateWeatherZonePayload).
 //
-// Zones are calendar-scoped (V2 multi-cal): each calendar has its own
-// zones. The active-zone reference lives on calendar_weather.zone_id
-// (migration 003) + zone_name; the zone DEFINITIONS live in this
-// table (migration 005). Per C-CAL-WEATHER-ZONES dispatch +
-// cordinator/reports/chronicle/2026-05-28-c-cal-weather-zones.md
-// §"Scope decision."
+// Zones are calendar-scoped: each calendar has its own zones. The
+// active-zone reference lives on calendar_weather.zone_id + zone_name; the
+// zone definitions live in this table.
 type WeatherZone struct {
-	CalendarID string                 `json:"calendar_id"`
-	ZoneID     string                 `json:"zone_id"`
-	Name       string                 `json:"name"`
-	Payload    map[string]any         `json:"payload"`
-	CreatedAt  time.Time              `json:"created_at,omitempty"`
-	UpdatedAt  time.Time              `json:"updated_at,omitempty"`
+	CalendarID string         `json:"calendar_id"`
+	ZoneID     string         `json:"zone_id"`
+	Name       string         `json:"name"`
+	Payload    map[string]any `json:"payload"`
+	CreatedAt  time.Time      `json:"created_at,omitempty"`
+	UpdatedAt  time.Time      `json:"updated_at,omitempty"`
 }
 
 // WeatherZonesState bundles the per-calendar active-zone reference +
@@ -1222,20 +1095,20 @@ type Cycle struct {
 
 // CycleEntry is a single entry within a cycle.
 type CycleEntry struct {
-	ID         int    `json:"id"`
-	CycleID    int    `json:"cycle_id"`
-	Name       string `json:"name"`
+	ID         int     `json:"id"`
+	CycleID    int     `json:"cycle_id"`
+	Name       string  `json:"name"`
 	Icon       *string `json:"icon,omitempty"`
-	YearOffset int    `json:"year_offset"`
-	SortOrder  int    `json:"sort_order"`
+	YearOffset int     `json:"year_offset"`
+	SortOrder  int     `json:"sort_order"`
 }
 
 // CycleInput is the input for creating/updating a cycle with its entries.
 type CycleInput struct {
-	Name        string           `json:"name"`
-	CycleLength int              `json:"cycle_length"`
-	Type        string           `json:"type"`
-	SortOrder   int              `json:"sort_order"`
+	Name        string            `json:"name"`
+	CycleLength int               `json:"cycle_length"`
+	Type        string            `json:"type"`
+	SortOrder   int               `json:"sort_order"`
 	Entries     []CycleEntryInput `json:"entries"`
 }
 
@@ -1279,36 +1152,11 @@ type FestivalInput struct {
 // for new calendars. Provides a sensible starting point for TTRPG campaigns.
 func DefaultEventCategories() []EventCategoryInput {
 	return []EventCategoryInput{
-		// HOLIDAY IS NOT AMBER, AND THAT IS A RULING RATHER THAN A PREFERENCE
-		// (C-CALV4-RUNES §10.3, operator-decided 2026-08-16).
-		//
-		// GOLD MEANS "GM ONLY" ACROSS THE PRODUCT. Below 84px of column the
-		// calendar draws no event names and the glyph is chosen by position in
-		// the day, so COLOUR is the only channel telling event types apart —
-		// and a GM-only day strikes ALL its runes gold. Amber `#f59e0b` inked
-		// 28/255 from that gold, which at 9x12px is the same colour: a Holiday
-		// and a GM-only day were indistinguishable on a phone. Both are gold BY
-		// HUE, so no lightness or chroma treatment could separate them; one of
-		// the two had to move, and gold's meaning is load-bearing everywhere
-		// else.
-		//
-		// LIME WAS MEASURED, NOT PICKED. Every hue on the circle was painted
-		// through the shipped rune-ink recipe in both themes and scored against
-		// the GM gold AND the five other defaults; 115-135 deg is the optimum
-		// region and `#84cc16` is the Tailwind-500 member of it, so it sits in
-		// the same family as its five neighbours. The change is a strict
-		// improvement on both counts:
-		//
-		//	Holiday vs GM-gold      28 -> 75 / 255
-		//	worst pair of the six   29 -> 43 / 255   (and no longer a Holiday pair)
-		//
-		// Pinned by TestDefaultCategories_NoneCollidesWithTheGMGold.
-		//
-		// EXISTING CALENDARS KEEP THEIR AMBER. This seeds NEW calendars only —
-		// a data fix would rewrite a colour an owner may have chosen on purpose,
-		// and the product cannot tell "left at the default" from "picked exactly
-		// this". Changing it on an existing campaign is one colour picker in
-		// settings -> Categories.
+		// Holiday is lime, not amber: gold means "GM only" across the product
+		// (a GM-only day strikes all its runes gold), and amber at small sizes
+		// is indistinguishable from that gold by hue. This seeds new calendars
+		// only — an existing calendar keeps its stored colour; the owner can
+		// change it in settings -> Categories.
 		{Slug: "holiday", Name: "Holiday", Icon: "⭐", Color: "#84cc16", SortOrder: 0},
 		{Slug: "battle", Name: "Battle", Icon: "⚔", Color: "#ef4444", SortOrder: 1},
 		{Slug: "quest", Name: "Quest", Icon: "❗", Color: "#8b5cf6", SortOrder: 2},

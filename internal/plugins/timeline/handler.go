@@ -41,8 +41,7 @@ func (h *Handler) SetAuditService(svc audit.AuditService) {
 }
 
 // logTimelineAudit fires a fire-and-forget audit entry. Errors are
-// slog-logged and never block the primary operation per dispatch
-// §"Failure handling".
+// slog-logged and never block the primary operation.
 func (h *Handler) logTimelineAudit(c echo.Context, campaignID, action, entityType, entityID, entityName string, details map[string]any) {
 	if h.auditSvc == nil {
 		return
@@ -72,17 +71,14 @@ func (h *Handler) requireTimelineInCampaign(c echo.Context, timelineID, campaign
 	return middleware.RequireInCampaign(c.Request().Context(), h.svc.GetTimeline, timelineID, campaignID, "timeline")
 }
 
-// effectiveRole returns the role to use for content filtering. When
-// "view as player" mode is active, owners see content as a player would —
-// that branch MUST win over the promotion below: an Owner (co-DM or not)
-// deliberately previewing the player experience needs the actual player
-// view, not their own promoted-for-visibility role.
+// effectiveRole returns the role to use for content filtering. The
+// view-as-player branch MUST win over the promotion below: an Owner
+// previewing the player experience needs the actual player view, not a
+// promoted-for-visibility role.
 //
 // Outside preview mode, a DM-granted co-DM is promoted to Owner for
-// visibility via cc.VisibilityRole() (operator ruling, .ai/todo.md
-// 2026-09-12: the co-DM promotion crosses plugin lines) — the same
-// promotion every entity path already applies, so a co-DM sees dm_only
-// timeline events too.
+// visibility via cc.VisibilityRole(), the same promotion every entity path
+// applies, so a co-DM sees dm_only timeline events too.
 func effectiveRole(c echo.Context, cc *campaigns.CampaignContext) int {
 	ctx := c.Request().Context()
 	if layouts.IsViewingAsPlayer(ctx) {
@@ -127,12 +123,10 @@ func (h *Handler) Show(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	// GetTimelineForViewer, not requireTimelineInCampaign: this is a public
-	// route (RequireViewAccess, reachable by an anonymous viewer on a public
-	// campaign), so the timeline's own visibility must be checked here too —
-	// requireTimelineInCampaign alone only confirms campaign scope
-	// (2026-09-12 audit finding 4). A viewer who may not see it gets the
-	// same NotFound as one that doesn't exist.
+	// This is a public route reachable by an anonymous viewer, so the
+	// timeline's own visibility must be checked via GetTimelineForViewer,
+	// not just requireTimelineInCampaign's campaign-scope check. A viewer
+	// who may not see it gets the same NotFound as one that doesn't exist.
 	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
@@ -249,12 +243,10 @@ func (h *Handler) UpdateAPI(c echo.Context) error {
 		return err
 	}
 
-	// PARTIAL update: absent preserves, explicit null clears, a present
-	// value replaces (sweep R4 / ADR-054 #2). visibility_rules and
-	// description_html are deliberately NOT members here: the dedicated
-	// PUT .../visibility endpoint owns visibility_rules, and no caller
-	// today writes description_html for a timeline through any route — see
-	// UpdateTimelineInput's doc comment.
+	// Partial update: absent preserves, explicit null clears, a present
+	// value replaces (ADR-054). visibility_rules and description_html are
+	// deliberately NOT members here: PUT .../visibility owns visibility_rules,
+	// and no route writes description_html for a timeline.
 	var req struct {
 		Name        string              `json:"name"`
 		Description patch.Field[string] `json:"description"`
@@ -442,14 +434,9 @@ func (h *Handler) UpdateStandaloneEventAPI(c echo.Context) error {
 		return err
 	}
 
-	// PARTIAL update: absent preserves, explicit null clears, a present value
-	// replaces (sweep R4). The edit modal sends five keys; every key it does
-	// not send used to be a WRITE, which is how a rename cleared the entity
-	// link, the rich-text body, the start/end times and the recurrence.
-	//
-	// visibility_rules is deliberately NOT a member here: PUT
-	// .../standalone-events/:eid/visibility owns it. Absent now means
-	// preserve, which is the whole fix for the per-player rules.
+	// Partial update: absent preserves, explicit null clears, a present
+	// value replaces. visibility_rules is deliberately NOT a member here:
+	// PUT .../standalone-events/:eid/visibility owns it.
 	var req struct {
 		Name            patch.Field[string] `json:"name"`
 		Description     patch.Field[string] `json:"description"`
@@ -544,9 +531,9 @@ func (h *Handler) TimelineDataAPI(c echo.Context) error {
 	role := effectiveRole(c, cc)
 	userID := auth.GetUserID(c)
 
-	// Same fix as Show, for the same reason: this is the public JSON data
-	// endpoint the D3 visualization polls, reachable without an account on a
-	// public campaign (2026-09-12 audit finding 4).
+	// Public JSON data endpoint the D3 visualization polls, reachable
+	// without an account on a public campaign; must check visibility here
+	// too, same as Show.
 	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return err
@@ -813,11 +800,8 @@ func (h *Handler) UpdateTimelineVisibilityAPI(c echo.Context) error {
 		return apperror.NewBadRequest("invalid request")
 	}
 
-	// Build a full update preserving existing settings. `t` was read fresh
-	// at the top of THIS request, so echoing it back via patch.Of/
-	// patch.FromPtr is safe here — it is not a stale snapshot bound
-	// elsewhere, which is what the "never echo untouched fields" rule
-	// guards against (see UpdateTimelineInput's doc comment).
+	// `t` was read fresh at the top of this request, so echoing it back via
+	// patch.Of/patch.FromPtr is safe (not a stale snapshot bound elsewhere).
 	if err := h.svc.UpdateTimeline(ctx, timelineID, UpdateTimelineInput{
 		Name:            t.Name,
 		Description:     patch.FromPtr(t.Description),
@@ -907,12 +891,9 @@ func (h *Handler) UpdateStandaloneEventVisibilityAPI(c echo.Context) error {
 		return apperror.NewBadRequest("visibility must be 'everyone' or 'dm_only'")
 	}
 
-	// This endpoint owns visibility and visibility_rules and nothing else,
-	// so it now SENDS only those two. It used to re-echo all twenty fields
-	// off the loaded row to stop the service blanking them — the very
-	// pattern the sweep-R4 ruling replaced with server-side presence-merge.
-	// Passing the rules through FromPtr keeps this endpoint's own semantics
-	// intact: a nil visibility_rules here means "no rules", i.e. clear.
+	// This endpoint owns visibility and visibility_rules and sends only
+	// those two (partial-update contract: absent preserves). A nil
+	// visibility_rules means "no rules", i.e. clear.
 	if err := h.svc.UpdateStandaloneEvent(ctx, timelineID, eventID, UpdateTimelineEventInput{
 		Visibility:      patch.Of(req.Visibility),
 		VisibilityRules: patch.FromPtr(req.VisibilityRules),
@@ -1003,12 +984,9 @@ func (h *Handler) EmbedTimeline(c echo.Context) error {
 		timelineID = timelines[0].ID
 	}
 
-	// Same fix as Show/TimelineDataAPI: an explicit ?timeline_id= is
-	// attacker-controlled and this route is public, so requireTimelineInCampaign
-	// alone (campaign scope only) let a dm_only timeline embed in full for a
-	// viewer with no account (2026-09-12 audit finding 4). Falling through to
-	// the existing empty-state render on error already matches this route's
-	// established "never error, always render something" contract.
+	// timeline_id is attacker-controlled on this public route, so visibility
+	// must be checked via GetTimelineForViewer, not just campaign scope.
+	// On error, fall through to the empty-state render (never error).
 	t, err := h.svc.GetTimelineForViewer(ctx, timelineID, cc.Campaign.ID, permissions.RequestViewer(role, userID))
 	if err != nil {
 		return middleware.Render(c, http.StatusOK, TimelineEmbedEmpty(cc))

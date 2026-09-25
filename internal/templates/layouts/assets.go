@@ -1,41 +1,25 @@
-// assets.go — cache-busted static asset URLs (C-CAL-MOBILE-VIEWS-FIX, absorbing
-// the long-planned C-ASSET-VERSIONING).
+// assets.go provides cache-busted static asset URLs.
 //
-// WHY this exists. Every static asset shipped as a bare, unversioned path
-// (`/static/css/app.css`, `/static/js/*.js`, plugin assets under
-// `/static/plugins/<slug>/...`). Echo's `e.Static` serves them through
-// `http.ServeContent`, which emits Last-Modified but NO Cache-Control, so
-// browsers fall back to HEURISTIC freshness and can hold a build-old copy for
-// hours without ever revalidating. Any deploy whose CSS gains a NEW utility
-// class then half-lands: the fresh HTML references a class the cached
-// stylesheet has never heard of.
+// Echo's `e.Static` serves assets via `http.ServeContent`, which emits
+// Last-Modified but no Cache-Control, so browsers can hold a build-old copy
+// for hours without revalidating — a deploy that adds a CSS class can render
+// against a stale stylesheet that has never heard of it.
 //
-// That is not hypothetical. C-CAL-MOBILE-VIEWS-FIX Step 0 reproduced it: the
-// calendar's phone/desktop pill reduction introduced `md:contents`, a utility
-// Tailwind had never emitted before that commit. Rendering post-deploy HTML
-// against a pre-deploy app.css drops the Week/Day/Timeline pills from the
-// DESKTOP calendar entirely — `hidden md:contents` degrades to plain `hidden`
-// when `.md\:contents` is missing from the stylesheet. Same class of failure as
-// the "calendar looks old after deploy" reports.
-//
-// THE FIX. Every asset URL emitted by a template routes through AssetURL, which
+// Every asset URL emitted by a template routes through AssetURL, which
 // appends `?v=<digest>`:
 //
-//   - `<digest>` is the first 10 hex chars of the file's SHA-256 when the asset
-//     resolves on disk (or through a registered plugin FS). Per-FILE, so a
+//   - `<digest>` is the first 10 hex chars of the file's SHA-256 when the
+//     asset resolves on disk (or through a registered plugin FS), so a
 //     deploy only busts the files that actually changed.
-//   - Assets that can't be resolved (an embed FS nobody registered, a path
-//     typo) fall back to a per-BUILD token. Coarser, but it still busts on
-//     every deploy, so an unresolvable asset degrades to "correct but less
-//     efficient" rather than "silently stale".
+//   - Assets that can't be resolved fall back to a per-build token, coarser
+//     but still busting on every deploy.
 //
-// Digests are computed once per path and cached for the process lifetime;
-// static assets do not change under a running binary.
+// Digests are computed once per path and cached for the process lifetime.
 //
-// The other half of the fix is middleware.StaticCache (internal/middleware/
-// static_cache.go), which turns the versioned URLs into a real caching policy:
-// long-lived immutable caching for `?v=`-carrying requests, forced revalidation
-// otherwise.
+// The other half is middleware.StaticCache (internal/middleware/
+// static_cache.go), which turns the versioned URLs into a real caching
+// policy: long-lived immutable caching for `?v=`-carrying requests, forced
+// revalidation otherwise.
 package layouts
 
 import (
@@ -100,10 +84,8 @@ func RegisterAssetFS(urlPrefix string, fsys fs.FS) {
 }
 
 // AssetURL returns urlPath with a cache-busting `?v=<digest>` appended.
-//
-// Non-"/static/" inputs (external CDNs, data: URIs, anything already carrying a
-// query string) are returned untouched — versioning a URL we don't serve would
-// at best be noise and at worst break a third-party request.
+// Non-"/static/" inputs (external CDNs, data: URIs, anything already carrying
+// a query string) are returned untouched.
 func AssetURL(urlPath string) string {
 	if !strings.HasPrefix(urlPath, StaticURLPrefix) || strings.ContainsAny(urlPath, "?#") {
 		return urlPath
@@ -156,12 +138,10 @@ func hashAsset(urlPath string) string {
 	return ""
 }
 
-// buildToken is the per-BUILD fallback version, derived from the running
-// executable's size + modification time. Deliberately NOT process-start time:
-// a plain restart of the same binary should not invalidate every client's
-// cache, but a deploy (new binary, new mtime) must. Falls back to a constant
-// only when the executable can't be stat'd, which in practice means a test
-// harness rather than a deployment.
+// buildToken is the per-build fallback version, derived from the running
+// executable's size + modification time — not process-start time, since a
+// plain restart of the same binary must not invalidate every client's cache,
+// but a deploy (new binary, new mtime) must.
 var buildToken = sync.OnceValue(func() string {
 	exe, err := os.Executable()
 	if err != nil {
@@ -175,17 +155,9 @@ var buildToken = sync.OnceValue(func() string {
 	return hex.EncodeToString(sum[:])[:10]
 })
 
-// BuildToken exposes the per-BUILD fallback version for diagnostics.
-//
-// WHY it is exported. A `?v=` token that equals this value is not a content
-// hash — it is the marker that AssetURL could NOT resolve the file through any
-// registered resolver and fell back. That distinction is the whole finding for
-// an operator asking "is my new CSS being served?": a fallback token means the
-// app is looking for that asset somewhere it isn't (wrong working directory, an
-// unregistered plugin FS, a path typo), and it will keep serving a cache-busted
-// URL that busts on every deploy instead of on every change.
-//
-// The alternative — having the diagnostic recompute size+mtime of the
-// executable itself — would be a second copy of this derivation that can drift
-// from the one actually used, so the diagnostic asks rather than re-derives.
+// BuildToken exposes the per-BUILD fallback version for diagnostics. A `?v=`
+// token equal to this is not a content hash — it means AssetURL could not
+// resolve the file through any registered resolver (wrong working directory,
+// an unregistered plugin FS, a path typo), so an operator asking "is my new
+// CSS being served?" can tell a fallback from a real content-based bust.
 func BuildToken() string { return buildToken() }

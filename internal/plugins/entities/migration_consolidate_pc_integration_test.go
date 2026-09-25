@@ -10,20 +10,14 @@ import (
 )
 
 // TestConsolidatePlayerCharacterDuplicate_Integration exercises migration
-// 000030 against a real MariaDB. The migration is a one-time, generic
-// reconciliation of a duplicate "Player Characters" sub-category: it moves the
-// generic (preset_category 'player_character') type's entities onto the single
-// system character type (preset_category 'character', not the default parent),
-// then deletes the emptied generic type — but ONLY in campaigns where both
-// sides are unambiguous. We replay the migration's SQL (read from the .up.sql
-// file so the test tracks the real migration text) over three seeded campaigns:
-//
-//   - A: the duplicate shape → entities move, generic deleted.
-//   - B: system-less (generic only, no target) → left untouched (no-op).
-//   - C: ambiguous (generic + TWO system character types) → left untouched.
-//
-// And it runs the SQL twice to prove idempotency. Skipped under -short / when no
-// DB answers, matching the repository integration test.
+// 000030 against a real MariaDB. The migration moves a generic
+// (preset_category 'player_character') type's entities onto the single
+// system character type, then deletes the emptied generic type — only in
+// campaigns where both sides are unambiguous. It replays the migration's SQL
+// (read from the .up.sql file so the test tracks the real migration text)
+// over three seeded campaigns: A (duplicate shape, moved+deleted), B
+// (system-less, no-op), C (ambiguous, no-op) — and runs it twice to prove
+// idempotency. Skipped under -short / when no DB answers.
 func TestConsolidatePlayerCharacterDuplicate_Integration(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test requires a database; skipped under -short")

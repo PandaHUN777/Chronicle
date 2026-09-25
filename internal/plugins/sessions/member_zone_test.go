@@ -1,20 +1,10 @@
 package sessions
 
-// Which column the product reads when it says what zone a member is in.
-//
-// THE DEFECT: every surface that reported a member's zone read users.timezone
-// only. But the availability page's control is literally labelled "Your
-// timezone", and saving it writes member_availability.tz and NOTHING ELSE —
-// static/js/availability.js PUTs {tz, blocks} to /availability/mine and never
-// calls PUT /account/timezone, the only writer of users.timezone.
-//
-// So a player who opened /campaigns/:id/availability, set the control to
-// Europe/London, painted their week and saved had their blocks stored correctly
-// and rendered correctly — while the Director's Bench printed "zone not set"
-// beside their name, with no local clock and an "Ask →" repair chip inviting the
-// Director to chase them about it. Forever, no matter how many times the player
-// set it. The panel is right to print absence rather than a UTC guess; it was
-// asking the wrong column.
+// Reporting a member's zone must fall back to member_availability.tz when
+// users.timezone is unset: the availability page's zone control only writes
+// member_availability.tz (static/js/availability.js PUTs {tz, blocks} to
+// /availability/mine, never PUT /account/timezone), so a roster view reading
+// users.timezone alone would report a set zone as absent.
 
 import (
 	"context"

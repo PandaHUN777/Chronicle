@@ -56,11 +56,9 @@ func TestHashEmail_Length(t *testing.T) {
 	}
 }
 
-// TestHashEmail_NoRawEmail is the security regression guard. The hash MUST
-// NOT contain any of the local-part or domain characters that the raw email
-// did. This is paranoia — SHA-256 of "alice@example.com" doesn't contain
-// "alice" — but a future change that swapped to a weaker scheme (e.g. base64
-// of a salt) could regress without this assertion.
+// TestHashEmail_NoRawEmail pins that the hash contains none of the raw
+// email's local-part or domain fragments, guarding against a future switch to
+// a weaker scheme (e.g. base64 of a salt).
 func TestHashEmail_NoRawEmail(t *testing.T) {
 	email := "alice@example.com"
 	got := hashEmail(email)
@@ -71,20 +69,11 @@ func TestHashEmail_NoRawEmail(t *testing.T) {
 	}
 }
 
-// TestPasswordResetDebugLog_UsesHashedEmail captures both Debug log branches
-// the audit's M-1 finding called out and asserts that neither emits the raw
-// email under the `email` slog key.
-//
-// We can't easily drive the full service.RequestPasswordReset flow from a
-// pure unit test (it needs redis + repo + email-sender mocks). Instead, this
-// test instantiates a slog handler that captures attributes, then invokes
-// the same slog.Debug calls the service uses — the assertion is on the
-// attribute shape, not the surrounding control flow.
-//
-// Rationale: regression-pin that future contributors writing similar Debug
-// logs in this file use hashEmail rather than the raw value. If a new branch
-// adds `slog.String("email", email)`, the contributor should see this test
-// nearby and adopt the same pattern.
+// TestPasswordResetDebugLog_UsesHashedEmail pins that password-reset Debug
+// logs never emit a raw email under the `email` slog key. It can't drive the
+// full service.RequestPasswordReset flow from a unit test (needs redis + repo
+// + email-sender mocks), so it exercises the same slog.Debug attribute shape
+// directly instead.
 func TestPasswordResetDebugLog_UsesHashedEmail(t *testing.T) {
 	var buf bytes.Buffer
 	handler := slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug})

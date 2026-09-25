@@ -1,13 +1,9 @@
-// renderer_test.go covers per-category renderers + the egress-
-// sanitization structural pin (PR-A's load-bearing invariant).
-//
-// SEC-6-AMENDED inheritance: every renderer that emits user HTML
-// MUST funnel through htmlToMarkdown, which is the only allowed
-// path into the html-to-markdown converter (sanitize.HTMLPtr runs
-// BEFORE the converter). The structural pin walks each Render*
-// function's AST + asserts it contains `htmlToMarkdown(` (i.e. it
-// can't bypass via direct converter access). A future refactor
-// that adds a renderer without funneling through fails pinpointed.
+// renderer_test.go covers per-category renderers and the SEC-6-AMENDED
+// egress-sanitization structural pin: every renderer emitting user HTML
+// must funnel through htmlToMarkdown (the only allowed path to the
+// converter, since it runs sanitize.HTMLPtr first). The pin walks each
+// Render* function's AST and asserts it contains `htmlToMarkdown(`, so a
+// renderer that bypasses it fails pinpointed.
 package aiexport
 
 import (
@@ -53,10 +49,9 @@ func assertClean(t *testing.T, label, got string) {
 // ---------------------------------------------------------------------------
 
 // TestRenderers_FunnelThroughHtmlToMarkdown asserts every per-category
-// renderer + the renderEntity / renderSession / etc helpers funnel
-// user-HTML conversions through htmlToMarkdown (which applies
-// sanitize.HTMLPtr per SEC-6-AMENDED). If a future refactor adds a
-// direct call to the markdown library, the pin fails pinpointed.
+// renderer and its helpers funnel user-HTML conversions through
+// htmlToMarkdown (SEC-6-AMENDED). A direct call to the markdown library
+// bypassing it fails pinpointed.
 func TestRenderers_FunnelThroughHtmlToMarkdown(t *testing.T) {
 	src, err := os.ReadFile("renderer.go")
 	if err != nil {
@@ -237,14 +232,10 @@ func TestRenderNotes_FolderHierarchyAndScriptStripped(t *testing.T) {
 	}
 }
 
-// CALV5-PLACEHOLDER: TestRenderCalendarEvents_MonthNamesAndSafeFilter stood
-// here. It pinned two things worth restoring WITH the renderer (V5):
-//   1. events are labelled with the calendar's own month name + era
-//      ("Highsummer 1247 AR"), never "Month 4, Year 1247"; and
-//   2. Safe mode drops Visibility=="dm_only" events even though the listing
-//      layer deliberately bypasses role filtering — defence in depth, and the
-//      only thing standing between a GM-only event and an exported document.
-// Restore the test in the same change as the renderer, not after it.
+// CALV5-PLACEHOLDER: V5 must restore, alongside the renderer,
+// TestRenderCalendarEvents_MonthNamesAndSafeFilter, which pins that events
+// are labelled with the calendar's own month/era name and that Safe mode
+// drops Visibility=="dm_only" events as defence-in-depth.
 
 func TestRenderSessions_GMNotesGated(t *testing.T) {
 	ctx := context.Background()
@@ -410,9 +401,8 @@ func TestEstimateTokens_RoughHeuristic(t *testing.T) {
 	}
 }
 
-// jsonRoundtrip is a smoke helper — confirms the rendered markdown
-// survives JSON encoding (the PR-B handler returns the markdown in
-// a JSON response payload so the modal can paste it).
+// jsonRoundtrip is a smoke helper confirming the rendered markdown survives
+// JSON encoding, since the handler returns it in a JSON response payload.
 func TestRenderEntities_MarkdownJSONSafe(t *testing.T) {
 	got, err := RenderEntities(context.Background(),
 		[]entities.Entity{{ID: "e1", Name: "X", EntityTypeID: 1, EntryHTML: sp("<p>hi</p>")}},

@@ -311,7 +311,7 @@ func (h *Handler) SyncMappingsFragment(c echo.Context) error {
 	return middleware.Render(c, http.StatusOK, SyncMappingsTableTempl(cc.Campaign.ID, rows, total, opts))
 }
 
-// --- Campaign Member: Calendar Sync Beacon (C-SYNC-DATE-BEACON) ---
+// --- Campaign Member: Calendar Sync Beacon ---
 //
 // Unlike every other handler in this file, this one is NOT owner-gated —
 // see RegisterCampaignRoutes in routes.go, which mounts it directly on the
@@ -322,15 +322,13 @@ func (h *Handler) SyncMappingsFragment(c echo.Context) error {
 // CalendarSyncBeaconResponse is the JSON shape returned by the
 // GET /campaigns/:id/calendar-sync-beacon member-read endpoint. Date is
 // omitted (empty string) when no beacon has been recorded yet for this
-// campaign — the sky strip's sync chip treats that the same as "no
-// Foundry-confirmed date" (computeSyncChipState's fmConfirmedDate == '').
+// campaign.
 //
-// AppliedDate/AppliedAt (C-SYNC-APPLIED-BEACON) are the "applied" half:
-// the date the module reported via POST /calendar/date/confirm after
-// actually applying it, independent of whether a served-date GET has ever
-// landed for this campaign. Both omitted when no confirm has landed yet —
-// this is the exact-same-shape fallback the FM-side agent's older module
-// builds (that never call confirm) see, so the contract degrades cleanly.
+// AppliedDate/AppliedAt are the "applied" half: the date the module
+// reported via POST /calendar/date/confirm after actually applying it,
+// independent of whether a served-date GET has ever landed for this
+// campaign. Both omitted when no confirm has landed yet, so older modules
+// that never call confirm see a degrading-cleanly fallback.
 type CalendarSyncBeaconResponse struct {
 	Date     string     `json:"last_served_date,omitempty"`
 	ServedAt *time.Time `json:"last_served_at,omitempty"`

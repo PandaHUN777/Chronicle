@@ -9,13 +9,13 @@ import (
 // PackagesPage renders the main package management admin page.
 //
 // Layout: two sections. The Foundry module version catalog (managed
-// inside Chronicle, not pulled from GitHub) comes first because that's
-// the surface the operator's most-frequent workflow — uploading a new
-// module .zip, pinning campaigns — lives on. The external-package
-// repository list (game systems + the chronicle-sync GitHub mirror)
-// comes below. Both have their own card shapes; no shared abstraction
-// because the data shapes differ (packages are repo-backed with
-// auto-update policies; modules are admin-uploaded version rows).
+// inside Chronicle, not pulled from GitHub) comes first, since that's
+// where the operator's most-frequent workflow — uploading a new module
+// .zip, pinning campaigns — lives. The external-package repository list
+// (game systems + the chronicle-sync GitHub mirror) comes below. Both
+// have their own card shapes; no shared abstraction, since packages are
+// repo-backed with auto-update policies while modules are admin-uploaded
+// version rows.
 templ PackagesPage(packages []Package, csrfToken string) {
 	@layouts.App("Packages - Admin") {
 		<div class="max-w-5xl mx-auto space-y-6">
@@ -28,16 +28,13 @@ templ PackagesPage(packages []Package, csrfToken string) {
 				</div>
 			</div>
 
-			<!-- C-FMC-5c removed the duplicate "Foundry Module Versions"
-			     section that lived here. The foundry_modules plugin and its
-			     /admin/modules/foundry/section fragment are deleted. Foundry
-			     module versions now appear in the unified package list
+			<!-- Foundry module versions appear in the unified package list
 			     below (any package whose Type=foundry-module). Per-version
 			     "campaigns using this version" cards are rendered inline by
 			     the foundry_vtt plugin via hx-get hooks on each version row;
 			     see the VersionList templ further down. -->
 
-			<!-- C-FMC-8: auto-pin install banner. foundry_vtt's banner
+			<!-- Auto-pin install banner. foundry_vtt's banner
 			     handler returns the banner card if an unread install
 			     summary exists, or empty content if not. Packages plugin
 			     stays foundry-agnostic — it just embeds the fragment via
@@ -193,15 +190,12 @@ templ packageCard(pkg Package, csrfToken string) {
 				>
 					<i class="fa-solid fa-rotate"></i>
 				</button>
-				<!-- Per-type actions fragment slot (NW-2.2 Chunk G).
-				     packageCard stays generic. Each package type's
-				     type-specific links + buttons live in the owning
-				     plugin and load via HTMX. The skeleton pulses
-				     during load; T-B3 polish per
-				     cordinator/decisions/2026-05-23-packages-treatment.md
-				     and the §0 D1 operator-confirmed UX shift. Only
-				     types with a registered fragment URL render the
-				     slot; system packages skip it entirely. -->
+				<!-- Per-type actions fragment slot. packageCard stays
+				     generic. Each package type's type-specific links and
+				     buttons live in the owning plugin and load via HTMX,
+				     with a pulsing skeleton during load. Only types with a
+				     registered fragment URL render the slot; system
+				     packages skip it entirely. -->
 				if url := actionsFragmentURLFor(pkg); url != "" {
 					<span
 						hx-get={ url }
@@ -213,19 +207,15 @@ templ packageCard(pkg Package, csrfToken string) {
 						<span class="inline-block w-9 h-8 rounded bg-fg-secondary/10 animate-pulse" aria-hidden="true"></span>
 					</span>
 				}
-				<!-- Version Picker. The data-fvtt-versions-trigger
-				     residual below is the C-UPDATER-CLUSTER bug #20
-				     fix surface — the autopin banner's IIFE scrapes
-				     for this attribute to programmatically click the
-				     Versions button after an install. Migrating it
-				     fully into a fragment requires either a JS-bridge
-				     or moving the Versions button into the fragment
-				     (which creates a duplicate-button hazard since
-				     packages renders the generic Versions button
-				     here). Deferred to a follow-up G2 chunk that
-				     refactors the autopin banner's selector strategy.
-				     See cordinator/decisions/2026-05-23-packages-treatment.md
-				     "deferred to G2" section. -->
+				<!-- Version Picker. data-fvtt-versions-trigger lets the
+				     autopin banner's IIFE scrape for this attribute and
+				     programmatically click the Versions button after an
+				     install. Moving this fully into the per-type fragment
+				     would need a JS-bridge, or moving the button itself
+				     into the fragment — which would duplicate the generic
+				     Versions button packages renders here. TODO(#721): refactor
+				     the autopin banner's selector strategy to avoid the
+				     scrape. -->
 				<button
 					hx-get={ fmt.Sprintf("/admin/packages/%s/versions", pkg.ID) }
 					hx-target={ fmt.Sprintf("#versions-%s", pkg.ID) }
@@ -361,22 +351,21 @@ templ VersionList(pkg *Package, versions []PackageVersion, csrfToken string) {
 										Pin
 									</button>
 								}
-								// C-FMC-5c: foundry-module typed packages get a
-								// per-version "Campaigns" expand that lazy-loads the
-								// foundry_vtt plugin's "campaigns using v0.X.Y" card.
-								// Hardcoded URL (not a dispatch interface) is a
-								// deliberate trade-off — see packages/.ai.md
+								// foundry-module typed packages get a per-version
+								// "Campaigns" expand that lazy-loads the
+								// foundry_vtt plugin's "campaigns using v0.X.Y"
+								// card. Hardcoded URL (not a dispatch interface)
+								// is a deliberate trade-off — see packages/.ai.md
 								// Extension points note about per-type embed URLs.
 								//
-								// C-FMC-9 (Bug 1): the button carries a stable ID
-								// (fvtt-campaigns-trigger-{sanitized-version}) so the
-								// autopin banner's "Show affected campaigns" inline
-								// IIFE can locate + programmatically click it after
-								// an install. Version-scoped only (not packageID-
-								// scoped) because deployments have at most one
-								// foundry-module package; documenting the assumption
-								// here so a future multi-package deployment knows
-								// to revisit the selector.
+								// The button carries a stable ID
+								// (fvtt-campaigns-trigger-{sanitized-version}) so
+								// the autopin banner's "Show affected campaigns"
+								// inline IIFE can locate and click it after an
+								// install. Version-scoped only, since deployments
+								// have at most one foundry-module package; a
+								// multi-package deployment would need to revisit
+								// the selector.
 								if pkg.Type == PackageTypeFoundryModule {
 									<button
 										id={ fmt.Sprintf("fvtt-campaigns-trigger-%s", sanitizeForID(v.Version)) }

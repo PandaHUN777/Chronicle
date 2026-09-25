@@ -1,21 +1,14 @@
-// Tests for the admin service operations added in C-FMC-5c.
+// Tests for the admin service operations.
 //
-// Coverage:
-//
-//   - ForcePinCampaign rejects empty version (the "would clear pin"
-//     misuse case) with the validation-category error.
-//   - ForcePinCampaign writes the security event with the right
-//     event type (foundry_vtt.module_force_pin) and details.
-//   - NotifyCampaignOfUpdate writes a different event type
-//     (foundry_vtt.module_update_notify) so the audit trail
-//     distinguishes the two actions.
-//   - NotifyCampaignOfUpdate skips SMTP when not configured but
-//     still logs the event (banner remains primary surface).
-//   - NotifyOlderCampaigns iterates correctly with partial failure
-//     tolerance.
+// Coverage: ForcePinCampaign rejects an empty version with the
+// validation-category error and logs foundry_vtt.module_force_pin;
+// NotifyCampaignOfUpdate logs foundry_vtt.module_update_notify
+// (distinct event type from ForcePinCampaign) and skips SMTP when not
+// configured but still logs; NotifyOlderCampaigns tolerates partial
+// failure while iterating.
 //
 // Uses small in-package fakes for SecurityEventLogger / MailNotifier /
-// CampaignOwnerLookup. Mirror of the pattern used in service_test.go.
+// CampaignOwnerLookup, mirroring service_test.go.
 package foundry_vtt
 
 import (
@@ -78,7 +71,7 @@ func (o *fakeOwners) GetCampaignOwnerEmail(_ context.Context, _ string) (string,
 // CampaignExists returns true; pin storage is in-memory.
 type fakeSettings struct {
 	pin     string
-	pinMode string // C-FMC-ADMIN-UX-AUDIT Chunk 1
+	pinMode string
 }
 
 func (s *fakeSettings) GetFoundryModulePin(_ context.Context, _ string) (string, error) {
@@ -120,11 +113,9 @@ func TestForcePinCampaign_EmptyVersionRejected(t *testing.T) {
 	}
 }
 
-// TestNotifyCampaignOfUpdate_EventLogged — the "notify" action logs
-// the EventModuleUpdateNotify event type. The audit trail distinction
-// from ForcePinCampaign (EventModuleForcePin) is what lets admins
-// answer "did the operator tell people, or did they actually pin
-// it?" from the dashboard.
+// TestNotifyCampaignOfUpdate_EventLogged pins that the "notify"
+// action logs EventModuleUpdateNotify, distinct from ForcePinCampaign's
+// EventModuleForcePin, so the audit trail distinguishes the two.
 func TestNotifyCampaignOfUpdate_EventLogged(t *testing.T) {
 	logger := &fakeEventLogger{}
 	svc := newTestService(t, logger, nil, nil)
@@ -220,11 +211,10 @@ func TestNotifyEventLoggerError_Propagates(t *testing.T) {
 
 // --- test fixtures ---
 
-// newTestService constructs a service struct directly (bypassing the
-// public NewService constructor) so tests can inject the in-memory
-// fakes. The service's admin methods only need events/mail/owners +
-// settings — they don't touch repo/pkgs/tokens for the empty-version
-// rejection and event-logging paths exercised here.
+// newTestService constructs a service struct directly (bypassing
+// NewService) so tests can inject in-memory fakes for events/mail/
+// owners/settings, the only dependencies the admin methods exercised
+// here need.
 func newTestService(t *testing.T, events SecurityEventLogger, mail MailNotifier, owners CampaignOwnerLookup) *service {
 	t.Helper()
 	return &service{

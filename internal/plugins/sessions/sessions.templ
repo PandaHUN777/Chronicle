@@ -34,8 +34,7 @@ templ SessionListFragment(cc *campaigns.CampaignContext, sessions []Session, csr
 			if cc.IsMember {
 				<!-- Availability is member-only data; its target route rides the
 				     authed member group. Gate the link on membership so anonymous
-				     viewers on a public sessions list aren't shown a dead end
-				     (C-SCHED-P2 0e). -->
+				     viewers on a public sessions list aren't shown a dead end. -->
 				<a
 					href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/availability", cc.Campaign.ID)) }
 					class="btn-secondary text-sm"
@@ -275,12 +274,10 @@ templ SessionDetailPage(cc *campaigns.CampaignContext, session *Session, csrfTok
 						</button>
 						if session.Status == StatusPlanned {
 							// Mark Complete sends ONLY {status} — the one thing the
-							// button means. Every other key is absent, and under the
-							// sweep-R4 partial-write contract absent PRESERVES. It used
-							// to send the name as well, which was harmless; what was not
-							// harmless is that the server read every OTHER absent key as
-							// a write, erasing the schedule, summary, in-world date and
-							// recurrence config — and with them the next occurrence.
+							// button means. Under the partial-write contract, every
+							// other absent key preserves the stored value instead of
+							// erasing the schedule, summary, in-world date and
+							// recurrence config.
 							<button
 								type="button"
 								class="btn-primary text-sm"
@@ -593,7 +590,7 @@ templ AttendeeList(cc *campaigns.CampaignContext, sessionID string, attendees []
 			</div>
 		} else {
 			<!-- Public (anon / non-member) visitors see aggregate counts, not
-			     attendee names — RC-9 / C-PUBLIC-VIEW-FIX-R2. -->
+			     attendee names. -->
 			<p class="text-sm text-fg-muted">
 				{ fmt.Sprintf("%d going · %d invited", countAccepted(attendees), len(attendees)) }
 			</p>
@@ -741,10 +738,9 @@ func derefStr(s *string) string {
 // string literal in an Alpine.js `x-data` expression. templ HTML-escapes the
 // attribute and the browser HTML-decodes it before Alpine evaluates it as JS,
 // but a backslash is not an HTML metacharacter, so `\'` stays an escaped quote
-// through that round-trip and cannot break out of the literal. It mirrors the
-// entities plugin's helper of the same name and is re-declared locally rather
-// than imported to keep the sessions plugin free of a cross-plugin dependency
-// (core-tenets §T-B2, plugin isolation).
+// through that round-trip and cannot break out of the literal. Re-declared
+// locally (mirrors the entities plugin's helper of the same name) to keep the
+// sessions plugin free of a cross-plugin dependency (plugin isolation).
 func jsEsc(s string) string {
 	result := ""
 	for _, c := range s {

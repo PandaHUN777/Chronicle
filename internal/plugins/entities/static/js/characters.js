@@ -1,15 +1,13 @@
 /**
  * characters.js — progressive enhancement for the Characters ("Cast") page.
  *
- * Each cast card is already a real link to the entity's page, so the page works
- * with NO JavaScript. When the dynamic-surface frame (Chronicle.surface) is
- * present, this upgrades the card's "quick look" button into a mini→full launch:
- * an overlay that grows from the card (container-transform) and shows the
- * entity's real preview (fetched from the existing /preview endpoint) with an
- * "Open full page" link. This is the frame's first production adopter.
+ * Each cast card is already a real link, so the page works with no JS. When
+ * the dynamic-surface frame (Chronicle.surface) is present, this upgrades the
+ * card's "quick look" button into an overlay that grows from the card and
+ * shows the entity's /preview data with an "Open full page" link.
  *
- * Served per-plugin at /static/plugins/entities/js/characters.js. Pure browser
- * JS (esbuild-validated, es2015). Re-wires after HTMX fragment swaps.
+ * Served per-plugin at /static/plugins/entities/js/characters.js. Pure
+ * browser JS (esbuild-validated, es2015). Re-wires after HTMX fragment swaps.
  */
 (function () {
   'use strict';

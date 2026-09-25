@@ -11,15 +11,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// CALV5-PLACEHOLDER: this file replaces the handler tests deleted with the
-// 1601-line calendar REST surface (calendar_api_handler_test.go,
-// calendar_confirm_date_handler_test.go, calendar_date_beacon_handler_test.go,
-// calendar_worldstate_handler_test.go, create_calendar_test.go,
-// realtime_date_signal_test.go). It pins the ONE contract that matters while
-// the calendar is rebuilt: the Foundry module must be told "unavailable",
-// never "empty".
-//
-// V5 deletes this file along with the placeholder handler.
+// CALV5-PLACEHOLDER: pins the one contract that matters while the calendar
+// is rebuilt — the Foundry module must be told "unavailable", never "empty".
+// V5 must delete this file along with the placeholder handler.
 
 // TestCalendarRoutes_AnswerRebuilding is the whole contract: every exported
 // method on the placeholder handler answers 503 with the structured body the

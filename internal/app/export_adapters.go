@@ -241,15 +241,9 @@ func (a *entityExportAdapter) ExportEntities(ctx context.Context, campaignID str
 // --- Calendar Export Adapter ---
 
 // CALV5-PLACEHOLDER: calendarExportAdapter (campaigns.CalendarExporter) stood
-// here — it walked the campaign's calendar, months, weekdays, moons, seasons,
-// eras, categories and events into campaigns.ExportCalendarData, resolving
-// entity ties to slugs so an import could re-link them.
-//
-// The calendar is being rebuilt (V5) and its tables are dropped. The exporter
-// is simply NOT WIRED (routes.go), and ExportImportService already treats an
-// unwired adapter as "no calendar section" — so a backup taken during the
-// rebuild is internally consistent rather than carrying an empty calendar.
-// V5 restores the adapter and the SetCalendarExporter call together.
+// here. V5 must restore it, along with the SetCalendarExporter wiring in
+// routes.go — until then the exporter is unwired and ExportImportService
+// treats that as "no calendar section" rather than an empty one.
 
 // timelineExportAdapter implements campaigns.TimelineExporter.
 type timelineExportAdapter struct {
@@ -258,12 +252,9 @@ type timelineExportAdapter struct {
 
 // ExportTimelines gathers timeline data for a campaign export.
 func (a *timelineExportAdapter) ExportTimelines(ctx context.Context, campaignID string, entitySlugLookup func(string) string) ([]campaigns.ExportTimeline, error) {
-	// A campaign export is a declared SYSTEM caller: it walks the owner's own
-	// rows with no per-request identity behind it. It used to say that by
-	// passing userID "" — the same value an anonymous HTTP request carries
-	// (C-AUTHZ-EMPTY-USERID / ADR-049). Behaviour is unchanged either way here,
-	// because ownerRole already clears CanSeeDmOnly; the point is that the trust
-	// is now stated rather than inferred from an empty string.
+	// A campaign export is a declared SYSTEM caller (ADR-049): it walks the
+	// owner's own rows with no per-request identity, stated explicitly rather
+	// than inferred from an empty userID.
 	const ownerRole = 3
 	systemViewer := permissions.SystemViewer(ownerRole)
 	timelines, err := a.svc.ListTimelines(ctx, campaignID, systemViewer)
@@ -380,12 +371,10 @@ func (a *sessionExportAdapter) ExportSessions(ctx context.Context, campaignID st
 			Recap:         sess.Recap,
 			RecapHTML:     sess.RecapHTML,
 			ScheduledDate: sess.ScheduledDate,
-			// STOP-AND-FLAG (C-SCHED-P3): carrying sess.ScheduledTime through export
-			// needs a matching `ScheduledTime *string` field on
-			// campaigns.ExportSession (export.go) — outside this dispatch's
-			// export-plumbing scope ("field plumbing ONLY in export_adapters.go, flag
-			// anything more"). Booked as a follow-up; until then a campaign export/
-			// clone drops the confirmed session's time (the date still round-trips).
+			// TODO(keyxmakerx/Chronicle#615): sess.ScheduledTime is not exported
+			// (needs a `ScheduledTime *string` field on campaigns.ExportSession),
+			// so a campaign export/clone drops the confirmed session's time; the
+			// date still round-trips.
 			CalendarYear:       sess.CalendarYear,
 			CalendarMonth:      sess.CalendarMonth,
 			CalendarDay:        sess.CalendarDay,
@@ -998,15 +987,9 @@ func (a *entityImportAdapter) ImportEntities(ctx context.Context, campaignID, us
 	return idMap, nil
 }
 
-// CALV5-PLACEHOLDER: calendarImportAdapter (campaigns.CalendarImporter) stood
-// here — the inverse of the exporter above, rebuilding a calendar and its
-// sub-resources from ExportCalendarData and re-linking entity ties through the
-// IDMap.
-//
-// It is unwired for the same reason. NOTE FOR V5: a backup taken BEFORE the
-// rebuild still carries a Calendar section in its JSON; importing one while
-// this adapter is missing silently drops that section. If pre-V5 backups must
-// restore their calendars, this adapter is what has to come back first.
+// CALV5-PLACEHOLDER: calendarImportAdapter (campaigns.CalendarImporter, the
+// inverse of the exporter above) stood here. V5 must restore it — until then,
+// importing a pre-V5 backup silently drops any Calendar section in its JSON.
 
 // sessionImportAdapter implements campaigns.SessionImporter.
 type sessionImportAdapter struct {
@@ -1019,8 +1002,8 @@ func (a *sessionImportAdapter) ImportSessions(ctx context.Context, campaignID, u
 		newSession, err := a.svc.CreateSession(ctx, campaignID, sessions.CreateSessionInput{
 			Name:          sess.Name,
 			ScheduledDate: sess.ScheduledDate,
-			// STOP-AND-FLAG (C-SCHED-P3): ScheduledTime import is blocked on the same
-			// missing campaigns.ExportSession field noted in ExportSessions above.
+			// TODO(keyxmakerx/Chronicle#615): ScheduledTime import is blocked on
+			// the same missing campaigns.ExportSession field as ExportSessions.
 			CalendarYear:       sess.CalendarYear,
 			CalendarMonth:      sess.CalendarMonth,
 			CalendarDay:        sess.CalendarDay,
@@ -1041,10 +1024,9 @@ func (a *sessionImportAdapter) ImportSessions(ctx context.Context, campaignID, u
 			if status == "" {
 				status = "planned"
 			}
-			// The import is a full restore of an exported row, so every
-			// field is sent explicitly: a null in the export means the
-			// source had no value, and under the sweep-R4 contract an
-			// explicit null clears (patch.FromPtr renders exactly that).
+			// Full restore of an exported row: every field is sent
+			// explicitly, since an explicit null clears under the
+			// partial-update contract and patch.FromPtr renders exactly that.
 			_, _ = a.svc.UpdateSession(ctx, newSession.ID, sessions.UpdateSessionInput{
 				Name:               patch.Of(sess.Name),
 				Summary:            patch.FromPtr(sess.Summary),

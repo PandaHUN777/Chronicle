@@ -6,15 +6,14 @@
 # file:// source must contain a file for EVERY version up to the database's
 # recorded version. Deleting or editing an applied migration crash-loops boot
 # ("no migration found for version N: read down for version N: file does not
-# exist") — this is the 2026-06-24 `000030` production incident. New migration
-# files (added) are always fine.
+# exist"). New migration files (added) are always fine.
 #
-# Diff-scoped, modelled on tools/check-plugin-isolation.sh: it only inspects what
-# the PR changes vs the base branch; existing files are the immutable baseline.
-# --no-renames makes a renamed/renumbered migration show up as a Delete of the
-# old version (caught) + an Add of the new one (ignored).
+# Diff-scoped: only inspects what the PR changes vs the base branch; existing
+# files are the immutable baseline. --no-renames makes a renamed/renumbered
+# migration show up as a Delete of the old version (caught) + an Add of the
+# new one (ignored).
 #
-# Per ADR-044 and .ai/conventions.md §"Migration Safety Rules".
+# Per ADR-044/045 and .ai/conventions.md §"Migration Safety Rules".
 
 set -euo pipefail
 

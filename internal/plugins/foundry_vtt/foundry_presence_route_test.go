@@ -1,19 +1,12 @@
-// foundry_presence_route_test.go — NW-2.3 regression pin.
-//
-// Pins two invariants the relocation needs to preserve byte-for-
-// behavior:
+// foundry_presence_route_test.go pins two invariants:
 //
 //  1. The endpoint is registered at `GET /campaigns/:id/foundry-presence`
-//     in foundry_vtt's RegisterOwnerRoutes — NOT at any other path or
-//     in any other plugin (any operator bookmark / external monitoring
-//     would break otherwise).
-//  2. `FoundryPresenceResponse` serialises with the JSON shape
-//     `{connected: bool, never_seen: bool, last_seen?: time}` — same
-//     keys the campaigns plugin emitted before the relocation.
+//     in foundry_vtt's RegisterOwnerRoutes, not any other path or plugin.
+//  2. `FoundryPresenceResponse` serialises as
+//     `{connected: bool, never_seen: bool, last_seen?: time}`.
 //
-// AST assertion (not a runtime HTTP test) so this stays fast + pins
-// the structural invariant. Same pattern as
-// internal/wire/show_banner_route_test.go + the wider AST-pin family.
+// AST assertion (not a runtime HTTP test), same pattern as
+// internal/wire/show_banner_route_test.go.
 package foundry_vtt
 
 import (
@@ -33,11 +26,9 @@ func readSource(name string) ([]byte, error) {
 	return os.ReadFile(name)
 }
 
-// TestFoundryPresenceRoute_RegisteredOnCampaignsGroup asserts the
-// AST of foundry_vtt/routes.go contains a `cg.GET("/foundry-presence",
-// h.GetFoundryPresenceAPI)` call inside RegisterOwnerRoutes. A future
-// refactor that moves the route again (or accidentally drops it)
-// fails this with a pinpointed message.
+// TestFoundryPresenceRoute_RegisteredOnCampaignsGroup asserts the AST
+// of foundry_vtt/routes.go contains a `cg.GET("/foundry-presence",
+// h.GetFoundryPresenceAPI)` call inside RegisterOwnerRoutes.
 func TestFoundryPresenceRoute_RegisteredOnCampaignsGroup(t *testing.T) {
 	src, err := readSource("routes.go")
 	if err != nil {
@@ -81,10 +72,8 @@ func TestFoundryPresenceRoute_RegisteredOnCampaignsGroup(t *testing.T) {
 }
 
 // TestFoundryPresenceResponse_JSONShape pins the wire shape of the
-// response struct so a future field rename / addition shows up loudly.
-// Three fields: `connected` (bool), `never_seen` (bool), `last_seen`
-// (optional time). Matches the shape the campaigns plugin emitted
-// pre-relocation byte-for-byte.
+// response struct: `connected` (bool), `never_seen` (bool),
+// `last_seen` (optional time).
 func TestFoundryPresenceResponse_JSONShape(t *testing.T) {
 	now := time.Date(2026, 5, 26, 12, 0, 0, 0, time.UTC)
 

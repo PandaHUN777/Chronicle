@@ -123,14 +123,11 @@ func (c *Campaign) IsArchived() bool {
 
 // SidebarConfig holds campaign-level sidebar customization settings.
 // Stored as JSON in campaigns.sidebar_config. Controls the ordered list of
-// sidebar items plus the sets of individually-hidden entities and folder nodes.
-//
-// This is the single, unified sidebar model. The pre-2026-07 legacy model
-// (entity_type_order / hidden_type_ids / custom_sections / custom_links) was
-// removed by C-NAV-V3; the EnsureSidebarItems boot reconciler converts any
-// straggler campaign onto Items (see sidebar_reconcile.go). An empty Items
-// array is valid — it renders the default sidebar, synthesized by the render
-// injector.
+// sidebar items plus the sets of individually-hidden entities and folder
+// nodes. This is the single, unified sidebar model; the EnsureSidebarItems
+// boot reconciler converts any straggler campaign onto Items (see
+// sidebar_reconcile.go). An empty Items array is valid — it renders the
+// default sidebar, synthesized by the render injector.
 type SidebarConfig struct {
 	// Items is the unified, ordered list of all sidebar items. Each item
 	// has a type (dashboard, addon, category, section, link, all_pages)
@@ -152,9 +149,8 @@ type SidebarConfig struct {
 //
 // Nesting is intentionally NOT a field here. Whether a category renders
 // nested under a parent is derived from entity_types.parent_type_id (the
-// structural source of truth). A persisted "nested" flag would be a second
-// source of truth that can drift; old persisted values for the removed
-// "nested" JSON key are silently ignored on unmarshal.
+// structural source of truth); a persisted "nested" flag would be a second
+// source of truth that can drift.
 type SidebarItem struct {
 	Type    string `json:"type"`              // "dashboard", "addon", "category", "section", "link", "all_pages"
 	Visible bool   `json:"visible"`           // Whether to show this item.
@@ -215,13 +211,13 @@ type CampaignMember struct {
 // An admin who joins as Player sees Player-visible content only.
 // An admin who hasn't joined has MemberRole=RoleNone (no content access).
 //
-// Anonymous / public-visitor identity (C-PERM-ANON-IDENTITY): a viewer who is
-// not a member of the campaign (logged-out public visitor, or an authenticated
-// non-member browsing a public campaign) gets MemberRole=RoleNone — strictly
-// BELOW RolePlayer. RolePlayer therefore means "an authenticated party member"
-// and nothing weaker. IsMember/IsAnonymous record WHY MemberRole is what it is,
-// so the visibility-read path and the glance badge can tell "the public" apart
-// from "a Player" without re-deriving it from the role int.
+// A viewer who is not a member of the campaign (logged-out public visitor,
+// or an authenticated non-member browsing a public campaign) gets
+// MemberRole=RoleNone — strictly BELOW RolePlayer, which therefore means
+// "an authenticated party member" and nothing weaker. IsMember/IsAnonymous
+// record WHY MemberRole is what it is, so the visibility-read path and the
+// glance badge can tell "the public" apart from "a Player" without
+// re-deriving it from the role int.
 type CampaignContext struct {
 	Campaign    *Campaign
 	MemberRole  Role // Actual membership role, or RoleNone if not a member.
@@ -263,19 +259,17 @@ func (cc *CampaignContext) VisibilityRole() int {
 }
 
 // CanControlWorldState reports whether the user may drive live world-state
-// (advance time, set weather/mood) — the authority the Phase-4 GM panel and
-// the world-state PUT (#401) gate on. Co-DM capability (C-CAL-COGM-CAPABILITY,
-// D6): the campaign Owner OR a DM-grantee. A DmGrant is now a co-DM grant, not
-// just secret-viewing — see CanAuthorDmOnly + the relabeled grant UI.
+// (advance time, set weather/mood): the campaign Owner OR a DM-grantee.
+// A DmGrant is a co-DM grant, not just secret-viewing — see CanAuthorDmOnly.
 func (cc *CampaignContext) CanControlWorldState() bool {
 	return cc.MemberRole >= RoleOwner || cc.IsDmGranted
 }
 
-// CanAuthorDmOnly reports whether the user may CREATE/mark dm_only content
-// (e.g. a secret coming eclipse). Same co-DM capability as world-state
-// control. Distinct from CanSeeDmOnly (read) — authoring is the write side a
-// DmGrant now also confers. Route the calendar create/edit + the visibility
-// UI through this so the grant is honored (not just VisibilityRole).
+// CanAuthorDmOnly reports whether the user may CREATE/mark dm_only content.
+// Same co-DM capability as world-state control. Distinct from CanSeeDmOnly
+// (read) — authoring is the write side a DmGrant also confers. Route the
+// calendar create/edit and visibility UI through this so the grant is
+// honored (not just VisibilityRole).
 func (cc *CampaignContext) CanAuthorDmOnly() bool {
 	return cc.MemberRole >= RoleOwner || cc.IsDmGranted
 }
@@ -538,11 +532,11 @@ func (c *Campaign) ParseOwnerDashboardLayout() *DashboardLayout {
 // CampaignSettings holds campaign-level configuration stored as JSON in
 // the campaigns.settings column. Accent color, display preferences, etc.
 type CampaignSettings struct {
-	AccentColor       string       `json:"accent_color,omitempty"`        // Hex color, e.g. "#6366f1". Semantic slot 1 "Site accent": overall feel — nav/chrome, links, selection, today ring (C-ACCENT-TRIO rev 2; renamed by C-ACCENT-SLOTS' operator-corrected mapping, same field).
-	AccentSurface1    string       `json:"accent_surface_1,omitempty"`    // Legacy surface-pair accent A (primary) for themed content surfaces. Empty = inherit AccentColor (cordinator design D14 rev). Kept for back-compat (C-ACCENT-SLOTS Step-0: map, don't delete); AccentApp now takes precedence where both are consumed.
-	AccentSurface2    string       `json:"accent_surface_2,omitempty"`    // Legacy surface-pair accent B (secondary). Empty = inherit AccentColor. Kept for back-compat — the "optional 4th slot" the C-ACCENT-SLOTS mapping defaults to slot 3 (App accent) when unused.
-	AccentAction      string       `json:"accent_action,omitempty"`       // Semantic slot 2 "Action highlight" (C-ACCENT-SLOTS): primary buttons, hover/press states, FABs. Empty = inherit AccentColor (site slot) — no prior trio analog.
-	AccentApp         string       `json:"accent_app,omitempty"`          // Semantic slot 3 "App accent" (C-ACCENT-SLOTS): per-app identity — character pages, calendar app, other apps. Empty = inherit AccentSurface1 (legacy trio primary), then AccentColor.
+	AccentColor       string       `json:"accent_color,omitempty"`        // Hex color, e.g. "#6366f1". "Site accent": overall feel — nav/chrome, links, selection, today ring.
+	AccentSurface1    string       `json:"accent_surface_1,omitempty"`    // Legacy surface-pair accent A (primary) for themed content surfaces. Empty = inherit AccentColor. Kept for back-compat; AccentApp takes precedence where both are consumed.
+	AccentSurface2    string       `json:"accent_surface_2,omitempty"`    // Legacy surface-pair accent B (secondary). Empty = inherit AccentColor. Kept for back-compat as the optional 4th slot, defaulting to AccentApp when unused.
+	AccentAction      string       `json:"accent_action,omitempty"`       // "Action highlight" slot: primary buttons, hover/press states, FABs. Empty = inherit AccentColor.
+	AccentApp         string       `json:"accent_app,omitempty"`          // "App accent" slot: per-app identity — character pages, calendar app, other apps. Empty = inherit AccentSurface1, then AccentColor.
 	DmGrantIDs        []string     `json:"dm_grant_ids,omitempty"`        // User IDs granted dm_only visibility.
 	BrandName         string       `json:"brand_name,omitempty"`          // Custom sidebar brand name (replaces campaign name).
 	BrandLogo         string       `json:"brand_logo,omitempty"`          // Media path for brand logo image.
@@ -556,32 +550,24 @@ type CampaignSettings struct {
 	// FoundryModulePin is the version string the campaign is pinned
 	// to for the Chronicle-served Foundry module catalog (e.g. "0.1.5").
 	// Empty = follow latest available (manifest endpoint resolves to
-	// LatestAvailable). Set via the owner-side Foundry Module settings
-	// tab; admins can override via the force-pin admin action.
+	// LatestAvailable).
 	FoundryModulePin string `json:"foundry_module_pin,omitempty"`
 
 	// FoundryModulePinMode controls how AutoPinOnInstall treats the
-	// campaign when an admin installs a new module version. Added in
-	// C-FMC-ADMIN-UX-AUDIT Chunk 1 (decisions/audit ref: §0.5 D5).
-	// Valid values are the foundry_vtt.PinMode* constants:
-	//   "preserve" → today's C-FMC-6 default; on install, campaign's
-	//                pin is set to the previous version (state preserved).
-	//   "promote"  → audit-resolved new default; on install, campaign's
-	//                pin is set to the new version (auto-bump).
+	// campaign when an admin installs a new module version. Valid
+	// values are the foundry_vtt.PinMode* constants:
+	//   "preserve" → on install, campaign's pin is set to the previous
+	//                version (state preserved).
+	//   "promote"  → on install, campaign's pin is set to the new
+	//                version (auto-bump).
 	//   "pinned"   → explicit version pin; install doesn't touch.
-	// Empty string = "not yet set" (pre-Chunk-6 backfill). Chunk 2's
-	// hook treats empty as the C-FMC-6 default until Chunk 6's
-	// migration writes the resolved default to every empty-mode row.
+	// Empty string means "not yet set"; AutoPinOnInstall treats it the
+	// same as "promote".
 	FoundryModulePinMode string `json:"foundry_module_pin_mode,omitempty"`
 
-	// EventTierDefinitions holds the per-campaign event tier vocabulary
-	// (V2 Wave 0 PR 2 per decisions/2026-05-28-cal-timeline-v2-design.md
-	// §C1). Empty/nil at read time returns the platform default trio
-	// (major / standard / detail) via GetEventTierDefinitions — matches
-	// the empty-means-default pattern used for AccentColor, FontFamily,
-	// etc. No migration on the campaigns table; tier defs nest in the
-	// existing settings JSON per Option B locked 2026-05-28 post-
-	// C-THEME-CUSTOMIZATION-AUDIT.
+	// EventTierDefinitions holds the per-campaign event tier vocabulary.
+	// Empty/nil at read time returns the platform default trio
+	// (major / standard / detail) via GetEventTierDefinitions.
 	EventTierDefinitions []TierDefinition `json:"event_tier_definitions,omitempty"`
 }
 
@@ -593,13 +579,10 @@ type CampaignSettings struct {
 // unnamed state: "Everyone", the shipped default for a campaign that has
 // never touched the setting.
 //
-// NOTE, deliberately not papered over: the settings UI describes DM Only and
-// Private as two different behaviours ("hidden from players" vs "visible only
-// to the creator"), but the storage layer has exactly one flag —
-// entities.is_private — so both resolve to the same thing here. That is a
-// copy/product discrepancy, not a bug in this resolution, and fixing it is
-// somebody's product decision. Both values mean "start hidden" today, which
-// is what this code implements and all it claims.
+// The settings UI describes DM Only and Private as two different
+// behaviours, but the storage layer has exactly one flag —
+// entities.is_private — so both resolve to "start hidden" here. That is a
+// known copy/product discrepancy, not a bug in this resolution.
 const (
 	DefaultVisibilityDMOnly  = "dm_only"
 	DefaultVisibilityPrivate = "private"
@@ -620,25 +603,17 @@ func (s CampaignSettings) DefaultsToPrivate() bool {
 //	requested explicit FALSE -> public, even under a private default
 //	requested explicit TRUE  -> private
 //
-// The absent/explicit-false distinction is the whole point, which is why the
-// parameter is a patch.Field and not a bool: a plain bool cannot tell "the
-// client omitted is_private" from "the client sent is_private: false", and
-// every caller that collapsed them produced a PUBLIC entity under a DM-only
-// campaign default. That shipped on four creation paths — the shop widget's
-// quick-create, the REST create, the batch-sync create, and the bestiary
-// creature import — so a DM who set "DM Only" got public entities from
-// Foundry sync, the shop widget and creature imports anyway. It is the same
-// defect class as the Foundry {name}-only push that once published a hidden
-// character entity to every player (sweep R4).
+// The parameter is a patch.Field, not a bool, because a plain bool cannot
+// distinguish "omitted" from "sent false" — every caller that collapsed
+// them produced a public entity under a DM-only campaign default.
 //
-// This is the ONLY implementation. A caller that re-derives it from
-// DefaultVisibility inline is how the four paths drifted apart in the first
-// place.
+// This is the ONLY implementation; a caller that re-derives it from
+// DefaultVisibility inline risks drifting from this rule.
 //
 // An explicit JSON null is treated as absent: create has no stored value to
-// clear, so "clear" has no meaning here, and falling through to the campaign
-// default is the safe reading (it matches patch.Field.Val's ruling that a
-// null on a NOT NULL column preserves rather than zeroes).
+// clear, so falling through to the campaign default is the safe reading
+// (matches patch.Field.Val's rule that null on a NOT NULL column preserves
+// rather than zeroes).
 func (s CampaignSettings) ResolveNewEntityPrivacy(requested patch.Field[bool]) bool {
 	if v, ok := requested.Get(); ok {
 		return v
@@ -647,11 +622,10 @@ func (s CampaignSettings) ResolveNewEntityPrivacy(requested patch.Field[bool]) b
 }
 
 // TierDefinition is a single entry in the per-campaign event tier
-// vocabulary. Slugs are stored on Event.Tier (via the calendar plugin's
-// V2 Wave 0 PR 2 migration) as foreign-key-like references; the
-// TierDefinition supplies the rendering hints (color, prominence) the
-// Wave 1 calendar UI consumes. Exactly one tier per definition set
-// carries IsDefault=true.
+// vocabulary. Slugs are stored on Event.Tier as foreign-key-like
+// references; TierDefinition supplies the rendering hints (color,
+// prominence) the calendar UI consumes. Exactly one tier per
+// definition set carries IsDefault=true.
 type TierDefinition struct {
 	Slug       string `json:"slug"`        // e.g. "major", "standard", "detail", "encounter"
 	Name       string `json:"name"`        // display name
@@ -717,7 +691,7 @@ const (
 	BlockCalendarFull    = "calendar_full"    // Full interactive calendar grid view.
 	BlockTimelineFull    = "timeline_full"    // Full timeline visualization with D3.
 	BlockRelationsGraphFull = "relations_graph_full" // Large relations graph view.
-	BlockMapFull         = "map_full"         // Full interactive map viewer with Phase 2 objects.
+	BlockMapFull         = "map_full"         // Full interactive map viewer with markers/drawings.
 	BlockSessionTracker  = "session_tracker"  // Upcoming sessions with RSVP status.
 	BlockActivityFeed    = "activity_feed"    // Recent campaign activity log.
 	BlockSyncStatus      = "sync_status"      // Foundry VTT sync health/status.

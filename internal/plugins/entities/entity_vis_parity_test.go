@@ -1,32 +1,21 @@
-// entity_vis_parity_test.go — C-ENTITY-VIS-PARITY content-level coverage.
-//
-// The entities plugin's own anon-reachable data endpoints (GetEntry,
-// GetFieldsAPI, PreviewAPI, GetAliasesAPI) previously gated on the LEGACY
-// default-mode check `entity.IsPrivate && role < RoleScribe`, which ignores
-// visibility='custom'. A default-public entity flipped to custom visibility
-// with restrictive grants keeps is_private=false (service.go never sets it),
-// so the Show page 404s anon (it uses CheckEntityAccess) while these four
-// endpoints served field values, entry HTML, preview, and aliases. Same leak
-// class #523 closed for posts/relations/tags — these four sibling endpoints
-// were out of its scope.
+// entity_vis_parity_test.go pins that the entities plugin's anon-reachable
+// data endpoints (GetEntry, GetFieldsAPI, PreviewAPI, GetAliasesAPI) gate on
+// the canonical CheckEntityAccess result, not the legacy
+// `entity.IsPrivate && role < RoleScribe` check, which ignores
+// visibility='custom' and would wrongly serve a default-public entity that
+// was flipped to custom visibility with restrictive grants.
 //
 // These tests drive real anonymous HTTP requests through the public-campaign
 // middleware chain (auth.OptionalAuth + campaigns.AllowPublicCampaignAccess +
-// campaigns.RequireViewAccess) into each of the four endpoints, asserting the
-// canonical gate is honored: a custom-restricted entity (CheckEntityAccess
-// CanView=false) is never served to anon, a foreign-campaign entity ID is
-// rejected (cross-campaign IDOR), and a viewable entity is unchanged.
+// campaigns.RequireViewAccess) into each endpoint, asserting: a
+// custom-restricted entity (CheckEntityAccess CanView=false) is never served
+// to anon, a foreign-campaign entity ID is rejected (cross-campaign IDOR),
+// and a viewable entity is unchanged.
 //
-// The fake service's CheckEntityAccess return stands in for the real service's
-// role/grant resolution (unit-tested at service_test.go:TestCheckEntityAccess_*):
-// CanView=true models any viewer the canonical gate admits (Scribe+, owner, or a
-// custom-granted player); CanView=false models anon / a player without a grant.
-// These handler tests pin that the HANDLER consults CheckEntityAccess and honors
-// its decision — exactly the pattern the #523 widget anon_access_test.go files use.
-//
-// Uses the default Echo error handler, so a denied request surfaces as a
-// non-200 (the app's real handler maps NotFound → 404); the contract asserted
-// here is simply "never a 200 payload for a restricted/foreign entity".
+// The default Echo error handler is in effect, so a denied request surfaces
+// as a non-200 (the app's real handler maps NotFound to 404); the contract
+// asserted here is simply "never a 200 payload for a restricted/foreign
+// entity".
 package entities
 
 import (
@@ -54,11 +43,10 @@ func (m visFakeCampaignSvc) GetByID(_ context.Context, id string) (*campaigns.Ca
 	return &campaigns.Campaign{ID: id, IsPublic: m.public}, nil
 }
 
-// visFakeEntitySvc models entities as visibility='custom' with is_private=false
-// — the exact reachable state the dispatch describes, in which the removed bare
-// `IsPrivate && role<Scribe` gate would PASS (serve) and only the canonical
-// CheckEntityAccess gate can correctly deny. campaignOf drives the IDOR check;
-// canView drives the CheckEntityAccess decision.
+// visFakeEntitySvc models entities as visibility='custom' with
+// is_private=false, the state where the legacy `IsPrivate && role<Scribe`
+// gate would wrongly pass and only CheckEntityAccess correctly denies.
+// campaignOf drives the IDOR check; canView drives CheckEntityAccess.
 type visFakeEntitySvc struct {
 	EntityService
 	campaignOf map[string]string

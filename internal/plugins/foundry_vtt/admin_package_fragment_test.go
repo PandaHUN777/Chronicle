@@ -10,11 +10,7 @@ import (
 )
 
 // TestAdminPackageActionsFragment_RendersAPIMonitorLink pins the
-// fragment's output: contains an API monitor link with the right href.
-// If the contents shift (e.g. a future contributor moves the link),
-// the test surfaces the change.
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (NW-2.2 Chunk G).
+// fragment's output: an API monitor link with the right href.
 func TestAdminPackageActionsFragment_RendersAPIMonitorLink(t *testing.T) {
 	pkg := packages.Package{
 		ID:   "fvtt-1",
@@ -40,10 +36,9 @@ func TestAdminPackageActionsFragment_RendersAPIMonitorLink(t *testing.T) {
 }
 
 // TestAdminPackageActionsFragment_NoOrphanedVersionsButton pins that
-// the fragment does NOT render a Versions button. The Versions button
-// is generic (lives in packages.templ); the fragment moving it in
-// would create a duplicate-button hazard. Documented in the decision
-// doc's "deferred to G2" section.
+// the fragment does NOT render a Versions button: that button is
+// generic (lives in packages.templ), and duplicating it here would
+// create a duplicate-button hazard.
 func TestAdminPackageActionsFragment_NoOrphanedVersionsButton(t *testing.T) {
 	pkg := packages.Package{ID: "fvtt-1", Type: packages.PackageTypeFoundryModule}
 

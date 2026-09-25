@@ -19,23 +19,10 @@ import (
 
 // TestFreshDatabase_EveryPluginSchemaApplies replays the server's real schema
 // bootstrap — core migrations, then foundry_vtt.PreMigrationCheck, then
-// database.RunPluginMigrations over the real registeredPlugins() list — against
-// a database that has NEVER been migrated, and requires every plugin to come up
-// healthy.
-//
-// Why this test exists (C-SWEEP-R4 / data/fvtt-fresh-db-rename): CI had no
-// fresh-DB replay anywhere. tools/restore-drill.sh loads a dump of an
-// already-migrated database, and every other integration test assumes
-// `make migrate-up` already ran. So `foundry_vtt`'s migration 001 — a
-// consolidation migration that RENAMEs a table the deleted foundry_modules
-// plugin used to create and DROPs a catalog table that only ever existed on an
-// upgrade path — failed at its FIRST statement on every new self-hosted
-// install, permanently disabling the Foundry integration, and nothing in the
-// suite noticed. The runner returns on the first failed migration, so no later
-// migration could ever repair it either.
-//
-// The test asserts the whole set, not just foundry_vtt: any plugin whose
-// migrations assume a predecessor's schema fails here on the day it lands.
+// database.RunPluginMigrations over the real registeredPlugins() list —
+// against a database that has NEVER been migrated, and requires every plugin
+// to come up healthy. This is CI's only fresh-DB replay: it catches any
+// plugin migration that assumes a predecessor's schema, not just foundry_vtt.
 //
 // Discovery + skip rules follow the house integration-test convention
 // (internal/plugins/entities/repository_integration_test.go):
@@ -118,22 +105,17 @@ func TestFreshDatabase_EveryPluginSchemaApplies(t *testing.T) {
 	}
 }
 
-// TestUpgradeDatabase_FoundryConsolidationStillRuns is the other half of the
-// fresh-DB fix, and the one that keeps it from being a data-loss bug.
+// TestUpgradeDatabase_FoundryConsolidationStillRuns guards the UPGRADE side of
+// the fresh-install skip in ReconcileConsolidationState: on a real
+// pre-consolidation database, migration 001's RENAME carries live
+// per-campaign token rows into foundry_vtt_campaign_tokens, so the skip must
+// not fire there or every campaign's signed manifest URL stops resolving.
 //
-// The repair for data/fvtt-fresh-db-rename teaches the bootstrap to SKIP
-// foundry_vtt's migration 001 when its RENAME has no source table. A skip that
-// fired one state too wide would be far worse than the crash it replaces: on a
-// real pre-consolidation database, 001's RENAME is what carries live
-// per-campaign token rows into foundry_vtt_campaign_tokens. Skip it there and
-// every campaign's signed manifest URL silently stops resolving, because the
-// repository queries a table that was never populated.
-//
-// So this test builds the PRE-consolidation state by hand — the predecessor
-// token table with a real row in it, plus the (empty) versions catalog — runs
-// the identical bootstrap, and requires that the row arrived under the new
-// name. The row is the proof: only 001's RENAME can put it there, since
-// migration 002 only ever CREATEs the table empty.
+// It builds the PRE-consolidation state by hand — the predecessor token table
+// with a real row in it, plus the empty versions catalog — runs the identical
+// bootstrap, and requires the row to arrive under the new name. The row is
+// the proof: only 001's RENAME can put it there, since migration 002 only
+// ever CREATEs the table empty.
 func TestUpgradeDatabase_FoundryConsolidationStillRuns(t *testing.T) {
 	if testing.Short() {
 		t.Skip("migration replay requires a database; skipped under -short")
@@ -319,8 +301,9 @@ func freshDBEnv(key, def string) string {
 	return def
 }
 
-// coreMigrationsDir resolves db/migrations from this test file's own location,
-// so the test does not depend on the working directory `go test` chose.
+// coreMigrationsDir resolves db/migrations from this test file's own
+// location, so the test does not depend on the working directory `go test`
+// chose.
 func coreMigrationsDir(t *testing.T) string {
 	t.Helper()
 	_, thisFile, _, ok := runtime.Caller(0)

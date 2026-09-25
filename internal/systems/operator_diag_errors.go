@@ -1,16 +1,8 @@
 // Package systems — operator_diag_errors.go is the "what has this server been
-// getting wrong?" half of the host diagnostics. host.build says which binary is
-// running and host.assets/host.embedded say what it is serving; these say what
-// it has been FAILING at, without anyone needing shell access.
-//
-// WHY it exists. Before this, an error that fired at 2am left no trace an admin
-// could reach. It went to slog, slog went to stdout, stdout went to the
-// container's log driver — so the only way to answer "what broke overnight?"
-// was to get onto the host, find the container, and read `docker logs`. That is
-// exactly the shell archaeology the whole host.* workstream exists to remove.
-// The audit plugin cannot fill the gap: it records USER ACTIONS, DB-backed and
-// scoped to both a campaign and a user, so a 500 on /healthz or an anonymous
-// request has neither key it needs.
+// getting wrong?" half of the host diagnostics, answerable without shell
+// access. The audit plugin can't fill this gap: it records USER ACTIONS,
+// DB-backed and scoped to a campaign and a user, so a 500 on /healthz or an
+// anonymous request has neither key it needs.
 //
 // What these diagnostics deliberately do NOT claim. The ring is in process
 // memory: a restart empties it, and each replica keeps its own. So an empty
@@ -18,9 +10,7 @@
 // nothing was recorded, nothing is recording, or the process restarted since
 // the failure. Every render below states which of those it is looking at, and
 // the header always prints the ring's capacity and hold count so "only 4
-// errors" is visibly different from "the ring was never wired". That
-// distinction is the whole reason the header exists: on 2026-08-11 an hour was
-// lost to reading an absence of evidence as evidence.
+// errors" is visibly different from "the ring was never wired".
 package systems
 
 import (
@@ -431,25 +421,16 @@ func singleLine(s string) string {
 
 // safePath prepares a recorded path for rendering INSIDE a markdown code span.
 //
-// WHY it is needed at all: a path is usually a route template this codebase
-// wrote, but when the router matched nothing the stored value is raw request
-// bytes chosen by whoever sent the request (see observability.PathFor). This
-// output is markdown whose stated purpose is to be pasted into a chat window or
-// an AI assistant that the operator then acts on, so a path that can inject
-// markdown structure is a path that can put words in this diagnostic's mouth.
-//
-// Measured before the fix: a request to `/a%0A%0A**INJECTED-HEADING**%0A-%20fake`
-// is percent-decoded by net/http into URL.Path, stored verbatim, and rendered
-// as a real heading and a real bullet — the attacker's text escaped both the
-// code span and the list and read as diagnostic output.
+// When the router matched nothing, the stored value is raw request bytes
+// chosen by whoever sent the request (observability.PathFor). This output is
+// markdown meant to be pasted into a chat window or fed to an AI assistant,
+// so an unescaped path could inject markdown structure (e.g. a percent-encoded
+// newline + heading) into the diagnostic's own output.
 //
 // Two transformations, both display-only (the stored value is untouched):
-//   - flatten newlines/tabs, so the value cannot leave its bullet. This is
-//     exactly what singleLine already does for the sibling Err field.
-//   - replace backticks, because there is no escape sequence for a backtick
-//     inside a single-backtick span; leaving one in lets the remainder of the
-//     value render as markdown. A replacement is honest here in a way it would
-//     not be for a message, since the reader is already told this is a raw path.
+// flatten newlines/tabs so the value cannot leave its bullet, and replace
+// backticks, since there is no escape sequence for one inside a single-tick
+// span and leaving one in lets the rest of the value render as markdown.
 func safePath(s string) string {
 	return strings.ReplaceAll(singleLine(s), "`", "'")
 }

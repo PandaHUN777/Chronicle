@@ -1,5 +1,5 @@
-// widget_type_test.go — C-WIDGET-BINDING-P2. The timeline widget type
-// (instance = a timeline record) + the timeline delete-hook.
+// Pins the timeline widget type (instance = a timeline record) and the
+// timeline delete-hook.
 package timeline
 
 import (
@@ -63,9 +63,9 @@ func TestTimelineWidgetType_NoDefault(t *testing.T) {
 	}
 }
 
-// ListInstances (C-WIDGET-BINDING-P4b) maps the campaign's timelines to picker
-// InstanceRefs (id + name + icon + color). CreateInstance creates a named
-// timeline via the service (defaults applied) and returns its id.
+// ListInstances maps the campaign's timelines to picker InstanceRefs (id +
+// name + icon + color). CreateInstance creates a named timeline via the
+// service (defaults applied) and returns its id.
 func TestTimelineWidgetType_ListAndCreateInstances(t *testing.T) {
 	var created *Timeline
 	repo := &mockTimelineRepo{

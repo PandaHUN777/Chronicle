@@ -12,8 +12,6 @@ import (
 // TestParsePluginMigrations_DuplicateVersionGuard verifies that
 // parsePluginMigrations returns an error when two .up.sql (or two .down.sql)
 // files share the same version number, instead of silently overwriting one.
-// Regression guard for P2-1 (bestiary 002_* collision) from
-// 2026-06-20-migration-startup-safety-audit.md.
 func TestParsePluginMigrations_DuplicateVersionGuard(t *testing.T) {
 	tests := []struct {
 		name    string

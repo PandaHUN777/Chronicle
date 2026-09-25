@@ -16,19 +16,13 @@ func (f fakeKeyLister) ListCampaignIDsWithKeys(context.Context) ([]string, error
 	return f.ids, f.err
 }
 
-// TestReconcileAddonEnablement is the safety net under turning enforcement
-// on. Enforcement defaults to DENIED — addons.IsEnabledForCampaign returns
-// false when no campaign_addons row exists — and the only one-time backfill
-// that ever wrote those rows (syncapi migration 003) ran once, long ago. Any
-// campaign that minted its first key afterwards sits at "no row" and would be
-// cut off the moment the gate went live. On the deployment this ships to that
-// includes a live Foundry VTT sync.
-//
-// The table encodes the rule, and row 2 is the one that matters most: the
-// reconciler runs at EVERY boot, so re-enabling on "enabled = 0" would mean a
-// switched-off toggle lasts exactly until the next restart — handing back the
-// decorative toggle this whole change removes. Hence it keys off "is there a
-// row at all", not "is it on".
+// TestReconcileAddonEnablement pins the boot-time reconciler that backfills
+// campaign_addons rows for any campaign holding an API key: enforcement
+// defaults to DENIED when no row exists (IsEnabledForCampaign), so a campaign
+// that minted a key after the one-time migration 003 backfill would otherwise
+// be cut off. The reconciler keys off "is there a row at all", never "is it
+// on" — it runs at every boot, so re-enabling on enabled=0 would make a
+// deliberately switched-off toggle last only until the next restart.
 func TestReconcileAddonEnablement(t *testing.T) {
 	cases := []struct {
 		name string

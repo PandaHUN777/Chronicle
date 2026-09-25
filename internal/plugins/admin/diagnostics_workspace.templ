@@ -1,7 +1,5 @@
-// diagnostics_workspace.templ — the in-app "Operator AI Workspace" for
-// diagnostics. Modeled on the campaign ai_workspace plugin's
-// export→parse→review→commit loop, but admin-scoped and for READ-ONLY
-// diagnostics:
+// diagnostics_workspace.templ is the in-app "Operator AI Workspace" for
+// READ-ONLY diagnostics, admin-scoped:
 //
 //  1. Functions list (copyable JSON) — the operator feeds it to an external AI.
 //  2. The AI composes ONE batch-request object; the operator pastes it here.
@@ -10,9 +8,6 @@
 //     unknown names and heavy full-dump requests are flagged).
 //  4. "Approve & run" executes the read-only diagnostics server-side and returns
 //     ONE compact, secret-redacted result the operator copies back to the AI.
-//
-// This supersedes the standalone content-negotiated HTML console (the page now
-// lives in proper site chrome via @layouts.App).
 package admin
 
 import (

@@ -1,23 +1,12 @@
-// codm_visibility_test.go pins the operator's 2026-09-12 ruling (.ai/todo.md,
-// "RULED 2026-09-12 by the operator: YES, the co-DM promotion crosses plugin
-// lines") against effectiveRole, the one role-selection function every
-// timeline content-filtering call site (Index, Show, and friends) goes
-// through.
+// Pins effectiveRole, the role-selection function every timeline
+// content-filtering call site (Index, Show, and friends) goes through: a
+// co-DM must be promoted to cc.VisibilityRole() so they see dm_only events
+// like an Owner, EXCEPT when view-as-player is active, which must still
+// force RolePlayer regardless of promotion.
 //
-// This one is NOT a plain swap: effectiveRole must keep its existing
-// view-as-player branch returning RolePlayer unconditionally — an Owner
-// deliberately previewing the player experience must still see the PLAYER
-// view even though VisibilityRole() would otherwise promote them (Owners
-// already sit at RoleOwner, and a co-DM Owner-preview case would promote
-// right back if the preview branch didn't come first). Only the non-preview
-// branch promotes a co-DM to cc.VisibilityRole().
-//
-// TEST HONESTY: effectiveRole is a pure function of (view-as-player flag,
-// CampaignContext) with no I/O, so this test exercises the real function
-// directly — not a mock standing in for it. It fully proves the role
-// SELECTION logic; it does not by itself prove every timeline SQL/service
-// path correctly narrows content for that role (that is service.go /
-// repository.go's own coverage).
+// This exercises effectiveRole directly (a pure function of the preview flag
+// and CampaignContext); it proves role selection, not that every SQL/service
+// path narrows content correctly for that role (see service.go / repository.go).
 package timeline
 
 import (
@@ -48,9 +37,6 @@ func newTimelineTestContext(viewingAsPlayer bool) echo.Context {
 // TestEffectiveRole_CoDMIsPromotedToOwnerForVisibility is the RED/GREEN case:
 // outside view-as-player mode, a co-DM (MemberRole=Player, IsDmGranted=true)
 // must resolve to Owner, matching cc.VisibilityRole() and every entity path.
-// Before the fix, effectiveRole's non-preview branch returned the raw
-// int(cc.MemberRole) == RolePlayer, so a co-DM's timeline view was narrowed
-// exactly like a plain Player's and hid dm_only events.
 func TestEffectiveRole_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 	cc := &campaigns.CampaignContext{
 		Campaign:    &campaigns.Campaign{ID: "camp-1"},
@@ -67,11 +53,9 @@ func TestEffectiveRole_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 	}
 }
 
-// TestEffectiveRole_OwnerViewAsPlayerStillReturnsPlayer is the regression
-// that matters most here: an Owner (co-DM or not) previewing the player
-// experience must STILL get RolePlayer, never promoted back up. This must
-// pass BOTH before and after the fix — the fix must compose with, not
-// override, the existing preview branch.
+// TestEffectiveRole_OwnerViewAsPlayerStillReturnsPlayer pins that an Owner
+// (co-DM or not) previewing the player experience still gets RolePlayer,
+// never promoted back up.
 func TestEffectiveRole_OwnerViewAsPlayerStillReturnsPlayer(t *testing.T) {
 	cc := &campaigns.CampaignContext{
 		Campaign:   &campaigns.Campaign{ID: "camp-1"},

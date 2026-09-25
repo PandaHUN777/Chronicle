@@ -68,7 +68,6 @@ type ReferenceItem struct {
 	// files — DnD-5.5e's package data is 100% id-keyed and never sets this).
 	// JSONProvider normalizes ID from this at load time when ID is empty;
 	// read sites should never need to consult Slug directly.
-	// (C-SYSTEMS-REF-SLUG-FIX)
 	Slug string `json:"slug"`
 
 	// Category is the content type slug (e.g., "spells", "monsters", "items").

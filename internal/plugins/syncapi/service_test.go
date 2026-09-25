@@ -593,15 +593,10 @@ func TestAuthenticateKey_TrimsWhitespace(t *testing.T) {
 	}
 }
 
-// TestAuthenticateKey_SharedByRESTAndWS proves that the REST middleware's
-// validation call (`AuthenticateKey`) and the WebSocket authenticator's
-// validation call (`AuthenticateKeyForWS`) resolve to the same code path
-// and accept the exact same raw token.
-//
-// This is the structural regression guard for the "REST accepts token, WS
-// rejects it" class of bug: if a future change splits the two paths into
-// parallel implementations, this test fails. The shared validation MUST
-// stay the single source of truth.
+// TestAuthenticateKey_SharedByRESTAndWS pins that AuthenticateKey (REST) and
+// AuthenticateKeyForWS resolve the same raw token through the same lookup,
+// guarding against the two paths splitting into parallel implementations
+// (the "REST accepts token, WS rejects it" class of bug).
 func TestAuthenticateKey_SharedByRESTAndWS(t *testing.T) {
 	rawKey := "chron_sharedAB12cd34ef56ab78cd90ef12ab34cd56ef78ab90cd12ef34ab5678"
 	hash, err := bcrypt.GenerateFromPassword([]byte(rawKey), bcrypt.DefaultCost)
@@ -627,12 +622,9 @@ func TestAuthenticateKey_SharedByRESTAndWS(t *testing.T) {
 		},
 	}
 	svc := NewSyncAPIService(repo)
-	// The WS half now also consults the campaign's "Sync API" addon toggle
-	// (AuthenticateKeyForWS), and an unwired gate is treated as a wiring
-	// fault rather than as permission — so this parity test has to state
-	// that the campaign has the integration switched ON. Its subject is
-	// unchanged: both paths must resolve the same token through the same
-	// lookup. The gate's own behaviour is covered in addon_gate_test.go.
+	// AuthenticateKeyForWS also consults the campaign's addon toggle, so this
+	// parity test must switch it ON; the gate's own behavior is covered in
+	// addon_gate_test.go.
 	wsGate := newFakeAddonGate()
 	wsGate.enabled[storedKey.CampaignID] = true
 	svc.SetAddonGate(wsGate)

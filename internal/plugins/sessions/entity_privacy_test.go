@@ -4,16 +4,10 @@ package sessions
 // to a Player. ADR-055 rule 3: hidden content is ABSENT for a non-Owner
 // viewer — not greyed, not counted, not named.
 //
-// THE DEFECT: ListSessionEntities' repository join (`INNER JOIN entities e`)
-// carries no privacy predicate and ShowSession rendered every row it got back
-// unconditionally. A DM marking an NPC private and linking it to a session as
-// "encountered" published its name to every player who opened the session
-// page. See ADR-055 / ADR-056 (2026-09-12 visibility sweep).
-//
-// The fix filters the session's linked-entity list against the SAME
-// visibility policy the entities plugin itself applies (via the new
-// EntityVisibilityFilter service dependency), in ShowSession, before the list
-// reaches the template. Owners and Scribes are unaffected.
+// ListSessionEntities' repository join carries no privacy predicate, so
+// ShowSession filters the linked-entity list against the same visibility
+// policy the entities plugin applies (via EntityVisibilityFilter) before the
+// list reaches the template. Owners and Scribes are unaffected.
 
 import (
 	"context"

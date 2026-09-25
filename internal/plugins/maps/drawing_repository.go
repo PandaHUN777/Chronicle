@@ -75,14 +75,10 @@ func (r *drawingRepo) CreateDrawing(ctx context.Context, d *Drawing) error {
 
 // GetDrawing retrieves a drawing by ID.
 //
-// Selects visibility_rules (S1) even though no CreateDrawingInput /
-// UpdateDrawingInput field can set it today: UpdateDrawing and
-// DeleteDrawing both load the row through this method before publishing
-// their WebSocket event (see drawing_service.go), so if this SELECT
-// omitted the column, every update/delete on a drawing that DOES carry
-// rules (set some other way) would publish with VisibilityRules=nil —
-// reopening the S1 leak from the read side even after the write side is
-// fixed.
+// Must select visibility_rules: UpdateDrawing and DeleteDrawing load the row
+// through this method before publishing their WebSocket event
+// (drawing_service.go), so omitting the column here would publish
+// VisibilityRules=nil regardless of what is actually stored.
 func (r *drawingRepo) GetDrawing(ctx context.Context, id string) (*Drawing, error) {
 	var d Drawing
 	err := r.db.QueryRowContext(ctx, `
@@ -155,15 +151,11 @@ func scanDrawing(rows *sql.Rows) (Drawing, error) {
 	return d, err
 }
 
-// ListDrawings returns all drawings for a map, filtered by role AND user
-// (S1). Owners see everything, matching ListMarkers' owner branch. Non-
-// owners see 'everyone'/'specific' drawings whose visibility_rules admit
-// userID — the identical predicate ListMarkers applies (repository.go),
-// so a marker and a drawing carrying the same rule are visible to exactly
-// the same people. This SQL is what drawing_repository.go's doc comment
-// and the S1 design promise "the drawing read filter matches the marker
-// one" against; if the two queries below and ListMarkers' ever diverge,
-// this comment is the tripwire.
+// ListDrawings returns all drawings for a map, filtered by role AND user.
+// Owners see everything; non-owners see 'everyone'/'specific' drawings whose
+// visibility_rules admit userID. This predicate must stay identical to
+// ListMarkers' (repository.go), so a marker and a drawing carrying the same
+// rule are visible to exactly the same people.
 func (r *drawingRepo) ListDrawings(ctx context.Context, mapID string, role int, userID string) ([]Drawing, error) {
 	if permissions.CanSeeDmOnly(role) {
 		rows, err := r.db.QueryContext(ctx,

@@ -102,13 +102,10 @@ func TestAddMyException_InvalidDate(t *testing.T) {
 	assertAppError(t, err, 400)
 }
 
-// RE-POINTED, NOT WEAKENED. This used to assert that AddMyException reached
-// repo.AddException — a single-row insert. That was the defect: exception rows
-// REPLACE the recurring pattern for their date, so the one row inserted became
-// the member's whole day and silently deleted the rest of it. AddMyException now
-// composes the day and writes it atomically through ReplaceDayExceptions, so the
-// same scope assertions (campaign, user, date) are made against that call
-// instead. The write path changed; nothing it checks was dropped.
+// AddMyException must compose the day and write it atomically through
+// ReplaceDayExceptions, not insert a single row via repo.AddException:
+// exception rows replace the recurring pattern for their date, so a single
+// inserted row would become the member's whole day.
 func TestAddMyException_Valid(t *testing.T) {
 	called := false
 	repo := &mockSessionRepo{

@@ -150,7 +150,7 @@ func (h *DrawingHandler) UpdateDrawing(c echo.Context) error {
 	}
 
 	// PARTIAL update: absent preserves, explicit null clears, a present
-	// value replaces (sweep R4 / ADR-054 #6).
+	// value replaces (.ai/conventions.md).
 	var req struct {
 		Points            patch.Field[json.RawMessage] `json:"points"`
 		StrokeColor       patch.Field[string]          `json:"stroke_color"`
@@ -331,9 +331,8 @@ func (h *DrawingHandler) UpdateToken(c echo.Context) error {
 	}
 
 	// PARTIAL update: absent preserves, explicit null clears, a present
-	// value replaces (sweep R4 / ADR-054 #6). Before this, a drag PUT
-	// carrying only {x, y} zeroed IsHidden, IsLocked, both HP bars and
-	// every aura/light/vision field — see UpdateTokenInput's doc comment.
+	// value replaces (.ai/conventions.md). A drag PUT carrying only {x, y}
+	// must not zero IsHidden, IsLocked, HP bars or aura/light/vision fields.
 	var req struct {
 		Name              string                       `json:"name"`
 		ImagePath         patch.Field[string]          `json:"image_path"`
@@ -529,8 +528,8 @@ func (h *DrawingHandler) UpdateLayer(c echo.Context) error {
 	}
 
 	// PARTIAL update: absent preserves, explicit null clears, a present
-	// value replaces (sweep R4 / ADR-054 #6). Before this, reordering the
-	// layer stack (a SortOrder-only PUT) silently turned visibility/lock off.
+	// value replaces (.ai/conventions.md). A SortOrder-only PUT must not
+	// turn other layers' visibility/lock off.
 	var req struct {
 		Name              string               `json:"name"`
 		SortOrder         patch.Field[int]     `json:"sort_order"`

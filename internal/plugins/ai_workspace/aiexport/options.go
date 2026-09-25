@@ -1,34 +1,25 @@
-// Package aiexport renders a campaign's owner-scoped content into a
-// single markdown document suitable for pasting into AI tools (Claude,
-// ChatGPT, NotebookLM, etc). The package is intentionally lossy —
-// markdown is the wire format owners paste into chat, not a backup.
+// Package aiexport renders a campaign's owner-scoped content into a single
+// markdown document suitable for pasting into AI tools (Claude, ChatGPT,
+// NotebookLM, etc). The package is intentionally lossy — markdown is the
+// wire format owners paste into chat, not a backup.
 //
-// Scope (operationalises decisions/2026-05-26-ai-export-pipeline-design.md
-// + reports/chronicle/2026-05-26-c-ai-export-scoping.md):
-//
-//   - Five categories: entities (grouped by entity type), notes (folder-
-//     aware), calendar events (grouped by month using the calendar's own
-//     month names), sessions (with attendees + linked entities + opt-in
-//     GM notes), timeline events (grouped by parent timeline).
+//   - Five categories: entities, notes, calendar events, sessions, timeline
+//     events.
 //   - Privacy modes: Safe (drops dm_only / IsPrivate / not-shared-with-
 //     owner), Permitted (matches owner's on-screen view), Everything
 //     (no visibility filtering).
-//   - Token estimate rendered in the header so the owner can tell at
-//     a glance whether the export fits in a target AI's context window.
+//   - A token estimate is rendered in the header so the owner can tell
+//     whether the export fits a target AI's context window.
 //
-// SEC-6-AMENDED invariant: every HTML field passes through
-// sanitize.HTMLPtr BEFORE the HTML-to-markdown converter sees it. The
-// renderer must never feed raw EntryHTML / NotesHTML / DescriptionHTML
-// from the DB straight into the converter — historical or tooling-
-// inserted rows could carry <script> or javascript: URLs that the
-// converter would faithfully translate. AST structural pin in
-// renderer_test.go enforces every renderer body contains the call.
+// SEC-6-AMENDED invariant: every HTML field passes through sanitize.HTMLPtr
+// BEFORE the HTML-to-markdown converter sees it — a raw DB field could carry
+// <script> or javascript: URLs the converter would faithfully translate. The
+// AST structural pin in renderer_test.go enforces this on every renderer.
 //
-// Scope-OUT (D4=(c) backup carve-out): zero edits to
-// internal/app/export_adapters.go, internal/plugins/campaigns/
-// export_handler.go, or internal/plugins/restore/. AI-export is a
-// SEPARATE egress surface — the lossless backup pipeline remains the
-// source of truth for round-trip-safe exports.
+// This package is a separate egress surface from the lossless backup
+// pipeline (internal/app/export_adapters.go, campaigns/export_handler.go,
+// internal/plugins/restore/), which remains the source of truth for
+// round-trip-safe exports; this package does not touch it.
 package aiexport
 
 // Category identifies one of the v1 markdown-rendered content
@@ -44,9 +35,9 @@ const (
 	CategoryTimelines      Category = "timelines"
 )
 
-// AllCategories is the v1 set, in render order. Maps + media + tags-
-// as-standalone-category are deferred to v2 per the scoping report
-// §1 ("Categories surfaced during audit but recommended OUT of v1").
+// AllCategories is the current set, in render order.
+// TODO(keyxmakerx/Chronicle#740): maps, media, and tags-as-standalone
+// category are out of scope until V2.
 func AllCategories() []Category {
 	return []Category{
 		CategoryEntities,
@@ -91,9 +82,9 @@ func (m PrivacyMode) String() string {
 	}
 }
 
-// Options bundles every owner-controlled toggle for a single Generate
-// call. Constructed by the campaigns settings handler in PR-B; this
-// package only consumes the struct.
+// Options bundles every owner-controlled toggle for a single Generate call.
+// Constructed by the campaigns settings handler; this package only consumes
+// the struct.
 type Options struct {
 	// Categories enumerates which categories to render. Empty slice
 	// means "all" (AllCategories). The orchestrator deduplicates +

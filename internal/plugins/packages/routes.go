@@ -54,12 +54,10 @@ func RegisterPublicRoutes(e *echo.Echo, sh *ServeHandler, rl echo.MiddlewareFunc
 	g.Use(rl)
 	g.GET("/:type/:slug/*", sh.ServePackageFile)
 
-	// C-FMC-5c removed the /foundry-module/* alias routes. Foundry now
-	// installs from per-campaign signed URLs at
-	// /api/v1/campaigns/:cid/foundry-vtt/module.json (foundry_vtt
-	// plugin's RegisterPublicRoutes). The old shared URL had no per-
-	// campaign isolation and was incompatible with the per-campaign
-	// pin model from PR #300.
+	// No /foundry-module/* alias: Foundry installs from per-campaign signed
+	// URLs at /api/v1/campaigns/:cid/foundry-vtt/module.json (foundry_vtt
+	// plugin's RegisterPublicRoutes), since a shared URL can't enforce
+	// per-campaign version pins.
 }
 
 // RegisterOwnerRoutes mounts the owner-facing system submission routes.

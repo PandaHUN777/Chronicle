@@ -1,14 +1,11 @@
 // entity_map_block.templ renders the per-entity Map Editor block. The
-// block reads from entities.map_id (added in migration 025): if set, the
-// full inline map editor renders directly in the entity page; otherwise
-// Scribe+ users see a thumbnail picker and players see a friendly empty
-// state.
+// block reads from entities.map_id: if set, the full inline map editor
+// renders directly on the entity page; otherwise Scribe+ users see a
+// thumbnail picker and players see a friendly empty state.
 //
-// Inline-render via the shared MapEditorBody templ — earlier iterations
-// used a same-origin iframe, but the app's Content-Security-Policy sets
-// `frame-ancestors 'none'` so the iframe was being silently blocked at
-// the browser. Inline rendering is the future-proof path: same Leaflet
-// code, same modals, same IIFE — just hosted on the entity page.
+// Rendered inline via the shared MapEditorBody templ, not an iframe: the
+// app's Content-Security-Policy sets `frame-ancestors 'none'`, which blocks
+// a same-origin iframe silently.
 package maps
 
 import (
@@ -20,12 +17,9 @@ import (
 // BlockEntityMapEmbed renders the per-entity map inline (full editor for
 // Scribe+, view-only for players — the role gate lives inside
 // MapEditorBody). Above the editor: the shared Scribe+ "Change map" binding
-// affordance (C-WIDGET-BINDING-P4b — replaces the bespoke AssignMap button)
-// plus a slim header with the map name and "Open" (jump to the dedicated map
-// page). source is the resolved binding layer (own/default) for the badge.
-//
-// Sizing: 600px tall by default. Could become a config field later but
-// isn't worth it for v1 — most embeds get a fixed height anyway.
+// affordance plus a slim header with the map name and "Open" (jump to the
+// dedicated map page). source is the resolved binding layer (own/default)
+// for the badge.
 templ BlockEntityMapEmbed(cc *campaigns.CampaignContext, entityID string, data MapViewData, isScribe bool, source string) {
 	<div
 		data-widget="entity-map"
@@ -66,12 +60,11 @@ templ BlockEntityMapEmbed(cc *campaigns.CampaignContext, entityID string, data M
 	</div>
 }
 
-// BlockEntityMapChoose is the Scribe+ "no map bound yet" state
-// (C-WIDGET-BINDING-P4b — replaces the bespoke BlockEntityMapPicker thumbnail
-// grid). A friendly prompt plus the shared create-or-pick binding affordance:
-// clicking "Change map" opens the generic picker (pick an existing map or
-// create a new one), which writes a `map` widget binding. source is the
-// resolved layer for the badge (default when nothing is bound).
+// BlockEntityMapChoose is the Scribe+ "no map bound yet" state: a friendly
+// prompt plus the shared create-or-pick binding affordance. Clicking
+// "Change map" opens the generic picker, which writes a `map` widget
+// binding. source is the resolved layer for the badge (default when nothing
+// is bound).
 templ BlockEntityMapChoose(cc *campaigns.CampaignContext, entityID, source string) {
 	<div class="card p-0 overflow-hidden" data-entity-map-choose data-entity-id={ entityID }>
 		@widgetbindings.BindingAffordance(cc.Campaign.ID, WidgetTypeMap, entityID, "map", source)

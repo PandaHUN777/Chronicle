@@ -166,15 +166,9 @@ func (h *Handler) AdminAutoPinBannerDismissHandler(c echo.Context) error {
 //
 // GET /admin/foundry-vtt/packages/:id/actions-fragment
 //
-// Guards:
-//   - 404 if the package ID doesn't exist
-//   - 404 if the package isn't a foundry-module typed package (defensive
-//     — packages.templ should only lazy-load this URL for foundry-module
-//     rows, but a direct request from a poking admin shouldn't render
-//     foundry UI for system packages)
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md + NW-2.2
-// Chunk G.
+// 404s if the package ID doesn't exist, or if the package isn't a
+// foundry-module typed package (defensive: a direct request from a
+// poking admin shouldn't render foundry UI for a system package).
 func (h *Handler) AdminPackageActionsFragmentHandler(c echo.Context) error {
 	id := c.Param("id")
 	if id == "" {

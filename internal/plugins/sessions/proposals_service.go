@@ -282,13 +282,12 @@ type ProposalTokenContext struct {
 }
 
 // ValidateProposalToken resolves + checks a one-click response token WITHOUT
-// applying anything (C-SCHED-P3 0a/0b). It enforces single-use, non-expiry, and —
-// the 0a gate finding — that the proposal is still OPEN over the 7-day TTL (the
-// old redeem skipped this, so a token could land a response after the winner was
-// already confirmed). It does NOT check membership: the service is campaigns-free
-// (member resolution lives in the handler, which gates on the returned
-// Proposal.CampaignID before applying). Used by BOTH the GET confirm page and the
-// POST apply, so a mail prefetcher's GET is a pure read.
+// applying anything. It enforces single-use, non-expiry, and that the
+// proposal is still OPEN (a token can outlive the proposal within its 7-day
+// TTL). It does NOT check membership: the service is campaigns-free (member
+// resolution lives in the handler, which gates on the returned
+// Proposal.CampaignID before applying). Used by BOTH the GET confirm page and
+// the POST apply, so a mail prefetcher's GET is a pure read.
 func (s *sessionService) ValidateProposalToken(ctx context.Context, tokenStr string) (*ProposalTokenContext, error) {
 	token, err := s.repo.FindProposalToken(ctx, tokenStr)
 	if err != nil {
@@ -317,7 +316,7 @@ func (s *sessionService) ValidateProposalToken(ctx context.Context, tokenStr str
 // ApplyProposalToken records the token's response and consumes the token, after
 // re-validating (single-use / non-expiry / proposal-open) to close any TOCTOU
 // gap between the confirm page and the POST. The caller (handler) MUST have
-// re-checked current membership first (0a) — this is the state-changing half, so
+// re-checked current membership first — this is the state-changing half, so
 // it only runs from the POST route, never the prefetchable GET.
 func (s *sessionService) ApplyProposalToken(ctx context.Context, tokenStr string) (*ProposalTokenContext, error) {
 	tc, err := s.ValidateProposalToken(ctx, tokenStr)
@@ -339,16 +338,17 @@ func (s *sessionService) ApplyProposalToken(ctx context.Context, tokenStr string
 	return tc, nil
 }
 
-// ConfirmProposalWinner is the C-SCHED-P3 confirm-winner flow (Scribe+): mark the
-// chosen option the winner + close the proposal (atomically), then create a
-// planned session from the winning UTC instant. The instant is materialized into
-// the confirmer's zone as the zone-less wall-clock date + "HH:MM" the group plays
-// at — mirroring the zone-less scheduled_date manual sessions already use. The
-// proposal is closed BEFORE the session is created so a retry can never mint a
-// duplicate session (a re-confirm hits the closed guard); on the rare
-// create-after-close failure the winner is still marked and the operator can add
-// the session manually. Returns the new session so the handler can invite members
-// + notify responders (both handler concerns — the service stays campaigns-free).
+// ConfirmProposalWinner is the confirm-winner flow (Scribe+): mark the chosen
+// option the winner + close the proposal (atomically), then create a planned
+// session from the winning UTC instant. The instant is materialized into the
+// confirmer's zone as the zone-less wall-clock date + "HH:MM" the group plays
+// at — mirroring the zone-less scheduled_date manual sessions already use.
+// The proposal is closed BEFORE the session is created so a retry can never
+// mint a duplicate session (a re-confirm hits the closed guard); on the rare
+// create-after-close failure the winner is still marked and the operator can
+// add the session manually. Returns the new session so the handler can
+// invite members + notify responders (both handler concerns — the service
+// stays campaigns-free).
 func (s *sessionService) ConfirmProposalWinner(ctx context.Context, campaignID, proposalID, optionID, confirmedBy, confirmerTZ string) (*Session, error) {
 	p, opts, err := s.repo.GetProposal(ctx, campaignID, proposalID)
 	if err != nil {

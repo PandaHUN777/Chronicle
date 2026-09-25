@@ -1,15 +1,11 @@
-// block_host_test.go — the re-render seam's own pins (C-CALV4-HOST-P3 §4/§5).
+// Pins three properties of the re-render seam:
 //
-// Three properties, each of which has already cost this repo once:
-//
-//   - BlockHost must generate a BOX. display:contents made the entity column's
-//     `space-y-*` margins no-ops and butted blocks together (QA1 Bug 3), and it
-//     would additionally give a container-query-sized block nothing to measure.
-//   - the container declaration is PER WIDGET TYPE. Exactly one of the four
-//     widgets this wrapper hosts is sized by container queries; the other three
-//     must keep today's plain box (block_host.go records what was measured
-//     about containment and what was retracted).
-//   - BindingAffordance's signature is frozen and delegates; only the new
+//   - BlockHost must generate a box: display:contents makes the entity
+//     column's `space-y-*` margins no-ops and gives a container-query-sized
+//     block nothing to measure.
+//   - the container declaration is per widget type: only a widget type that
+//     opted in via DeclareInlineSizeHost gets it; others keep a plain box.
+//   - BindingAffordance's signature is frozen and delegates; only
 //     BindingAffordanceFor may name a host type.
 package widgetbindings
 
@@ -49,13 +45,11 @@ func TestBlockHost_IsARealBox(t *testing.T) {
 	}
 }
 
-// TestBlockHost_ContainerDeclarationIsOptIn is the guard on §4's ⚠.
-//
-// An undeclared widget type must carry NO container declaration — three of the
-// four widgets this wrapper hosts asked for nothing, and a shared wrapper is
-// the wrong place to change layout semantics for all of them at once. A
-// declared one must carry it, or the calendar Block's size-class queries
-// measure something other than its host.
+// TestBlockHost_ContainerDeclarationIsOptIn pins that an undeclared widget
+// type carries no container declaration — a shared wrapper is the wrong
+// place to change layout semantics for every widget type at once — while a
+// declared one must carry it, or its size-class queries measure something
+// other than its host.
 func TestBlockHost_ContainerDeclarationIsOptIn(t *testing.T) {
 	const undeclared = fakeWidgetType + "-undeclared"
 	if s := blockHostStyle(undeclared); s != "" {

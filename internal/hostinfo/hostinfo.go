@@ -2,28 +2,17 @@
 // which binary it is, which source revision produced it (when that was
 // recorded at all), when the process started, and how long it has been up.
 //
-// WHY this package exists. On 2026-08-11 an operator deployed and saw no
-// change. Diagnosing it took an hour of shell archaeology and produced a wrong
-// conclusion: the container image's labels said
-// `org.opencontainers.image.revision=33f4cb07` and `created=2026-02-19`, so the
-// running binary was declared six months stale. It was not — it had been built
-// minutes earlier. The labels were not lying about the image they described;
-// they simply were not about this process. An image label is a claim made by
-// whoever last wrote a tag, and `docker inspect <tag>` answers for whichever
-// image holds that tag NOW, not for the image a running container was created
-// from. Chronicle could fingerprint every installed system package down to the
-// sha256 of each served file, and could say nothing whatsoever about itself.
-//
 // The rule this package encodes: only the process can testify about itself.
-// Every fact here is read from inside it — debug.ReadBuildInfo(),
-// os.Executable() + os.Stat, os.Hostname, os.Getpid, and a package-init
-// timestamp — and every fact carries whether it is actually known, so a caller
-// can print "not stamped" instead of a blank or a plausible-looking guess.
+// A container image label describes whichever image currently holds that
+// tag, not necessarily the image a running container was created from — so
+// every fact here is read from inside the process itself (debug.ReadBuildInfo(),
+// os.Executable() + os.Stat, os.Hostname, os.Getpid, a package-init timestamp),
+// and every fact carries whether it is actually known, so a caller can print
+// "not stamped" instead of a blank or a plausible-looking guess.
 //
-// It is a leaf: standard library only. That is deliberate, so both the operator
-// diagnostics (internal/systems) and the public version endpoint
-// (internal/plugins/syncapi) can import it without a cycle and without a
-// second, drifting copy of the same parsing.
+// It is a leaf: standard library only, so both the operator diagnostics
+// (internal/systems) and the public version endpoint (internal/plugins/syncapi)
+// can import it without a cycle or a second, drifting copy of the parsing.
 package hostinfo
 
 import (
@@ -69,13 +58,12 @@ type Build struct {
 	InfoOK bool
 
 	// Stamped is true when the toolchain embedded VCS settings (vcs.revision).
-	// It is false in several very different situations that must never be
-	// conflated with "the binary is old": the build environment had no VCS
-	// tool on PATH (Go skips stamping SILENTLY in that case), the build ran
-	// outside a checkout, or -buildvcs=false was passed. Chronicle's Docker
-	// builder installs git and sets safe.directory, so images from the current
-	// Dockerfile ARE stamped; an unstamped one predates that change or was
-	// built from a context without .git. Absent is absent, not stale.
+	// It is false in several situations that must never be conflated with
+	// "the binary is old": no VCS tool on PATH at build time (Go skips
+	// stamping SILENTLY), the build ran outside a checkout, or
+	// -buildvcs=false was passed. Chronicle's Docker builder installs git and
+	// sets safe.directory, so images from it ARE stamped. Absent is absent,
+	// not stale.
 	Stamped bool
 
 	Revision     string // full git SHA from vcs.revision, "" when not stamped
@@ -147,10 +135,8 @@ func buildFrom(bi *debug.BuildInfo, ok bool) Build {
 }
 
 // Executable is the on-disk identity of the file this process is executing.
-// This is the fallback that ALWAYS works — it needs no build-time cooperation,
-// survives the missing-git problem entirely, and its mtime is the closest
-// honest proxy for "when was this built" (it is what actually settled the
-// 2026-08-11 incident).
+// This is the fallback that ALWAYS works — it needs no build-time cooperation
+// and its mtime is the closest honest proxy for "when was this built".
 type Executable struct {
 	Path    string
 	Size    int64
@@ -178,12 +164,10 @@ func ReadExecutable() Executable {
 // Version resolves the single version string Chronicle reports to external
 // clients (GET /api/version, consumed by the Foundry VTT module's dashboard).
 //
-// Precedence — CHRONICLE_VERSION, then the compiled-in VCS revision, then the
-// main module version, then the "unknown" sentinel. Before this existed the
-// endpoint read the env var alone, and because no Dockerfile, Makefile or
-// workflow set that variable, EVERY shipped image answered the literal string
-// "unknown". CI now passes it for tag builds only, so the VCS revision is what
-// answers for an ordinary branch build.
+// Precedence: CHRONICLE_VERSION, then the compiled-in VCS revision, then the
+// main module version, then the "unknown" sentinel. CI sets the env var only
+// for tag builds, so the VCS revision is what answers for an ordinary branch
+// build.
 func Version() string { return VersionFrom(os.Getenv(EnvVersion), ReadBuild()) }
 
 // VersionFrom is the pure precedence. It is exported for two reasons: it is

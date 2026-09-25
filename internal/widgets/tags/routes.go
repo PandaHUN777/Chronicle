@@ -27,9 +27,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignServ
 	cg.DELETE("/tags/:tagId", h.DeleteTag, campaigns.RequireRole(campaigns.RoleScribe))
 	cg.PUT("/entities/:eid/tags", h.SetEntityTags, campaigns.RequireRole(campaigns.RoleScribe))
 
-	// Tag visibility grants (C-PERM-W1-TAG-GRANTS) -- OWNER ONLY. Granting a
-	// tag can reveal dm_only / custom-restricted content to its subjects, so it
-	// sits a rung above ordinary tag management (Scribe).
+	// Tag visibility grants -- OWNER ONLY. Granting a tag can reveal dm_only /
+	// custom-restricted content to its subjects, so it sits a rung above
+	// ordinary tag management (Scribe).
 	cg.GET("/tags/:tagId/grants", h.ListGrants, campaigns.RequireRole(campaigns.RoleOwner))
 	cg.POST("/tags/:tagId/grants", h.CreateGrant, campaigns.RequireRole(campaigns.RoleOwner))
 	cg.DELETE("/tags/:tagId/grants/:grantId", h.DeleteGrant, campaigns.RequireRole(campaigns.RoleOwner))

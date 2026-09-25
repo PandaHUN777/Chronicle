@@ -1,8 +1,7 @@
-// slug_normalize_test.go — C-SYSTEMS-REF-SLUG-FIX. Pins the load-time ID
-// normalization in JSONProvider: ID wins when set, else Slug is promoted to
-// ID, and an item with neither is skipped (with a diagnostic event) rather
-// than loaded with a blank, ambiguous ID. See json_provider.go's load loop
-// and system.go's ReferenceItem.Slug doc comment for the rationale.
+// slug_normalize_test.go pins the load-time ID normalization in JSONProvider:
+// ID wins when set, else Slug is promoted to ID, and an item with neither is
+// skipped (with a diagnostic event) rather than loaded with a blank,
+// ambiguous ID.
 package systems
 
 import (
@@ -82,7 +81,7 @@ func TestJSONProvider_IDNormalization(t *testing.T) {
 	// The skip must be visible in admin diagnostics (skip + log, not skip +
 	// silence), matching the existing EventSkipped pattern loader.go uses for
 	// duplicate systems. Skips are aggregated to one event per file with a
-	// count (C-SYSTEMS-REF-SLUG-FIX-R2), not one event per skipped item.
+	// count, not one event per skipped item.
 	events := DiagnosticEvents()
 	found := false
 	for _, e := range events {
@@ -100,8 +99,7 @@ func TestJSONProvider_IDNormalization(t *testing.T) {
 // TestJSONProvider_DrawSteelCreatureFixture loads a fixture shaped like the
 // real Draw Steel data contract (slug-keyed, no "id" key at all — see
 // Chronicle-Draw-Steel docs/DATA-SCHEMA.md's creatures.json example) and
-// asserts Get() resolves it — the exact bug this fix closes (previously
-// every DS creature loaded with ID == "", making Get() dead).
+// asserts Get() resolves it.
 func TestJSONProvider_DrawSteelCreatureFixture(t *testing.T) {
 	dir := t.TempDir()
 	writeRawTestData(t, dir, "creatures", `[{
@@ -142,9 +140,8 @@ func TestJSONProvider_DrawSteelCreatureFixture(t *testing.T) {
 
 // TestJSONProvider_DnD55eMonsterFixture loads a fixture shaped like the
 // actual DnD-5.5e package data (id-keyed, no "slug" key — verified against
-// Chronicle-DnD-5.5e's data/*.json, which is NOT slug-keyed as the dispatch
-// assumed). Confirms this shape was never broken and stays unaffected: ID is
-// already set from source, so the slug fallback never triggers.
+// Chronicle-DnD-5.5e's data/*.json). Confirms this shape stays unaffected: ID
+// is already set from source, so the slug fallback never triggers.
 func TestJSONProvider_DnD55eMonsterFixture(t *testing.T) {
 	dir := t.TempDir()
 	writeRawTestData(t, dir, "monsters", `[{
@@ -172,13 +169,11 @@ func TestJSONProvider_DnD55eMonsterFixture(t *testing.T) {
 	}
 }
 
-// TestJSONProvider_DuplicateNormalizedID pins C-SYSTEMS-REF-SLUG-FIX-R2's
-// duplicate-ID guard: an explicit "id" and another item's "slug" can
-// normalize to the identical ID within one category. Pre-R2 both items
-// loaded into the slice, but Get() is first-match-wins, so the second
-// item's own ID silently resolved to the FIRST item's content — a
-// user-visibly wrong answer with zero diagnostic. The second (shadowing)
-// occurrence must now be dropped at load time and flagged.
+// TestJSONProvider_DuplicateNormalizedID pins the duplicate-ID guard: an
+// explicit "id" and another item's "slug" can normalize to the identical ID
+// within one category. Since Get() is first-match-wins, keeping both would
+// silently resolve the second item's own ID to the FIRST item's content, so
+// the second (shadowing) occurrence must be dropped at load time and flagged.
 func TestJSONProvider_DuplicateNormalizedID(t *testing.T) {
 	dir := t.TempDir()
 	writeRawTestData(t, dir, "creatures", `[

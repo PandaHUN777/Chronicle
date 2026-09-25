@@ -22,11 +22,7 @@ type BannerStatus struct {
 
 // CampaignToken is one row of foundry_vtt_campaign_tokens — the
 // per-campaign signing version counter that gates manifest URL
-// signatures. The table was originally created as
-// foundry_module_campaign_tokens by the deleted foundry_modules
-// plugin's migration 001; C-FMC-5c renamed it to its current
-// namespace via migrations/001_consolidate_foundry_modules.up.sql.
-// Existing token rows were preserved by `RENAME TABLE`.
+// signatures.
 type CampaignToken struct {
 	CampaignID   string    `json:"campaign_id"`
 	TokenVersion int       `json:"token_version"`
@@ -59,12 +55,8 @@ type OwnerTabData struct {
 
 	// CurrentPinMode is the campaign's saved pin_mode setting — one
 	// of PinModePreserve / PinModePromote / PinModePinned, or empty
-	// string for "not yet set" (pre-Chunk-6 backfill state). Added
-	// in C-FMC-ADMIN-UX-AUDIT Chunk 1 to support the Option B
-	// owner-side UI refresh (Chunk 3) without round-tripping through
-	// a second adapter call at render time. Until Chunk 3's UI ships,
-	// the templ doesn't render this field — present here so Chunk 3
-	// doesn't need to touch the struct shape.
+	// for "not yet set". Not yet rendered by owner_tab.templ.
+	// TODO(keyxmakerx/Chronicle#680): wire into the owner-side UI.
 	CurrentPinMode string
 
 	// AvailableVersions is the list of versions the packages plugin
@@ -90,15 +82,14 @@ type OwnerTabData struct {
 }
 
 // PackageDescriptor is the parsed shape of chronicle-package.json
-// (schema v1 — the canonical definition lives in descriptor.go's
-// loadDescriptor; the loader is the source of truth). The hook reads
-// this from the extracted install dir; falls back to
-// defaultDescriptor() when no file is present. Schema versioning is
-// enforced in descriptor.go's loadDescriptor.
+// (schema v1; descriptor.go's loadDescriptor is the source of truth
+// and enforces schema versioning). The hook reads this from the
+// extracted install dir, falling back to defaultDescriptor() when no
+// file is present.
 type PackageDescriptor struct {
 	// SchemaVersion is the descriptor's contract version. v1 is the
 	// only recognized value; an unknown major version fails the
-	// install loudly per the C-FMC-5b agreement.
+	// install loudly.
 	SchemaVersion int `json:"schemaVersion"`
 
 	// Package identifies what kind of Chronicle package this is and
@@ -108,7 +99,7 @@ type PackageDescriptor struct {
 
 	// Serving controls how Chronicle rewrites the served manifest
 	// (which fields to override, with what URL shapes). Default
-	// values match the operator's locked URL shape from C-FMC-5-R1.
+	// values match the operator's locked URL shape.
 	Serving PackageDescriptorServing `json:"serving"`
 }
 

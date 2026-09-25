@@ -3,10 +3,7 @@
 // Migrations (core + plugin schema state, with a downgrade/dirty banner),
 // Health (the same checks boot runs, live), Backups (artifacts + restorable
 // snapshots, with create/download/restore actions), and Schema (the D3 graph).
-//
-// The four surfaces used to be scattered across boot logs, /admin/backup,
-// /admin/restore, and a schema-only page; this unifies them so an admin
-// recovers from a page, not from crash logs (ADR-045).
+// See ADR-045.
 
 package admin
 

@@ -37,15 +37,10 @@ func (s *stubService) IsRunning() bool                  { return s.running }
 func (s *stubService) BackupDir() string                { return s.dir }
 
 // TestDownload_QuoteInBasenameIsEncoded pins the Content-Disposition
-// header-injection defense added after security review. Linux file
-// systems allow quotes and newlines in filenames; ResolveArtifactPath
-// rejects path separators and ".." but not these. Echo's Attachment
-// helper RFC-encodes the filename via fmt.Sprintf("filename=%q",...).
-//
-// This test plants a backup artifact whose name contains an embedded
-// double quote, asks the handler to serve it, and confirms the
-// Content-Disposition header escapes the quote rather than letting
-// it terminate the value and inject another header.
+// header-injection defense: Linux filesystems allow quotes and newlines in
+// filenames, which ResolveArtifactPath does not reject, so Echo's Attachment
+// helper must still RFC-encode the filename rather than let a quote
+// terminate the header value and inject another one.
 func TestDownload_QuoteInBasenameIsEncoded(t *testing.T) {
 	dir := t.TempDir()
 	// Filename with a quote. Construct via filepath.Join so the
@@ -134,12 +129,9 @@ func TestRun_AlreadyRunning_Returns409(t *testing.T) {
 	}
 }
 
-// TestService_ESRCHToleranceCompiles is a smoke test that the cmd.Cancel
-// closure (which wires syscall.ESRCH tolerance) compiles and runs to
-// completion without spurious errors when the script exits naturally
-// just before the timeout fires. Closely related to the existing
-// TestRunBackup_Timeout but specifically exercises the natural-exit
-// path with a short-lived shim.
+// TestService_ESRCHToleranceCompiles pins that the cmd.Cancel closure (which
+// wires syscall.ESRCH tolerance) runs to completion without spurious errors
+// when the script exits naturally just before the timeout fires.
 func TestService_ESRCHToleranceCompiles(t *testing.T) {
 	dir := t.TempDir()
 	script := filepath.Join(dir, "shim.sh")

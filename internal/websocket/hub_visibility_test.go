@@ -1,26 +1,13 @@
-// hub_visibility_test.go — S1: the WebSocket fan-out must honor the same
+// hub_visibility_test.go pins that the WebSocket fan-out honors the same
 // per-user visibility_rules (allowed_users / denied_users) the HTTP list
-// path already enforces (maps/repository.go's ListMarkers non-owner
-// branch, maps/drawing_repository.go's ListDrawings), not just the binary
-// RequiresDM/dm_only gate.
+// path enforces (maps' ListMarkers, ListDrawings), not just the binary
+// RequiresDM/dm_only gate. A "specific"-visibility marker isn't dm_only, so
+// RequiresDM alone would let it reach everyone.
 //
-// Before this fix: a marker or drawing explicitly denied to a specific
-// player was still broadcast to that player's browser in full on every
-// create/update, because the publisher (routes.go's
-// mapEventPublisherAdapter) passed only IsDMOnly()/dm_only as the
-// audience, and the hub's one gate (this file's package, hub.go) was
-// RequiresDM alone. A "specific"-visibility marker isn't dm_only at all,
-// so RequiresDM was false for it and it went to literally everyone.
-//
-// This test drives the REAL Hub: NewHub(), Run() started in a goroutine,
-// real *Client values registered through the hub's own (unexported,
-// in-package) registration channel — the same code path RegisterClient
-// uses, minus the actual network conn, which the audience gate never
-// touches — and Broadcast() pushed through the real broadcast channel.
-// Nothing here is a fake or a fixture standing in for the hub: if hub.go's
-// broadcast loop were reverted to check only RequiresDM, these tests fail
-// with the denied/unlisted client's send channel holding a message it
-// must never receive.
+// Drives the real Hub: NewHub(), Run() started in a goroutine, real *Client
+// values registered through the hub's own registration channel, and
+// Broadcast() pushed through the real broadcast channel — nothing here is a
+// fake standing in for the hub.
 package websocket
 
 import (
@@ -41,12 +28,10 @@ func newVisibilityTestHub(t *testing.T) *Hub {
 }
 
 // registerTestClient builds a Client and pushes it through the hub's real
-// registration channel, so Run()'s own registration branch (the map
-// insert under h.mu) executes exactly as it would for a live connection.
-// It bypasses RegisterClient only because that function asserts its conn
-// argument to a concrete *gorilla websocket.Conn — a real network socket
-// buys this test nothing, since the audience gate under test runs
-// entirely before any bytes reach a conn.
+// registration channel, so Run()'s own registration branch executes exactly
+// as it would for a live connection. It bypasses RegisterClient only because
+// that function asserts its conn argument to a concrete *gorilla
+// websocket.Conn, which the audience gate under test never touches.
 func registerTestClient(t *testing.T, h *Hub, campaignID, userID string, role int, dmGranted bool) *Client {
 	t.Helper()
 	c := &Client{
@@ -94,23 +79,20 @@ func drainOrNil(c *Client) []byte {
 
 // settleBroadcast gives the hub's Run() goroutine time to finish the
 // fan-out loop for one already-published message before the test reads
-// every client's channel. The loop's per-message work (iterate <=3 map
-// entries, a couple of channel sends) completes in microseconds; 100ms is
-// a large, standard margin for this class of test, not a tight race.
+// every client's channel; 100ms is a large margin for work that completes
+// in microseconds.
 func settleBroadcast() { time.Sleep(100 * time.Millisecond) }
 
-// TestHubBroadcast_DeniedPlayerReceivesNothing is the RED-FIRST case named
-// in the S1 task: two Players connected to the same campaign, one denied
-// by an explicit visibility rule. The denied Player must receive NOTHING
-// for the event — not the full payload (the pre-fix bug), not a redacted
-// stub (ADR-055 rule 3 forbids that too, since a stub is itself evidence
-// hidden content exists).
+// TestHubBroadcast_DeniedPlayerReceivesNothing covers two Players connected
+// to the same campaign, one denied by an explicit visibility rule. The denied
+// Player must receive nothing for the event — not the full payload, not a
+// redacted stub (ADR-055 rule 3 forbids that too, since a stub is itself
+// evidence hidden content exists).
 //
 // The rule here carries only denied_users (no allowed_users): per
 // ListMarkers' SQL, that is "everyone except the denied," so the third
 // Player — named in neither list — gets the HTTP path's default for that
-// mode: included. That default is asserted explicitly below via
-// wantsDefaultIncluded, not assumed.
+// mode: included. Asserted explicitly below via wantsDefaultIncluded.
 func TestHubBroadcast_DeniedPlayerReceivesNothing(t *testing.T) {
 	h := newVisibilityTestHub(t)
 	const campaignID = "camp-denylist"
@@ -140,12 +122,10 @@ func TestHubBroadcast_DeniedPlayerReceivesNothing(t *testing.T) {
 }
 
 // TestHubBroadcast_AllowListModeExcludesUnlistedPlayer covers the other
-// shape of "the default": a NON-EMPTY allowed_users list is a strict
-// allowlist under ListMarkers' SQL (JSON_LENGTH(...) = 0 OR
-// JSON_CONTAINS(...)), so a Player named in neither list is EXCLUDED
-// here — the opposite default from the deny-only case above. The socket
-// must match this asymmetry rather than picking one friendly default for
-// both shapes.
+// shape of "the default": a non-empty allowed_users list is a strict
+// allowlist under ListMarkers' SQL, so a Player named in neither list is
+// excluded — the opposite default from the deny-only case above. The socket
+// must match this asymmetry.
 func TestHubBroadcast_AllowListModeExcludesUnlistedPlayer(t *testing.T) {
 	h := newVisibilityTestHub(t)
 	const campaignID = "camp-allowlist"
@@ -174,15 +154,11 @@ func TestHubBroadcast_AllowListModeExcludesUnlistedPlayer(t *testing.T) {
 }
 
 // TestHubBroadcast_DrawingRuleDeniesPlayer is the drawing-side twin of
-// TestHubBroadcast_DeniedPlayerReceivesNothing, added once Drawing gained
-// VisibilityRules (drawing.go) and drawing_repository.go's ListDrawings
-// started enforcing it — the second half of the S1 leak, where drawings
-// had no field at all and the column was never selected, so a rule set on
-// a drawing did nothing anywhere. The hub's gate is domain-agnostic (it
-// only looks at the Message, not at whether the source was a marker or a
-// drawing), so this pins that a drawing's rule reaches the wire the same
-// way a marker's does — see routes.go's PublishDrawingEvent for the
-// production code that builds this shape from a *maps.Drawing.
+// TestHubBroadcast_DeniedPlayerReceivesNothing. The hub's gate is
+// domain-agnostic (it only looks at the Message, not whether the source was
+// a marker or a drawing), so this pins that a drawing's visibility rule
+// reaches the wire the same way a marker's does — see PublishDrawingEvent
+// for the production code that builds this shape from a *maps.Drawing.
 func TestHubBroadcast_DrawingRuleDeniesPlayer(t *testing.T) {
 	h := newVisibilityTestHub(t)
 	const campaignID = "camp-drawing"

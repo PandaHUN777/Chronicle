@@ -12,32 +12,29 @@ import (
 	"github.com/go-sql-driver/mysql"
 )
 
-// plugin_migration_recovery_test.go replays the whole failure of
-// C-SWEEP-R4 / data/plugin-migration-no-transaction against a real MariaDB,
-// because it is a claim about what the SERVER does with a half-applied
-// migration and no string assertion over the runner can answer it.
+// plugin_migration_recovery_test.go runs against a real MariaDB because it
+// pins a claim about what the SERVER does with a half-applied plugin
+// migration, which no string assertion over the runner can answer.
 //
 // Discovery + skip rules follow the house integration convention: skipped
 // under -short, DSN from CHRONICLE_TEST_DB_DSN else the DB_* env vars else the
 // Makefile's dev default, and SKIP (not fail) when no server answers. Each
 // test migrates its own throwaway schema, so dev data is never touched.
 
-// TestPluginMigration_ResumesInsteadOfCrashLooping is the reproduction and the
-// fix in one run.
+// TestPluginMigration_ResumesInsteadOfCrashLooping pins that a failed
+// statement's resume offset survives a retry instead of replaying already-
+// applied, non-idempotent statements (which would fail on "Duplicate column
+// name" and mask the real error).
 //
-// The migration's third statement adds a foreign key to a table that does not
-// exist yet — a failure the table-granularity pre-flight deliberately does not
-// model, so it is exactly the case the resume offset has to carry.
+// The migration's third statement adds a foreign key to a table that does
+// not exist yet — a failure the table-granularity pre-flight deliberately
+// does not model, so it is exactly the case the resume offset has to carry.
 //
 // Attempt 1: statements 1 and 2 apply, statement 3 fails.
 // Attempt 2: the environment is still broken, so it must fail AT STATEMENT 3
-// again — with the original error. Before this fix it failed at statement 2
-// with "Duplicate column name", because it replayed a non-idempotent ALTER
-// that had already applied. That is the crash-loop: the real error was
-// replaced by an artefact of the retry, and no amount of fixing the real
-// problem could ever get past it.
-// Attempt 3: the missing table is created — the operator repair the finding
-// says must be possible — and the migration completes and records its version.
+// again — with the original error.
+// Attempt 3: the missing table is created and the migration completes and
+// records its version.
 func TestPluginMigration_ResumesInsteadOfCrashLooping(t *testing.T) {
 	if testing.Short() {
 		t.Skip("plugin migration recovery test requires a database; skipped under -short")

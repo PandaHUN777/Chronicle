@@ -1,32 +1,18 @@
 // foundry_vtt — owner_tab.templ renders the per-campaign Foundry VTT
-// install URL + pin selector + rotate-token button as an HTMX
-// fragment served at GET /campaigns/:id/foundry-vtt/settings-tab.
-// The campaigns plugin's VTT Setup Guides → Foundry VTT disclosure
-// section embeds this via hx-get.
+// install URL + pin selector + rotate-token button as an HTMX fragment
+// served at GET /campaigns/:id/foundry-vtt/settings-tab. The campaigns
+// plugin's VTT Setup Guides → Foundry VTT disclosure section embeds
+// this via hx-get.
 //
-// HTMX-swap-safe patterns (load-bearing — see admin.templ's file
-// header for the full reasoning + the production bug history that
-// produced this rule):
-//
-//   - Inline `onclick="(function(){...})()"` IIFEs, NOT templ
-//     `script` helpers. The templ script approach was used in the
-//     C-FMC-5b version of this file and produced
-//     "ReferenceError: __templ_pinSaveScript_X is not defined" on
-//     every button click after HTMX swap. Fixed in C-FMC-8 by
-//     converting Save Pin + Rotate Token to inline IIFEs built in
-//     onclick_handlers.go.
+// HTMX-swap-safe patterns (see onclick_handlers.go for the full
+// reasoning):
+//   - Inline `onclick="(function(){...})()"` IIFEs, never templ
+//     `script` helpers.
 //   - Inline literal Alpine `x-data` only; no external function refs.
 //
-// Differences from the deleted foundry_modules version:
-//   - Empty state when no foundry-module package is registered in
-//     the packages plugin. The templ shows "ask an admin to add the
-//     Chronicle Foundry module package" instead of a broken UI.
-//   - "Descriptor: present" / "Descriptor: defaults" transparency
-//     cue — operator can see at a glance whether chronicle-package.json
-//     drove this version's serve config or hardcoded fallback did.
-//   - Available versions come from packages plugin's on-disk install
-//     dirs, not foundry_modules' catalog (which is deleted in
-//     C-FMC-5c).
+// Empty state renders when no foundry-module package is registered in
+// the packages plugin. Available versions come from the packages
+// plugin's on-disk install dirs.
 
 package foundry_vtt
 
@@ -46,21 +32,11 @@ templ OwnerTabFragment(data OwnerTabData) {
 	}
 }
 
-// OwnerTabErrorState renders an inline error message INSIDE the same
-// hx-swap target the success path uses, so HTMX swap never leaves the
-// owner's settings page blank.
-//
-// Bug 3 / C-FMC-9: previously, if OwnerTabFragmentHandler hit any
-// error path (missing context, downstream service failure), the
-// handler returned apperror.* and Echo's error middleware produced
-// a 4xx/5xx JSON body that HTMX wouldn't swap in. The owner saw a
-// stuck loading spinner forever. The handler now renders this
-// component instead so the user gets a real, actionable error
-// message in the same container.
-//
-// The message follows the four-clause format (what / detail /
-// cause / action) per the operator's error-quality acceptance
-// criterion from C-FMC-5b.
+// OwnerTabErrorState renders an inline error message inside the same
+// hx-swap target the success path uses, so an error never leaves the
+// owner's settings page stuck on a spinner (HTMX won't swap a raw
+// 4xx/5xx response). message follows the what/detail/cause/action
+// four-clause format.
 templ OwnerTabErrorState(message, action string) {
 	<div class="card p-4 rounded-md border border-red-500/30 bg-red-500/5">
 		<p class="text-sm font-medium text-red-700 dark:text-red-400">
@@ -177,14 +153,9 @@ templ ownerVersionSelector(data OwnerTabData) {
 	}
 }
 
-// ownerInstallURLBlock is the primary card on the owner tab.
-//
-// C-FMC-9 (Bug 4): elevated to focal-point status — bigger label,
-// accent border, single-line explanation under the URL field so
-// owners immediately understand what to do with it. Token rotation
-// is still here but visually de-emphasized: smaller text, less
-// border weight, the action lives in a secondary row at the bottom
-// of the card rather than next to the Copy button.
+// ownerInstallURLBlock is the primary card on the owner tab: the
+// install URL is the focal point, token rotation is a de-emphasized
+// secondary row at the bottom of the card.
 templ ownerInstallURLBlock(data OwnerTabData) {
 	<div class="card p-5 rounded-md border-2 border-accent/30 bg-accent/5 space-y-3">
 		<div>
@@ -227,13 +198,9 @@ templ ownerInstallURLBlock(data OwnerTabData) {
 	</div>
 }
 
-// ownerPlayerInstructions is the copy-pasteable steps block the
-// owner shares with their table.
-//
-// C-FMC-9 (Bug 4): wrapped in <details> so the helper content is
-// collapsed-by-default. Owners who already know how to install a
-// Foundry module don't need the steps front-and-center; the
-// install URL is the primary content.
+// ownerPlayerInstructions is the copy-pasteable steps block the owner
+// shares with their table. Wrapped in <details>, collapsed by default,
+// so the install URL stays the primary content.
 templ ownerPlayerInstructions(data OwnerTabData) {
 	<details class="card p-4 rounded-md">
 		<summary class="text-xs font-semibold text-fg-muted uppercase tracking-wider cursor-pointer">
@@ -249,11 +216,6 @@ templ ownerPlayerInstructions(data OwnerTabData) {
 	</details>
 }
 
-// C-FMC-8: the Save Pin + Rotate Token click handlers used to be
-// templ `script` helpers. Those don't execute reliably in HTMX-
-// swapped fragments (this owner_tab fragment is hx-get'd from the
-// campaigns settings page). Replaced with inline IIFE bodies built
-// in onclick_handlers.go (pinSaveOnClick + rotateTokenOnClick).
-// The Copy button above already used the correct inline-IIFE
-// pattern and was left untouched. See onclick_handlers.go for the
-// architectural rule + reasoning.
+// Save Pin + Rotate Token use inline IIFE onclick bodies built in
+// onclick_handlers.go (pinSaveOnClick, rotateTokenOnClick) — see that
+// file for why templ `script` helpers aren't used here.

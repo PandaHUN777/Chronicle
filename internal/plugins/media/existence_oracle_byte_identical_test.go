@@ -1,23 +1,15 @@
-// existence_oracle_byte_identical_test.go verifies the FIX for the
-// existence oracle pinned by existence_oracle_reachability_test.go closes
-// the RESPONSE-SHAPE oracle completely, not just the status code. A fix
-// that matched status but left the JSON "message" text or a response
-// header different would still let an anonymous caller tell "exists but
-// private" from "no such id" — this is the same discipline ADR-058's own
-// TestUpload_MergeRefused_ResponseIndistinguishableFromOrdinaryUpload
-// applies to the merge-refusal oracle (adr058_merge_and_refs_test.go).
+// existence_oracle_byte_identical_test.go pins that "exists but private"
+// and "no such id" produce a RESPONSE indistinguishable to an anonymous
+// caller — not just the same status code, but the same JSON body (Type,
+// Message) and the same response headers written by Handler.Serve itself
+// (setSecurityHeaders only runs after checkMediaAccess succeeds, so any
+// header difference before that would leak which path was taken). It does
+// NOT prove the two paths take the same TIME — see handler.go.
 //
-// Scope and an explicit non-claim: this proves the STATUS, the exact JSON
-// body app/app.go's errorHandler would write (constructed here the same
-// way it does -- {"error": appErr.Type, "message": appErr.Message}, code
-// = appErr.Code, per error_handler_api_type_test.go's pin in the app
-// package -- media cannot import app without an import cycle), and that
-// Handler.Serve itself sets no response headers on either denied path
-// (setSecurityHeaders is only reached after checkMediaAccess succeeds, so
-// any header on the real HTTP response comes from errorHandler and is
-// therefore identical for both by construction, since Code/Type/Message
-// are proven identical here). This does NOT prove the two paths take the
-// same TIME -- see the fix's own comment in handler.go for that residual.
+// The JSON body is reconstructed here rather than driven through
+// app/app.go's real errorHandler, because media cannot import app without
+// an import cycle; see error_handler_api_type_test.go in the app package
+// for the pin that keeps the two in sync.
 package media
 
 import (
@@ -57,13 +49,9 @@ func serveRequestAnonymousWithRecorder(t *testing.T, h *Handler, id string) (*ap
 }
 
 // errorHandlerJSONBody reconstructs the exact bytes app/app.go's
-// errorHandler writes for an AppError on an API request:
-// `c.JSON(appErr.Code, map[string]string{"error": appErr.Type, "message":
-// appErr.Message})` (errorField falls back to http.StatusText(code) only
-// when appErr.Type == "", which apperror.NewNotFound/NewForbidden never
-// leave empty). Duplicated here, not imported, because internal/app
-// imports internal/plugins/media (for wiring) and the reverse import
-// would cycle.
+// errorHandler writes for an AppError on an API request. Duplicated here,
+// not imported, because internal/app imports internal/plugins/media (for
+// wiring) and the reverse import would cycle.
 func errorHandlerJSONBody(t *testing.T, appErr *apperror.AppError) []byte {
 	t.Helper()
 	errorField := appErr.Type
@@ -80,9 +68,9 @@ func errorHandlerJSONBody(t *testing.T, appErr *apperror.AppError) []byte {
 	return body
 }
 
-// TestServe_ExistenceOracle_ResponseByteIdentical is the discipline check
-// the task calls for: not just "same status" but same status, same JSON
-// body, and same headers written by the handler itself.
+// TestServe_ExistenceOracle_ResponseByteIdentical checks not just "same
+// status" but same status, same JSON body, and same headers written by
+// the handler itself.
 func TestServe_ExistenceOracle_ResponseByteIdentical(t *testing.T) {
 	h := &Handler{
 		signer:        NewURLSigner("test-secret"),

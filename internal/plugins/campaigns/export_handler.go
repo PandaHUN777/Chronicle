@@ -108,17 +108,13 @@ func (h *ExportHandler) ExportCampaign(c echo.Context) error {
 		fmt.Sprintf(`attachment; filename="%s"`, zipName))
 	c.Response().Header().Set("Content-Type", "application/zip")
 
-	// We stream the zip directly to the response writer. The first
-	// byte to the response writer commits the 200 OK + headers — once
-	// that happens we can no longer signal failure with a 5xx. Two
-	// consequences:
-	//
-	//   1. zip.Writer.Create is metadata-only and does NOT write to
-	//      the underlying writer, so a Create failure before the
-	//      first entry's Write can still return 5xx cleanly.
-	//   2. Once we begin writing entry bodies, per-file failures are
-	//      logged and skipped rather than returned. A partial media
-	//      file is preferable to a truncated download with no signal.
+	// The zip streams directly to the response writer, so the first byte
+	// written commits the 200 OK + headers and we can no longer signal
+	// failure with a 5xx. zip.Writer.Create is metadata-only, so a Create
+	// failure before the first entry's Write can still 5xx cleanly; once
+	// entry bodies are being written, per-file failures are logged and
+	// skipped rather than returned — a partial file beats a truncated
+	// download with no signal.
 	zw := zip.NewWriter(c.Response().Writer)
 	defer func() { _ = zw.Close() }()
 
@@ -192,15 +188,11 @@ func (h *ExportHandler) ImportCampaignForm(c echo.Context) error {
 // bundle (POST /campaigns/import). Creates a new campaign owned by the
 // current user.
 //
-// The zip path accepts files produced by ?include_media=1 exports. Embedded
-// media bytes are NOT restored: doing that correctly means remapping every
-// old media ID to its new one across entity image_path, map image_id, token
-// image_path and every /media/<id> embedded in entry_html, and a half-done
-// remap would restore the files while leaving every image broken — a new
-// quiet lie in place of the old one. Booked whole as C-IMPORT-MEDIA-RESTORE
-// in .ai/todo.md. Until then the count of unrestored files goes into the
-// ImportReport so the operator is told, in the response, exactly what the
-// zip did not give back.
+// The zip path accepts files produced by ?include_media=1 exports, but
+// embedded media bytes are not restored (TODO(keyxmakerx/Chronicle#612):
+// remap old media IDs across entity/map/token image paths and entry_html).
+// The count of unrestored files goes into the ImportReport so the operator
+// is told in the response what the zip did not give back.
 func (h *ExportHandler) ImportCampaign(c echo.Context) error {
 	userID := auth.GetUserID(c)
 	if userID == "" {
@@ -212,11 +204,9 @@ func (h *ExportHandler) ImportCampaign(c echo.Context) error {
 		return apperror.NewBadRequest("file upload required")
 	}
 
-	// First-pass size cap uses the larger zip ceiling because we
-	// haven't sniffed the format yet. Once we know it's a zip, the
-	// embedded campaign.json is re-capped at maxImportSize inside
-	// extractCampaignJSONFromZip; non-zip uploads are re-capped
-	// against maxImportSize directly below.
+	// Uses the larger zip ceiling since the format isn't sniffed yet; a
+	// zip's embedded campaign.json is re-capped at maxImportSize inside
+	// extractCampaignJSONFromZip, and non-zip uploads below.
 	if file.Size > maxImportZipSize {
 		return apperror.NewBadRequest(fmt.Sprintf("file too large, maximum %d MB", maxImportZipSize/(1024*1024)))
 	}
@@ -265,13 +255,9 @@ func (h *ExportHandler) ImportCampaign(c echo.Context) error {
 		return err
 	}
 
-	// Media bytes in a zip are NOT restored — see the ruling in
-	// docs/campaign-import.md and the C-IMPORT-MEDIA-RESTORE entry in
-	// .ai/todo.md. Until they are, every unrestored file goes into the
-	// report so the operator is told in the response instead of in a log
-	// line they will never read. This is the whole reason the "Export ZIP
-	// (with media)" button was a quiet lie: the bytes went in, nothing
-	// came out, and the import looked clean.
+	// Media bytes in a zip are not restored (TODO(keyxmakerx/Chronicle#612)).
+	// Every unrestored file goes into the report so the operator is told in
+	// the response, not just a log line.
 	if mediaCount > 0 {
 		slog.Info("campaign import: media bytes in zip not restored",
 			slog.String("campaign", campaign.ID),

@@ -1,18 +1,14 @@
-// login_redirect_test.go — destination preservation through the login flow
-// (C-CALV4-RSVP-P8B stage 1, ruling [PB-6]).
-//
-// Two things are pinned here, and the second is a security property:
+// login_redirect_test.go pins destination preservation through the login
+// flow:
 //
 //  1. An unauthenticated browser navigation carries where it was going into
-//     /login?redirect=…, and the login form carries that through the POST as a
-//     hidden field — exactly as register.templ:86 already does — so a member
-//     who clicks a deep link from a cold inbox lands on the page they were
-//     asked to visit instead of /dashboard.
-//  2. Every destination is passed through sanitizeRedirect at BOTH ends (the
-//     middleware's way out and the handler's way back), so the protocol-relative
-//     open-redirect vectors "//evil.example" and "/\evil.example" can never
-//     become a Location header. Before this slice, Login validated with a bare
-//     strings.HasPrefix(redir, "/"), which accepts both.
+//     /login?redirect=…, and the login form carries that through the POST as
+//     a hidden field, so a member landing on a deep link ends up where they
+//     were headed instead of /dashboard.
+//  2. Security property: every destination is passed through sanitizeRedirect
+//     at both ends (middleware's way out, handler's way back), so a
+//     protocol-relative open-redirect ("//evil.example") can never reach a
+//     Location header. A bare strings.HasPrefix(redir, "/") check accepts it.
 package auth
 
 import (
@@ -270,13 +266,9 @@ func TestRequireAuth_PreservesDestination(t *testing.T) {
 		}
 	})
 
-	// The end-to-end invariant, stated as the property rather than a substring:
-	// whatever request URI arrives, the destination that survives the middleware
-	// AND the subsequent form POST must still be same-origin. Go's request-line
-	// parser already strips the authority from "//evil.example/steal", and
-	// sanitizeRedirect kills a literal "/\"; anything that slips past both (e.g.
-	// the percent-escaped "/%5C…", which a browser resolves as an ordinary
-	// same-origin path) must still be provably harmless.
+	// End-to-end invariant: whatever request URI arrives, the destination that
+	// survives the middleware and the subsequent form POST must still be
+	// same-origin.
 	t.Run("a hostile request URI never yields an off-site destination", func(t *testing.T) {
 		for _, target := range []string{"//evil.example/steal", "/\\evil.example", "/campaigns/c-1/availability"} {
 			e := echo.New()

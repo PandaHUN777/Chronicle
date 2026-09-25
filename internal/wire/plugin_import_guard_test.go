@@ -1,13 +1,10 @@
 // Package wire holds Chronicle's wire-contract integrity tests.
 //
-// M-B2.2 (plugin import guard, 2026-06-21): cross-plugin import fence using
-// go/ast source scanning. Detects new internal/plugins/A → internal/plugins/B
-// import edges outside the allowlisted set. Grandfathered baseline encodes the
-// full edge matrix as of 2026-06-20; only NEW edges beyond that baseline fail.
-//
-// Cites: cordinator/decisions/2026-05-21-core-tenets.md §T-B2 (plugin isolation /
-// removability), cordinator/reports/chronicle/2026-06-20-plugin-isolation-
-// modularity-audit.md §Findings 2-3 (post-launch structural debt, pre-launch fence).
+// This file is a cross-plugin import fence (T-B2 plugin isolation) using
+// go/ast source scanning: it detects new internal/plugins/A →
+// internal/plugins/B import edges outside the allowlisted set. A
+// grandfathered baseline encodes the existing edge matrix; only edges not
+// already in the baseline fail the test.
 //
 // Allowlisted "shared" plugins that may be imported by any plugin:
 //   auth, campaigns, addons, audit, settings, smtp, media
@@ -34,10 +31,9 @@ import (
 	"testing"
 )
 
-// pluginImportBaseline is the grandfathered set of cross-plugin import edges
-// as of 2026-06-20. Format: "importer:importee" using plugin slug names.
-// This baseline was derived by scanning the live tree with the guard itself.
-// Only NEW edges (present in live tree but absent here) will fail the test.
+// pluginImportBaseline is the grandfathered set of cross-plugin import edges,
+// keyed "importer:importee" by plugin slug name. Only edges present in the
+// live tree but absent here fail the test.
 var pluginImportBaseline = map[string]bool{
 	// admin imports (admin is a core plugin; these are grandfathered)
 	"admin:campaigns": true,
@@ -216,13 +212,9 @@ func scanPluginImportEdges(t *testing.T, repoRoot string) []pluginImportEdge {
 	return edges
 }
 
-// TestPluginImportGuard enforces that no NEW cross-plugin import edges appear
-// beyond the grandfathered baseline. Existing edges in the baseline are
-// accepted (they represent known structural debt scheduled for
-// C-PLUGIN-CONTRACTS-REFACTOR post-launch).
-//
-// Only additions beyond the baseline cause failure — not removals (removing
-// a grandfathered edge is always welcome).
+// TestPluginImportGuard enforces that no new cross-plugin import edges appear
+// beyond the grandfathered baseline; only additions fail, not removals.
+// TODO(#720): pay down the grandfathered cross-plugin imports.
 func TestPluginImportGuard(t *testing.T) {
 	root := repoRoot(t) // reuse from wire_contract_test.go
 	edges := scanPluginImportEdges(t, root)

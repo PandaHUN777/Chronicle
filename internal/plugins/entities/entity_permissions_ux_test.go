@@ -40,18 +40,12 @@ func renderEntityCardOnCampaign(t *testing.T, entity *Entity, role campaigns.Rol
 	return buf.String()
 }
 
-// Part 1 — each visibility state renders its distinct badge for Scribe+.
-// ADR-057 slice 3 unified this card badge with the six other hand-rolled
-// copies into the shared visibilityGlance component, which also unified their
-// tooltip wording: the card used to say "Everyone — visible to all campaign
-// members" while the header said "Public — visible to everyone, including
-// logged-out visitors" for the identical state.
-//
-// Consolidating onto the header's wording was wrong and was corrected: that
-// sentence is only true on a PUBLIC campaign, since a logged-out reader
-// cannot open any page of a private one. The fixture below builds a campaign
-// with IsPublic unset, so the expected fragment is the members-only wording.
-// The public branch is pinned separately, both directions, by
+// Part 1 — each visibility state renders its distinct badge for Scribe+,
+// via the shared visibilityGlance component. The "everyone" tooltip claims
+// visitor reach only on a PUBLIC campaign, since a logged-out reader cannot
+// open any page of a private one; the fixture below builds a campaign with
+// IsPublic unset, so the expected fragment is the members-only wording. The
+// public branch is pinned separately, both directions, by
 // TestEffectiveVisibilityTooltip_VisitorsOnlyWhenCampaignIsPublic.
 func TestEntityCard_VisibilityBadge_States(t *testing.T) {
 	cases := []struct {

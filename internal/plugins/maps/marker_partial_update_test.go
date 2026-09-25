@@ -1,23 +1,17 @@
-// marker_partial_update_test.go — sweep R4, the maps half of the
-// absent-means-preserve contract.
+// marker_partial_update_test.go pins the marker half of the
+// absent-means-preserve contract (.ai/conventions.md):
 //
-// Three losses on one struct, all reproduced against the shipped code:
+//   - a marker edit or drag PUT that omits pin_category or visibility_rules
+//     must preserve them, not erase them (visibility_rules is access-control
+//     data);
+//   - an edit that omits foundry_id must preserve the Foundry pairing key,
+//     not null it (a nulled key resurfaces as a duplicate marker on the next
+//     sync);
+//   - a write refused by permission (e.g. a Scribe editing the Owner's
+//     per-player rules) must drop to absent, not to null.
 //
-//   - the Chronicle web edit form and the drag-end PUT send neither
-//     pin_category nor visibility_rules, and UpdateMarker assigned both
-//     unguarded, so every edit and every DRAG erased them — one of them
-//     access-control data;
-//   - the web request struct has no foundry_id member at all, so every web
-//     edit NULLed the marker's Foundry pairing key, which resurfaces later
-//     as duplicate markers on the next sync;
-//   - a Scribe's edit dropped the Owner's per-player rules to nil, because
-//     "you may not write this" was implemented as "write nil".
-//
-// The R3 booking called the last one a fork: adding foundry_id to the web
-// struct lets a browser form clear a sync pairing key, while nil-preserving
-// in the service would stop syncapi clearing one too. Absent-preserve is
-// neither horn — the web form still never sends the key, and syncapi still
-// clears it with an explicit null.
+// The web form never sends foundry_id, and syncapi clears it only via an
+// explicit null — absent-preserve does not block either path.
 package maps
 
 import (

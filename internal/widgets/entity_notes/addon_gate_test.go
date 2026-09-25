@@ -1,16 +1,9 @@
-// addon_gate_test.go — ADR-056: "Player Notes" is a FEATURE toggle (off means
-// off for everyone), not the sync-api-style integration toggle. Its five
-// routes (GET/POST list, GET/PUT/DELETE one) were registered with campaign
-// membership as the only check — zero addon awareness anywhere in this
-// package — so turning the campaign's "player-notes" addon off hid the
-// dashboard panel (internal/plugins/entities/block_registry_core.go) but left
-// the REST API wide open to any campaign member.
-//
-// These tests drive RegisterRoutes itself, end-to-end through the real
-// middleware chain, rather than hand-checking that a gate function exists —
-// the defect was a correct gate that was simply never mounted here, and a
-// fixture that wired it by hand would pass just as happily with routes.go
-// unchanged.
+// addon_gate_test.go pins that "Player Notes" is a feature toggle (off means
+// off for everyone, per ADR-056): its five routes must reject campaign
+// members when the campaign's "player-notes" addon is disabled, not just hide
+// the dashboard panel. Drives RegisterRoutes end-to-end through the real
+// middleware chain, so a fixture that wired a gate by hand couldn't mask
+// routes.go never mounting it.
 package entity_notes
 
 import (

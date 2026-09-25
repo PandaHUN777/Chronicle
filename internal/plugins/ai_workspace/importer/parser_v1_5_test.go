@@ -1,6 +1,5 @@
-// parser_v1_5_test.go covers the V1.5 verb-set parser extension
-// (C-AI-WORKSPACE-V1-G): front-matter `action:` field validation,
-// default-to-create, per-action body warnings, known-keys list.
+// parser_v1_5_test.go covers front-matter `action:` field validation,
+// default-to-create, per-action body warnings, and the known-keys list.
 
 package importer
 
@@ -9,9 +8,8 @@ import (
 	"testing"
 )
 
-// TestParse_Action_DefaultsToCreate — empty Action field → parser
-// fills in "create" so the downstream committer's default-dispatch
-// branch fires (preserves V1 behavior for V1-era prompts).
+// TestParse_Action_DefaultsToCreate: empty Action field → parser
+// fills in "create" so the committer's default-dispatch branch fires.
 func TestParse_Action_DefaultsToCreate(t *testing.T) {
 	input := `---
 name: Bob

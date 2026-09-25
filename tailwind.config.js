@@ -1,17 +1,12 @@
 /** @type {import('tailwindcss').Config} */
 
-// ============================================================================
-// Tailwind CSS Configuration for Chronicle
-// ============================================================================
-// Uses the standalone Tailwind CSS CLI (no Node.js).
-// Content paths point to Templ files and Go template strings.
+// Tailwind CSS Configuration for Chronicle. Uses the standalone Tailwind CLI
+// (no Node.js). Content paths point to Templ files and Go template strings.
 //
-// Semantic color tokens:
+// Semantic color tokens (auto-switch light/dark via CSS custom properties):
 //   text-fg, text-fg-body, text-fg-secondary, text-fg-muted, text-fg-faint
 //   bg-surface, bg-surface-alt, bg-surface-raised, bg-page
 //   border-edge, border-edge-light
-//   These auto-switch between light/dark via CSS custom properties.
-// ============================================================================
 
 module.exports = {
   // Toggle dark mode by adding/removing the "dark" class on <html>.
@@ -37,34 +32,29 @@ module.exports = {
           text: '#9ca3af',
           active: '#e5e7eb',
         },
-        // Accent color for links, buttons, active states.
-        // References CSS custom property so per-campaign overrides work.
-        // This IS the "Site accent" semantic slot (C-ACCENT-SLOTS slot 1) —
-        // unrenamed so existing `accent-*` utilities keep working untouched.
+        // Accent color for links, buttons, active states. References a CSS
+        // custom property so per-campaign overrides work.
         accent: {
           DEFAULT: 'rgb(var(--color-accent-rgb, 99 102 241) / <alpha-value>)',
           hover: 'rgb(var(--color-accent-hover-rgb, 79 70 229) / <alpha-value>)',
           light: 'rgb(var(--color-accent-light-rgb, 165 180 252) / <alpha-value>)',
         },
 
-        // ── C-ACCENT-SLOTS: the two NEW semantic accent slots ──
-        // Each nests its var() fallback chain through the slot(s) it
-        // "migrates from" per the dispatch's Step-0 mapping, so a campaign
-        // that has customized an earlier slot keeps seeing that color at
-        // these new utilities until it explicitly sets the new one — and a
-        // campaign that has customized NOTHING renders the same indigo
-        // default as `accent` above (the zero-change guarantee).
+        // Two more semantic accent slots, each falling back through the
+        // slot(s) it migrates from so a campaign that customized an earlier
+        // slot keeps seeing that color until it sets the new one, and an
+        // uncustomized campaign renders the same indigo default as `accent`.
 
-        // Action highlight (slot 2): primary buttons, hover/press, FABs.
-        // No prior trio analog — falls straight back to the site accent.
+        // Action highlight: primary buttons, hover/press, FABs. Falls back
+        // straight to the site accent (no prior analog).
         action: {
           DEFAULT: 'rgb(var(--color-accent-action-rgb, var(--color-accent-rgb, 99 102 241)) / <alpha-value>)',
           hover: 'rgb(var(--color-accent-action-hover-rgb, var(--color-accent-hover-rgb, 79 70 229)) / <alpha-value>)',
           light: 'rgb(var(--color-accent-action-light-rgb, var(--color-accent-light-rgb, 165 180 252)) / <alpha-value>)',
         },
-        // App accent (slot 3): per-app identity — character pages, calendar
-        // app, other apps. Falls back through the legacy surface-pair
-        // primary (C-ACCENT-TRIO), then the site accent.
+        // App accent: per-app identity — character pages, calendar app,
+        // other apps. Falls back through the legacy surface-pair primary,
+        // then the site accent.
         app: {
           DEFAULT: 'rgb(var(--color-accent-app-rgb, var(--color-accent-surface-1-rgb, var(--color-accent-rgb, 99 102 241))) / <alpha-value>)',
           hover: 'rgb(var(--color-accent-app-hover-rgb, var(--color-accent-surface-1-hover-rgb, var(--color-accent-hover-rgb, 79 70 229))) / <alpha-value>)',
@@ -104,26 +94,14 @@ module.exports = {
         sans: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
       },
 
-      // ── V2 motion vocabulary ───────────────────────────────────────
-      // Locked per cordinator/decisions/2026-05-28-cal-timeline-v2-design.md
-      // §B2. The CSS custom properties are the source of truth (see the
-      // `--ease-*` / `--dur-*` / `--elev-*` declarations in static/css/input.css
-      // `:root`); these Tailwind extensions just publish them as utility
-      // classes for V2-scope templ files.
-      //
-      // Intentional collision policy:
-      //   - `ease-in` / `ease-in-out`: identical to Tailwind defaults; the
-      //     override is a no-op (V2 just relabels them via the same bezier).
-      //   - `ease-out`: V2's bezier (0.16, 1, 0.3, 1) is more dramatic-
-      //     settle than Tailwind's default (0, 0, 0.2, 1). Overriding
-      //     projects V2 motion on every existing surface that uses the
-      //     utility — acceptable per the dispatch's goal of unifying motion
-      //     across Chronicle progressively in Waves 1-6.
-      //   - `ease-standard`: NEW name; no collision.
-      //   - `duration-{instant,micro,standard,large}`: NEW; no collision
-      //     with Tailwind's numeric duration scale (`duration-150` etc.).
-      //   - `shadow-elev-{static,resting,hover,dragged}`: NEW; no collision
-      //     with Tailwind's `shadow-{sm,md,lg,xl,...}` scale.
+      // ── Motion vocabulary ───────────────────────────────────────────
+      // The CSS custom properties are the source of truth (see the
+      // `--ease-*` / `--dur-*` / `--elev-*` declarations in
+      // static/css/input.css `:root`); these just publish them as utility
+      // classes. `ease-out` intentionally overrides Tailwind's default
+      // bezier — every surface using the utility gets the same easing.
+      // The rest (`ease-standard`, `duration-*`, `shadow-elev-*`) are new
+      // names with no Tailwind collision.
       transitionTimingFunction: {
         out: 'var(--ease-out)',
         in: 'var(--ease-in)',

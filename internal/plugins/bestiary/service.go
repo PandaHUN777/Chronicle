@@ -146,10 +146,10 @@ func (s *bestiaryService) Publish(ctx context.Context, creatorID string, input C
 	validateOptionalText(&input.Description, 5000)
 	validateOptionalText(&input.FlavorText, 5000)
 
-	// Strip HTML metacharacters from every statblock string BEFORE the
+	// Strip HTML metacharacters from every statblock string before the
 	// denormalized columns are extracted — widgets render these fields via
-	// innerHTML, and this content is authored by any authenticated user
-	// (DS-SEC-AUDIT-R1 CRITICAL). See sanitize.go.
+	// innerHTML, and this content is authored by any authenticated user.
+	// See sanitize.go.
 	input.StatblockJSON = sanitizeStatblockJSON(input.StatblockJSON)
 
 	// Extract denormalized fields from the statblock for filtering.
@@ -230,7 +230,7 @@ func (s *bestiaryService) Update(ctx context.Context, userID, publicationID stri
 		if err := validateStatblock(input.StatblockJSON); err != nil {
 			return nil, err
 		}
-		// Same write-side scrub as Publish (DS-SEC-AUDIT-R1 CRITICAL).
+		// Same write-side scrub as Publish.
 		input.StatblockJSON = sanitizeStatblockJSON(input.StatblockJSON)
 		pub.StatblockJSON = input.StatblockJSON
 		pub.Organization, pub.Role, pub.Level = extractStatblockFields(input.StatblockJSON)

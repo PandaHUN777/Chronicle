@@ -115,11 +115,10 @@ func TestTopbarHasCustomStyle(t *testing.T) {
 	}
 }
 
-// TestTopbarHeaderIsolate is the stacking-context pinning test for cordinator#29.
-// The <header> must carry "isolate" (CSS isolation:isolate) so it forms its own
-// stacking context. Without it, z-index:-1 brand layers escape to the nearest
-// ancestor stacking context and paint before the header's own surface background,
-// making any custom topbar color or image invisible to the user.
+// TestTopbarHeaderIsolate pins that <header> carries "isolate" (CSS
+// isolation:isolate) so it forms its own stacking context. Without it,
+// z-index:-1 brand layers escape to the nearest ancestor stacking context and
+// paint before the header's surface, hiding any custom topbar color or image.
 func TestTopbarHeaderIsolate(t *testing.T) {
 	ctx := ctxWithTopbarStyle(&TopbarStyleData{Mode: "solid", Color: "#6366f1"})
 	var buf bytes.Buffer
@@ -152,12 +151,8 @@ func TestTopbarHeaderIsolate(t *testing.T) {
 }
 
 // TestNotesWidgetVisible pins the notesWidgetVisible predicate that gates both
-// the floating notes panel's mount point and its topbar trigger button (single
-// source of truth — see C-NAV-ACTIVE-FIX). Before this fix the topbar button
-// used its own, looser condition that omitted the journal exclusion, so it
-// rendered a dead button on the journal page (Chronicle.toggleNotes is only
-// ever defined once the floating widget's init() runs, which the journal
-// exclusion prevents).
+// the floating notes panel's mount point and its topbar trigger button
+// (single source of truth for both).
 func TestNotesWidgetVisible(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -214,12 +209,11 @@ func TestNotesWidgetVisible(t *testing.T) {
 	}
 }
 
-// TestNotesButtonRenderGate is the render-level regression pin for the same
-// bug: the topbar's #topbar-notes-trigger button must be present exactly when
-// notesWidgetVisible is true, and absent on the journal page even when the
-// notes addon is enabled and the user is authenticated. A render-level test
-// (not just a predicate-function test) guards against the template's two call
-// sites drifting apart again in a future edit.
+// TestNotesButtonRenderGate is the render-level pin: the topbar's
+// #topbar-notes-trigger button must be present exactly when notesWidgetVisible
+// is true, and absent on the journal page even when the notes addon is
+// enabled and the user is authenticated. Guards against the template's two
+// call sites drifting apart.
 func TestNotesButtonRenderGate(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -247,12 +241,10 @@ func TestNotesButtonRenderGate(t *testing.T) {
 }
 
 // TestSidebarEmitsNavClassVocabulary pins that #sidebar exposes
-// data-nav-active-classes / data-nav-inactive-classes carrying the SAME class
+// data-nav-active-classes / data-nav-inactive-classes carrying the same class
 // vocabulary the server renders on every nav link. boot.js's boosted-nav
-// highlighter reads these as its single source of truth; nothing else pinned
-// them, so dropping the attribute pair would silently fall production back to
-// boot.js's hardcoded FALLBACK_* literals (the exact drift C-NAV-ACTIVE-FIX
-// removed). r2-2.
+// highlighter reads these as its single source of truth; without them,
+// production would silently fall back to boot.js's hardcoded FALLBACK_* literals.
 func TestSidebarEmitsNavClassVocabulary(t *testing.T) {
 	// The attributes render at the top of Sidebar(), before any context getter;
 	// a background context is enough (the getters return safe zero values).

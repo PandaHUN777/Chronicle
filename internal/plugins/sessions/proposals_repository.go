@@ -15,10 +15,10 @@ import (
 // clean "already confirmed" and, crucially, does NOT create a duplicate session.
 var errProposalAlreadyClosed = errors.New("proposal already closed")
 
-// Slot-proposal persistence on the existing sessionRepository (C-SCHED-P2).
-// Proposals/options/responses/tokens live in their OWN tables — never
-// session_attendees — so they stay out of export egress by construction
-// (own-tables egress test, extended in 0b).
+// Slot-proposal persistence on the existing sessionRepository.
+// Proposals/options/responses/tokens live in their own tables, never
+// session_attendees, so they stay out of export egress by construction
+// (see availability_egress_test.go).
 
 // CreateProposal inserts a proposal and its options atomically.
 func (r *sessionRepository) CreateProposal(ctx context.Context, p *SlotProposal, options []SlotProposalOption) error {
@@ -75,10 +75,10 @@ func (r *sessionRepository) GetProposal(ctx context.Context, campaignID, proposa
 	return &p, opts, nil
 }
 
-// FindProposalByID loads a proposal by id ALONE — no campaign scope. Used by the
-// emailed-token path (C-SCHED-P3 0a), where the campaign is DERIVED from the
-// proposal (the token, not a URL campaign id, is the credential) so the redeem
-// can recheck the proposal is still open + the user still a member.
+// FindProposalByID loads a proposal by id alone, no campaign scope. Used by
+// the emailed-token path, where the campaign is derived from the proposal
+// (the token, not a URL campaign id, is the credential) so the redeem can
+// recheck the proposal is still open and the user still a member.
 func (r *sessionRepository) FindProposalByID(ctx context.Context, proposalID string) (*SlotProposal, error) {
 	var p SlotProposal
 	var note sql.NullString
@@ -98,14 +98,13 @@ func (r *sessionRepository) FindProposalByID(ctx context.Context, proposalID str
 	return &p, nil
 }
 
-// SetProposalWinnerAndClose marks one option the winner (clearing any other) and
-// closes the proposal, atomically (C-SCHED-P3 confirm-winner). The CONDITIONAL
-// close (`WHERE status = 'open'`) runs FIRST and is the serialization point:
-// exactly one confirm can flip open→closed, so a concurrent double-confirm has
-// the loser match zero rows and return errProposalAlreadyClosed (rolled back) —
-// the service then skips session creation, so a proposal never mints two
-// sessions. `is_winner = (id = ?)` sets 1 on the winner and 0 on every sibling in
-// one UPDATE.
+// SetProposalWinnerAndClose marks one option the winner (clearing any other)
+// and closes the proposal, atomically. The conditional close (`WHERE status =
+// 'open'`) runs FIRST and is the serialization point: exactly one confirm can
+// flip open->closed, so a concurrent double-confirm matches zero rows and
+// returns errProposalAlreadyClosed (rolled back), so a proposal never mints
+// two sessions. `is_winner = (id = ?)` sets 1 on the winner and 0 on every
+// sibling in one UPDATE.
 func (r *sessionRepository) SetProposalWinnerAndClose(ctx context.Context, proposalID, winningOptionID string) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

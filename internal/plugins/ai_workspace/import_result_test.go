@@ -1,14 +1,7 @@
-// import_result_test.go pins V1-F's Bug 1 fix: the result-screen
-// per-row "Open" link MUST use the entity's UUID (`EntityID`), not
-// its slug. The web-facing entity show route at
-// internal/plugins/entities/routes.go:146 is `/entities/:eid`, which
-// `c.Param("eid")` treats as a UUID via the entity handler's Show
-// method. V1-E shipped with the slug and the links 404'd — operator
-// surfaced it during the post-merge end-to-end smoke (PR #355).
-//
-// Owner-stability: if anyone refactors the result fragment and
-// accidentally re-introduces the slug-keyed link, this test fails
-// pinpointed.
+// import_result_test.go pins that the result screen's per-row "Open"
+// link uses the entity's UUID (EntityID), not its slug: the entity
+// show route (`/entities/:eid`) is UUID-keyed, so a slug-keyed link
+// 404s.
 
 package ai_workspace
 
@@ -50,11 +43,9 @@ func TestImportResult_OpenLink_UsesEntityIDNotSlug(t *testing.T) {
 			wantHref, truncateString(out, 2000))
 	}
 
-	// Negative assertion — the slug-keyed link must NOT appear (Bug
-	// 1 regression guard). We allow the slug to appear in other
-	// contexts (e.g. category-creation summary), so we check for
-	// the specific "/entities/<slug>" form that the route would
-	// 404 on.
+	// The slug may appear in other contexts (e.g. category-creation
+	// summary); check specifically for the "/entities/<slug>" form
+	// that the route would 404 on.
 	badHref := "/campaigns/camp-uuid-abc/entities/tideturn"
 	if strings.Contains(out, badHref) {
 		t.Errorf("result fragment leaks the slug-keyed link %q — this is the V1-E Bug 1 regression",
@@ -90,10 +81,9 @@ func TestImportResult_OpenLink_OmittedWhenNoEntityID(t *testing.T) {
 	}
 }
 
-// TestImportResult_BackButton_LinksToAIWorkspaceTab pins Bug 2's
-// footer-button half of fix (c): there must be a hard-navigation
-// <a> back to the AI Workspace tab so browser Back lands somewhere
-// sensible even when HTMX history hasn't been pushed.
+// TestImportResult_BackButton_LinksToAIWorkspaceTab pins the
+// hard-navigation link back to the AI Workspace tab, so browser Back
+// lands somewhere sensible even when HTMX history hasn't been pushed.
 func TestImportResult_BackButton_LinksToAIWorkspaceTab(t *testing.T) {
 	data := ImportResultData{
 		CampaignID: "camp-9",

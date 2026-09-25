@@ -2,32 +2,24 @@
  * Chronicle Tailwind CSS Input
  * ============================================================================
  * Canonical source for Chronicle's CSS. The standalone Tailwind CLI processes
- * this and generates static/css/app.css (gitignored; only file served).
- *
- * (The former base/, components/, utilities/ orphan subdirs — never loaded by
- * the build — were deleted in the 2026-06-22 audit cleanup. This file is now
- * the single CSS source; add component styles here.)
+ * this and generates static/css/app.css (gitignored; only file served). This
+ * is the single CSS source; add component styles here.
  *
  * Run: make tailwind        (one-time build)
  * Run: make tailwind-watch  (watch mode for development)
  * ============================================================================ */
 
 /* ============================================================ */
-/* Cascade layer ordering — per cordinator/decisions/2026-05-22-ui-modernization-decisions.md Q4.
-   Macro ordering: reset → base → components → plugins → utilities.
+/* Cascade layer ordering: reset → base → components → plugins → utilities.
    Per-plugin sub-layers declared but currently RESERVED — no plugin CSS files
    exist today. Reservation is forward-looking; the first plugin CSS file will
-   wrap into its sub-layer (e.g. `@layer plugins.foundry-vtt { ... }`).
-
-   (A demo-only cascade layer reserved during the V2 demo arc was removed
-   2026-06-01; the static /demo/showcase brochure it was scrapped for has since
-   been retired too, and its showcase.css deleted in the 2026-06-22 cleanup.) */
+   wrap into its sub-layer (e.g. `@layer plugins.foundry-vtt { ... }`). */
 @layer reset, base, components, plugins, utilities;
 @layer plugins {
   @layer foundry-vtt, calendar, maps, packages, settings;
 }
 
-/* Reduced-motion total-disable guard — per Q6 decision + WCAG 2.1 SC 2.3.3.
+/* Reduced-motion total-disable guard — WCAG 2.1 SC 2.3.3.
    Lives OUTSIDE any layer so it wins over Tailwind utilities and any plugin CSS.
    Total-disable approach: animations, transitions, scroll-behavior, and
    view-transition pseudos all silenced when the user has opted in via OS
@@ -47,7 +39,7 @@
 }
 /* ============================================================ */
 
-/* Touch affordance reveal — C-CAL-DESIGN-PASS-1 §4.
+/* Touch affordance reveal.
    On coarse pointers (touch) there is no hover, so any month-surface control
    that is only hover-revealed on desktop (today: the scribe add-affordance)
    must be visible AT REST. Elements opt in with `.cal-touch-reveal`; the cell
@@ -95,19 +87,14 @@
     --color-sidebar-bg:    #1a1c23;  /* always dark */
 
     /* ──────────────────────────────────────────────────────────────────
-     * V2 motion vocabulary — locked per
-     * cordinator/decisions/2026-05-28-cal-timeline-v2-design.md §B2.
+     * V2 motion vocabulary. Only `transform` + `opacity` are ever
+     * animated, never `transition: all` (lint-guarded via
+     * tools/check-v2-motion-discipline.sh); keyboard-initiated actions
+     * stay sub-80ms.
      *
-     * Strict Vercel/Kowalski discipline: only `transform` + `opacity`
-     * ever animated; NEVER `transition: all` (lint-guarded for V2 scope
-     * via tools/check-v2-motion-discipline.sh); keyboard-initiated
-     * actions stay sub-80ms (no animation distance between input + state).
-     *
-     * Reduced-motion handling is the existing total-disable guard at the
-     * top of this file (per Q6 of 2026-05-22-ui-modernization-decisions.md).
-     * That rule wins over these durations because it lives OUTSIDE any
-     * layer and uses `!important`. Don't add a duplicate reduced-motion
-     * override here.
+     * Reduced motion is handled by the total-disable guard at the top of
+     * this file, which wins over these durations (outside any layer,
+     * `!important`). Don't add a duplicate reduced-motion override here.
      * ─────────────────────────────────────────────────────────────── */
 
     --ease-out:        cubic-bezier(0.16, 1, 0.3, 1);     /* arrivals, "settles" */
@@ -121,26 +108,15 @@
     --dur-large:       280ms;    /* view-level transitions */
 
     /* ──────────────────────────────────────────────────────────────────
-     * V2 widget-animation durations — the `--motion-*` family.
+     * V2 widget-animation durations — the `--motion-*` family, consumed
+     * by the V2 widget animation library's `var(--motion-fast, 150ms)`
+     * call sites. Values here must match those fallbacks exactly or every
+     * call site retimes; if a duration needs to change, retune the call
+     * sites deliberately rather than editing here.
      *
-     * The V2 widget animation library below (:2490-2610) has always
-     * consumed these THREE names, and they were never defined anywhere:
-     * every call site is `var(--motion-fast, 150ms)`-shaped, so the
-     * library has been running on its fallbacks since it shipped, and
-     * internal/widgets/calendar_v2/README.md's "Motion: PR #357
-     * --motion-* tokens" claim was aspirational.
-     *
-     * Defined here at EXACTLY the values the existing fallbacks already
-     * produce (fast 150ms · standard 200ms · leisurely 300ms) — every
-     * fallback in the file agrees on these three numbers, so this is a
-     * no-op on shipped surfaces. Choosing "better" numbers here would be
-     * a live timing change to production animation, not a cleanup, so
-     * don't: retune the call sites deliberately instead.
-     *
-     * Deliberately NOT aliased to the --dur-* family above: --dur-micro
-     * is 120ms while --motion-fast is 150ms, so aliasing would silently
-     * retime every V2 widget animation. Two families, two purposes —
-     * --dur-* is chrome, --motion-* is the V2 widget library.
+     * Deliberately NOT aliased to the --dur-* family above (--dur-micro
+     * is 120ms, --motion-fast is 150ms): --dur-* is chrome, --motion-* is
+     * the V2 widget library, and aliasing would silently retime it.
      * ─────────────────────────────────────────────────────────────── */
 
     --motion-fast:      150ms;   /* chip add/remove, popover in, drawer out */
@@ -148,7 +124,7 @@
     --motion-leisurely: 300ms;   /* drop-receive pulse */
 
     /* ──────────────────────────────────────────────────────────────────
-     * V2 card elevation tiers — per §B1.
+     * V2 card elevation tiers.
      *
      * Material's *physics* (elevation, shadow, hover lift, drag elevation,
      * z-stacking) applied with Chronicle's dark+accent aesthetic. Values
@@ -258,11 +234,10 @@
     position: relative;
     overflow: visible;
   }
-  /* Action highlight (C-ACCENT-SLOTS slot 2): primary buttons are the
-   * exemplar adopter — bg-action/hover/focus/shadow fall back through
-   * bg-accent's own values when the action slot is unset (tailwind.config.js
-   * nests the var() chain), so this is a zero-visual-change swap until an
-   * owner customizes the Action highlight picker. */
+  /* bg-action/hover/focus/shadow fall back through bg-accent's own values
+   * when the action slot is unset (tailwind.config.js nests the var()
+   * chain), so this is a zero-visual-change swap until an owner
+   * customizes the Action highlight picker. */
   .btn-primary {
     @apply btn bg-action text-white hover:bg-action-hover
            focus:ring-action shadow-sm hover:shadow-md hover:shadow-action/20;
@@ -533,19 +508,11 @@
   }
 
   /* .card-elev — V2 elevation/lift add-on. Composes on top of `.card`
-   * (or any card-shaped container); supplies the elevation-tier shadow
-   * + hover lift defined by the V2 motion + elevation tokens above.
-   *
-   * Animated properties: `box-shadow` and `transform` only — the V2
-   * "transform + opacity ever animated" rule from decision §B2. The
-   * 280ms (--dur-large) duration matches the view-level transition
-   * tier; hover feels intentional rather than twitchy.
-   *
-   * Use: <div class="card card-elev p-3"> for a resting card that
-   * lifts on hover. `.card-elev:active` honors a "dragged" elevation
-   * tier for inline-drag UX; surfaces that mount the draggable=true
-   * attribute (or use the cooperating Sortable/dnd library) pick up
-   * the elevation automatically. */
+   * (or any card-shaped container); supplies the elevation-tier shadow +
+   * hover lift defined by the V2 motion + elevation tokens above.
+   * Animated properties are `box-shadow` and `transform` only (the V2
+   * motion rule). `.card-elev:active` honors a "dragged" elevation tier
+   * for inline-drag UX. */
   .card-elev {
     box-shadow: var(--elev-resting);
     transition: transform var(--dur-large) var(--ease-out),
@@ -562,11 +529,11 @@
     transform: translateY(-2px);
   }
 
-  /* .card-elev-static — C-CAL-VISUAL-POLISH-1 B: the resting elevation of
-   * .card-elev WITHOUT the hover-lift / drag transform. For BIG containers
-   * (the month/week/day grids) where a whole-surface hover-lift is wrong —
-   * that lift is meant for small cards (popovers, nav, switcher, event cards),
-   * which keep .card-elev. */
+  /* .card-elev-static: the resting elevation of .card-elev WITHOUT the
+   * hover-lift / drag transform. For BIG containers (the month/week/day
+   * grids) where a whole-surface hover-lift is wrong — that lift is meant
+   * for small cards (popovers, nav, switcher, event cards), which keep
+   * .card-elev. */
   .card-elev-static {
     box-shadow: var(--elev-resting);
   }
@@ -2468,7 +2435,6 @@
 
 /* ============================================================ */
 /* @starting-style on .htmx-added — HTMX-injected fragments fade in instead of popping.
-   Per cordinator/reports/coordinator/2026-05-22-modern-ui-patterns-discovery.md §3.2.
    HTMX adds .htmx-added to newly-inserted elements during the settle phase then
    removes it; the transition triggers on class removal. @starting-style provides
    the entry state. `transition-behavior: allow-discrete` is required for the
@@ -2487,12 +2453,10 @@
 }
 /* ============================================================ */
 
-/* === V2 widget animations (Wave 1 PR 4 / C-CAL-V2-EVENT-CARD-COMPOSITE) === *
- * Motion library composing PR #357 tokens. Each pattern is a CSS
- * class consumers add to elements; durations + easings resolve from
- * the --motion-* tokens published in :root. Every animated pattern
- * includes a reduced-motion override per WCAG 2.3.3 / decisions/
- * 2026-05-22-ui-modernization-decisions.md §Q6.
+/* === V2 widget animations === *
+ * Each pattern is a CSS class consumers add to elements; durations +
+ * easings resolve from the --motion-* tokens published in :root. Every
+ * animated pattern includes a reduced-motion override per WCAG 2.3.3.
  */
 @layer components {
   .lift-hover {
@@ -2610,28 +2574,20 @@
   .popover-scale-in { animation: none; }
 }
 
-/* === C-RSVP-P10: the player call-to-action banner ===========================
+/* === The player call-to-action banner ===========================
    ONE strip above the page content, carrying the single thing a player is
    expected to ACT on — an unanswered RSVP, or the timezone Chronicle would
    otherwise silently guess at. Server-rendered, polled on the bell's cadence,
    and absent entirely when there is nothing to say.
 
-   THE ENTRANCE IS THE ONLY MOTION AND IT IS ONE KEYFRAME. The operator asked
-   for the banner to be animated; a strip that simply appears between two poll
-   frames reads as a rendering glitch rather than as news. It animates in and
-   never out, never loops, and never moves again once settled — a banner that
-   keeps moving above the page you are reading is a banner people learn to
-   scroll past.
+   The entrance is the only motion, and it is one keyframe: it animates in
+   and never out, never loops, and never moves again once settled — a banner
+   above the page you are reading must not keep moving or people learn to
+   scroll past it. `transform: translateY` is used only in the one direction
+   that reads as "arriving from above the fold."
 
-   `block-size` + `opacity` are the two properties every signed calendar-v4
-   motion register admits without argument; `transform: translateY` is the
-   third, and it is used here in the one direction that reads as "arriving from
-   above the fold" rather than as travel. Nothing here is on a signed register —
-   this is the app shell, which no register covers — so it is held to the shell's
-   own one global law instead: the reduced-motion total-disable at the top of
-   this file, which is unlayered and silences this automatically. The explicit
-   guard below is belt and braces, and states the intent where a reader of this
-   block will see it. */
+   The reduced-motion total-disable guard at the top of this file already
+   silences this animation; the explicit guard below is belt and braces. */
 @layer components {
   .cta-host:empty { display: none; }
 

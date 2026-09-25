@@ -18,14 +18,10 @@ import (
 templ CampaignShowPage(cc *CampaignContext, transfer *OwnershipTransfer, recentEntities []RecentEntity, csrfToken string) {
 	@layouts.App(cc.Campaign.Name) {
 		<div class="max-w-5xl mx-auto">
-			// VTT update-available banner — OWNER-ONLY MARKUP (cordinator#30 r2):
-			// this span used to render for EVERY viewer while its endpoint sits
-			// behind RequireAuth+requireOwner. For a logged-out visitor on a
-			// PUBLIC campaign the on-load hx-get 401'd and the global error
-			// handler HX-Redirected the whole page to /login — the "public
-			// campaign forces login" bug. Players got an error toast from the
-			// 403 the same way. Never emit an authed fragment call to viewers
-			// who can't pass its gate.
+			// VTT update-available banner is owner-only markup: its endpoint
+			// sits behind RequireAuth+requireOwner, so emitting it to a
+			// viewer who can't pass that gate 401s/403s the on-load hx-get
+			// (redirecting public viewers to /login, error-toasting players).
 			if cc.MemberRole >= RoleOwner {
 				<span
 					hx-get={ fmt.Sprintf("/campaigns/%s/foundry-vtt/show-banner-fragment", cc.Campaign.ID) }
@@ -59,9 +55,7 @@ templ CampaignShowPage(cc *CampaignContext, transfer *OwnershipTransfer, recentE
 
 			// Render from role-aware custom layout, falling back to a
 			// synthesized default layout that the customization editor
-			// can also load and edit. Same render path either way —
-			// the previous hardcoded defaultDashboard was retired so
-			// the live page and the editor stay in sync.
+			// can also load and edit — same render path either way.
 			{{ layout := cc.Campaign.ParseRoleDashboardLayout(cc.MemberRole) }}
 			if layout == nil {
 				{{ layout = DefaultDashboardLayout() }}
@@ -129,19 +123,10 @@ func welcomeMessageQuoted(msg string) string {
 	return string(b)
 }
 
-// foundryModuleUpdateBanner renders the owner-only "newer Foundry
-// module version available" banner. Dismissible per-session via a
-// session-storage flag — banner reappears on next session until the
-// owner updates the pin.
-//
-// Per-session (not per-version) so a deliberately-pinned older
-// campaign that wants to stay on the deprecated build can dismiss
-// every session without rebuilding the dismissal-by-version state
-// the dispatch's MOTD banner uses.
-// foundryModuleUpdateBanner moved to internal/plugins/foundry_vtt/show_banner.templ
-// (CampaignShowFoundryBanner). campaigns/show.templ now lazy-loads it via hx-get
-// to keep this plugin VTT-agnostic per NW-2.2 Chunk D. See the lazy-load slot
-// at the top of CampaignShowPage above + cordinator/decisions/2026-05-23-packages-treatment.md.
+// The owner-only "newer Foundry module version available" banner lives in
+// internal/plugins/foundry_vtt/show_banner.templ (CampaignShowFoundryBanner);
+// campaigns/show.templ lazy-loads it via hx-get to stay VTT-agnostic. See the
+// lazy-load slot at the top of CampaignShowPage above.
 
 // customDashboard renders the campaign dashboard from a custom DashboardLayout
 // JSON. Iterates rows → columns → blocks, using a 12-column CSS grid.

@@ -48,11 +48,9 @@ func (h *SystemHandler) SetAddonService(svc addonChecker) {
 	h.addonSvc = svc
 }
 
-// OperatorDiagnosticsAPI is the operator-facing analogue of the campaign
-// AI-Export: a CATALOG of named, read-only, secret-redacted diagnostics the
-// assistant requests one at a time, so the operator only ever pastes back the
-// small, targeted result it asked for (no garbage context). Per the debug-cockpit
-// capability spec §B/§C2. Admin-gated.
+// OperatorDiagnosticsAPI is a CATALOG of named, read-only, secret-redacted
+// diagnostics the assistant requests one at a time, so the operator only ever
+// pastes back the small, targeted result it asked for. Admin-gated.
 //
 //	GET /admin/diagnostics                      → the catalog (tiny menu, no payload)
 //	GET /admin/diagnostics?name=system.versions → run one named diagnostic
@@ -76,13 +74,11 @@ func (h *SystemHandler) OperatorDiagnosticsAPI(c echo.Context) error {
 }
 
 // ExtensionsHealthAPI returns read-only deployment health for every LOADED
-// system — the version + on-disk directory the loader actually serves from, plus
-// a content fingerprint (size + sha256 + mtime) of each widget/manifest file.
-// Admin-gated (registered on the admin route group). It exists to diagnose the
-// "Admin▸Packages says 0.13.0 but the old file renders" class of bug from the UI:
-// if loaded_version disagrees with the installed version, the in-memory registry
-// never picked up the install; if it agrees but a file hash is the old content,
-// the extraction is wrong. GET /admin/extensions/health
+// system — the version + on-disk directory the loader actually serves from,
+// plus a content fingerprint (size + sha256 + mtime) of each widget/manifest
+// file. Admin-gated. Lets an operator tell "registry didn't pick up the
+// install" (loaded_version disagrees) apart from "extraction is wrong"
+// (version agrees, file hash doesn't). GET /admin/extensions/health
 func (h *SystemHandler) ExtensionsHealthAPI(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]any{
 		"systems": LoadedHealth(),
@@ -414,14 +410,12 @@ func (h *SystemHandler) WidgetScriptAPI(c echo.Context) error {
 	return c.Blob(http.StatusOK, "application/javascript", data)
 }
 
-// RulesGlossaryAPI serves a system's raw data/rules-glossary.json — the authored
-// [{slug,name,description,properties:{category}}] array a system's client-side
-// reference-renderer needs to resolve {@category term} tokens. It is served RAW
-// (not via the DataProvider, which renders HTML rather than JSON, requires the
-// file's stem to be a manifest-declared category, and may skip items that fail
-// load-time id normalization — no id/slug, or a duplicate normalized id).
-// Returns an empty array when the system ships no glossary so the client
-// degrades gracefully (references stay literal) rather than erroring.
+// RulesGlossaryAPI serves a system's raw data/rules-glossary.json — the
+// authored [{slug,name,description,properties:{category}}] array a system's
+// client-side reference-renderer needs to resolve {@category term} tokens.
+// Served raw, not via the DataProvider's rendered-HTML category view. Returns
+// an empty array when the system ships no glossary so references stay literal
+// rather than erroring.
 //
 // GET /campaigns/:id/systems/:mod/rules-glossary
 func (h *SystemHandler) RulesGlossaryAPI(c echo.Context) error {
@@ -461,18 +455,12 @@ func (h *SystemHandler) RulesGlossaryAPI(c echo.Context) error {
 // within-dir clamp in the handler is a second backstop.
 var systemDataFilePattern = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*\.json$`)
 
-// SystemDataAPI serves a system's raw data/<file>.json verbatim, for client
-// widgets that need an authored reference file as raw JSON — the generic form
-// of RulesGlossaryAPI. The category route (CategoryList) runs files through
-// the DataProvider and renders HTML rather than JSON, requires the file's
-// stem to be a manifest-declared category, and may skip items that fail
-// load-time id normalization (no id/slug, or a duplicate normalized id);
-// widgets that need the complete authored file as JSON (e.g. the Draw Steel
-// skill catalog read by the character sheet) must read the raw file instead.
-// The filename is validated to a safe JSON basename and the resolved path is
+// SystemDataAPI serves a system's raw data/<file>.json verbatim — the generic
+// form of RulesGlossaryAPI, for widgets that need the complete authored file
+// as JSON rather than the DataProvider's rendered-HTML category view. The
+// filename is validated to a safe JSON basename and the resolved path is
 // clamped within the system's data dir. Returns 404 for an absent/unknown
-// file so the client degrades gracefully (the feature using it stays empty)
-// rather than erroring.
+// file so callers degrade gracefully instead of erroring.
 //
 // GET /campaigns/:id/systems/:mod/data/:file
 func (h *SystemHandler) SystemDataAPI(c echo.Context) error {
@@ -556,11 +544,10 @@ func (h *SystemHandler) GetSystemWidgetBlockMetas(ctx context.Context, campaignI
 		return nil
 	}
 
-	// A widget the system registers as a page RENDERER (manifest.renderers[].widget)
-	// owns a whole entity page — it is NOT a placeable layout block. Exclude those
-	// from the palette so they can't be dropped into a layout, where they'd mount
-	// without their page context and render empty (the "bare name" trap). Generic
-	// across systems — keyed on the manifest, not any system name.
+	// A widget registered as a page RENDERER (manifest.renderers[].widget) owns a
+	// whole entity page, not a placeable layout block; exclude it from the
+	// palette so it can't be dropped into a layout and mount without its page
+	// context.
 	rendererWidgets := make(map[string]struct{}, len(manifest.Renderers))
 	for _, r := range manifest.Renderers {
 		rendererWidgets[r.Widget] = struct{}{}
@@ -603,12 +590,9 @@ func (h *SystemHandler) GetSystemWidgetScriptURLs(ctx context.Context, campaignI
 	}
 
 	urls := make([]string, 0, total)
-	// Version-stamp every asset URL with the loaded package version so a package
-	// update changes the URL and the browser fetches fresh JS automatically — no
-	// hard-refresh, no incognito. Paired with an immutable cache on the serve side
-	// (WidgetScriptAPI). manifest.Version is set at install time (rewritten to the
-	// release tag, defaulting to "0.0.0"). Without this, the version-less URL +
-	// long cache served stale widget code after every update.
+	// Version-stamp the URL so an update changes it and the browser fetches
+	// fresh JS instead of serving a stale cached copy (paired with the
+	// immutable cache in WidgetScriptAPI).
 	ver := url.QueryEscape(manifest.Version)
 	// Text renderers first — they define globals that widgets depend on.
 	for _, tr := range manifest.TextRenderers {

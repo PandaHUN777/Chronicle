@@ -1,4 +1,4 @@
-// campaign_handler.go adds HTTP endpoints for campaign owners to upload,
+// campaign_system_handler.go adds HTTP endpoints for campaign owners to upload,
 // view, and remove custom game systems.
 package systems
 

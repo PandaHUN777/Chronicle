@@ -1,40 +1,19 @@
-// Package systems — operator_diag_deploy.go is the one-shot answer to the
-// question that started this whole workstream: "I deployed, and I see no
-// change. Did it land?"
-//
-// WHY a COMPOSITE. The facts that settle that question already exist across
-// four diagnostics, and on 2026-08-11 nobody assembled them — an hour went into
-// shell archaeology and produced a retracted conclusion drawn from a Docker
-// image label. This is the "paste this one thing after a deploy" diagnostic: it
-// reads the build identity from inside the process, the fingerprints of the two
-// or three assets that move on essentially every build, an optional marker
-// search that spans BOTH places Chronicle keeps assets, and the existing
-// installed-vs-loaded package summary.
+// Package systems — operator_diag_deploy.go answers "I deployed, and I see no
+// change. Did it land?" as one composite diagnostic: build identity, the
+// fingerprints of the assets that move on essentially every build, an
+// optional marker search, and the installed-vs-loaded package summary.
 //
 // It DELEGATES rather than restates. The package summary is
 // renderInstalledVsLoaded() itself, the build identity comes from
 // hostIdentityLines() beside host.build's own renderer, and every token comes
-// from layouts.AssetURL. A composite that reimplemented any of those would be a
-// second opinion that can disagree with the diagnostic it summarises — and it
-// would disagree precisely while someone was using it to decide whether a
-// deploy landed.
+// from layouts.AssetURL — reimplementing any of those would risk a second
+// opinion that disagrees with the diagnostic it summarizes.
 //
-// The marker search is the part that closes BOTH wrong turns from the incident
-// at once. It reports a line per scope across all THREE places a shipped string
-// can live: the on-disk static root, the binary's embedded plugin filesystems,
-// and the compiled-in strings of the executable itself. A marker found only in
-// the embedded scope is the exact result that a `grep /app/static` reported as
-// "missing code".
-//
-// The third scope was added after the first two shipped, because two scopes
-// were not enough to justify the conclusion the section printed. Chronicle is
-// Templ-first, so markup lives in compiled Go string literals and appears in
-// NEITHER of the other scopes — and the section nevertheless told the operator
-// that absence from both meant the deploy had not landed. Measured against this
-// repo, that fired on a real attribute (`data-cal-moon-tab`) which `grep -a`
-// finds in the built binary. Re-creating the incident's own error inside the
-// diagnostic written to prevent it is the worst available outcome, so the scope
-// is searched rather than the conclusion merely softened.
+// The marker search spans all THREE places a shipped string can live: the
+// on-disk static root, the binary's embedded plugin filesystems, and the
+// compiled-in strings of the executable itself (Templ markup lives in
+// compiled Go string literals and appears in neither of the other two, so
+// searching only two scopes can wrongly conclude a deploy hasn't landed).
 package systems
 
 import (
@@ -250,10 +229,8 @@ func writeMarkerSection(b *strings.Builder, src deployCheckSources, arg string) 
 	b.WriteString("\n**A marker found only in the embedded scope is not missing.** Those bytes live inside the executable and are served from memory, so `ls` and `grep` over the container filesystem cannot see them — that is the expected result, and reading it as absent code is the mistake that cost an hour on 2026-08-11.\n")
 	b.WriteString("**A marker found only in the executable scope is not missing either — for most UI markers that is the EXPECTED place, and the only place.** Chronicle is Templ-first: markup written in a `.templ` file is compiled into Go string literals inside this binary, so a `data-` attribute or a CSS class you copied out of page source is normally in neither the static tree nor an embedded filesystem. Absent from those two is the correct result for it, not a finding.\n")
 	b.WriteString("_A hit in the executable scope proves the byte sequence is somewhere in the binary — usually the template that emits it, but any Go string literal counts, including this diagnostic's own source. Prefer a marker distinctive enough that this cannot mislead._\n")
-	// The failure this file's own header records is "a label was read as
-	// evidence". A marker hit read as "the feature works" is the SAME mistake
-	// one layer up, and it is the most likely wrong answer an assistant would
-	// give to "is RSVP on my calendar?" — so the refusal is printed here, where
+	// A marker hit reading as "the feature works" is the same mistake as
+	// trusting a label as evidence, so the refusal is printed here, where
 	// somebody is looking at a ✓, rather than only in the Desc.
 	b.WriteString("\n**A HIT PROVES THE BYTE SHIPPED. IT PROVES NOTHING ABOUT WHETHER IT RENDERS.** A marker can be present in the build and still reach no user: it can sit behind a role floor, inside a collapsed disclosure, in a layer the viewer turned off, under a CSS rule that hides it at their width, on a Block the producer did not seat, or behind a campaign addon that is switched off. Every one of those has happened here. Do NOT answer \"is this feature on my page?\" from this section — run **`calendar.render <campaignId>:<userId>`** for a calendar surface, or **`campaign.config`** for an addon or a placed block. This section answers only \"did the deploy land\".\n")
 	// The all-absent conclusion is only sound when all three scopes were
@@ -389,20 +366,11 @@ func scanEmbeddedForMarkers(provider func() []EmbeddedAssetSet, markers []string
 
 // scanExecutableForMarkers searches the running binary's own bytes.
 //
-// WHY this scope exists — it is the one that was missing, and its absence made
-// the flagship post-deploy diagnostic assert the opposite of the truth.
-// Chronicle is TEMPL-FIRST: markup authored in a `.templ` file is compiled into
-// Go string literals inside the executable. It is therefore in neither of the
-// other two scopes by design — not on the static filesystem, not in a plugin's
-// embedded FS. Most markers an operator can actually copy out of page source (a
-// `data-` attribute, a CSS class emitted by a template) live only here.
-//
-// Measured on this repo: with only the disk and embedded scopes, searching for
-// `data-cal-moon-tab` — a real attribute in internal/widgets/calendar_block/
-// moonpanel.templ — reported "not found" in both and the diagnostic concluded
-// the deploy had not landed, while `grep -a` on the built binary found it. That
-// is the same shape as the 2026-08-11 mistake this file exists to prevent: a
-// scope that was never searched being reported as evidence of absence.
+// Chronicle is TEMPL-FIRST: markup authored in a `.templ` file is compiled
+// into Go string literals inside the executable, so it is in neither of the
+// other two scopes by design — not on the static filesystem, not in a
+// plugin's embedded FS. Most markers an operator can copy out of page source
+// (a `data-` attribute, a CSS class emitted by a template) live only here.
 //
 // Returns nil when the executable could not be read, so the caller prints
 // "not scanned" rather than "not found".

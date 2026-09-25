@@ -1,11 +1,10 @@
-// picker.templ — the generic create-or-pick binding fragment
-// (C-WIDGET-BINDING-P4a; swap-target wired in P4b). Widget-type-agnostic:
-// driven entirely by []InstanceRef + the resolved Source, so all four widgets
-// (calendar/worldstate/timeline/maps) reuse it. Reuses the map-picker visual
-// language. Loaded by the host widget block's Scribe+ "Change …" affordance
-// (HTMX GET); bind/create/unbind mutate then return the re-rendered widget
-// block, which HTMX swaps into the BlockHost wrapper IN PLACE (P4b — no full
-// reload). Scribe-gated at the route — players never reach it.
+// The generic create-or-pick binding fragment. Widget-type-agnostic: driven
+// entirely by []InstanceRef + the resolved Source, so all four widgets
+// (calendar/worldstate/timeline/maps) reuse it. Loaded by the host widget
+// block's Scribe+ "Change …" affordance (HTMX GET); bind/create/unbind
+// mutate then return the re-rendered widget block, which HTMX swaps into
+// the BlockHost wrapper in place. Scribe-gated at the route — players never
+// reach it.
 package widgetbindings
 
 import "fmt"

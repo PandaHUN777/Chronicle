@@ -1,9 +1,7 @@
 // import_result.templ renders the post-commit summary returned by
 // POST /ai-workspace/import/commit. One row per attempted page +
-// per-status counters at the top + a "Import more" affordance to
+// per-status counters at the top + an "Import more" affordance to
 // return the operator to the import form for another batch.
-//
-// Per scoping report §2.3 (result summary mockup — load-bearing).
 
 package ai_workspace
 
@@ -32,11 +30,9 @@ templ ImportResult(d ImportResultData) {
 				<i class="fa-solid fa-check-double mr-1 text-emerald-500" aria-hidden="true"></i>
 				Import complete
 			</h3>
-			// Boosted navigation, NOT an hx-get into the review host: the
-			// settings route renders the FULL page (no fragment branch), so
-			// fragment-targeting it nests the app inside itself. Same fix as
-			// the review screen's Cancel; the footer link at the bottom of
-			// this file always had it right.
+			// Boosted navigation, not an hx-get: the settings route
+			// renders a full page (no fragment branch), so
+			// fragment-targeting it would nest the app inside itself.
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/settings?tab=ai-workspace", d.CampaignID)) }
 				class="btn-secondary text-xs"
@@ -84,11 +80,10 @@ templ ImportResult(d ImportResultData) {
 			}
 		</div>
 
-		// Footer with a hard-navigation "Back to AI Workspace" link.
-		// The "Import more" button at the top swaps in-place to keep
-		// the operator inside the tab; this button is a full nav for
-		// operators who want a fresh page (also gives browser Back
-		// somewhere to land — see PR #355 smoke-found Bug 2).
+		// The "Import more" button above swaps in-place to keep the
+		// operator inside the tab; this is a full nav for operators
+		// who want a fresh page (and gives browser Back somewhere to
+		// land).
 		<div class="flex items-center gap-3 mt-5 pt-4 border-t border-edge">
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/settings?tab=ai-workspace", d.CampaignID)) }
@@ -104,9 +99,7 @@ templ ImportResult(d ImportResultData) {
 	</div>
 }
 
-// resultCounters renders the top-of-result tally bar. V1.5
-// (C-AI-WORKSPACE-V1-G) replaces the "Overwrote" pill with "Updated"
-// (verb-set rename) and adds "Deleted" for the new action verb.
+// resultCounters renders the top-of-result tally bar.
 templ resultCounters(r importer.CommitResult) {
 	<div class="grid grid-cols-2 sm:grid-cols-6 gap-2 text-xs">
 		@counterPill("Created", r.Created, "emerald")
@@ -144,12 +137,8 @@ templ resultRow(campaignID string, row importer.RowOutcome) {
 				<div class="text-fg-muted">{ row.Reason }</div>
 			}
 		</div>
-		// Bug 1 fix (V1-F): the entity show route at
-		// internal/plugins/entities/routes.go:146 is keyed by UUID
-		// (`/entities/:eid`), NOT slug. V1-E's import_result.templ
-		// shipped with the slug, which 404'd. Use EntityID (the
-		// committer-populated UUID); guard on EntityID alone since
-		// Slug isn't part of the URL anymore.
+		// The entity show route is keyed by UUID (/entities/:eid), not
+		// slug, so this must link on EntityID.
 		if row.EntityID != "" {
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/entities/%s", campaignID, row.EntityID)) }
@@ -165,8 +154,7 @@ templ resultRow(campaignID string, row importer.RowOutcome) {
 	</div>
 }
 
-// resultRowIcon is the small icon prefix per status. V1.5 renames
-// Overwrote→Updated and adds Deleted per C-AI-WORKSPACE-V1-G.
+// resultRowIcon is the small icon prefix per status.
 templ resultRowIcon(s importer.RowStatus) {
 	switch s {
 		case importer.StatusCreated:

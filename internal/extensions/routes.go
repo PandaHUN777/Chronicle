@@ -54,18 +54,13 @@ func RegisterCampaignRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.Camp
 		campaigns.RequireCampaignAccess(campaignSvc),
 	)
 
-	// C-EXT-HUB Phase 1 path-collision resolution: the bare GET
-	// "/campaigns/:id/extensions" that used to render the standalone
-	// Content Packs list is retired here — the same path is now owned
-	// by the campaigns plugin's top-level Extensions hub
-	// (`Handler.ExtensionsHub` in internal/plugins/campaigns/). Content
-	// Packs continues to render via the same templ fragment
-	// (campaignExtensionListFragment), embedded as a card inside the
-	// hub via the ContentPacksCardRenderer interface — see
-	// extensions_card.go and internal/plugins/campaigns/extensions_hub.go.
-	// The handler method (ListCampaignExtensions) is preserved on
-	// *Handler so the JSON-API branch stays callable for any
-	// non-browser consumer; only the HTTP route registration retires.
+	// The bare GET "/campaigns/:id/extensions" is owned by the campaigns
+	// plugin's top-level Extensions hub (Handler.ExtensionsHub in
+	// internal/plugins/campaigns/), not registered here. Content Packs
+	// renders via the same templ fragment (campaignExtensionListFragment),
+	// embedded as a card via the ContentPacksCardRenderer interface — see
+	// extensions_card.go. ListCampaignExtensions is preserved on *Handler
+	// so the JSON-API branch stays callable for non-browser consumers.
 	g.GET("/marker-icons", h.ListMarkerIcons)
 	g.GET("/themes", h.ListThemes)
 	g.GET("/widgets", h.ListWidgets)

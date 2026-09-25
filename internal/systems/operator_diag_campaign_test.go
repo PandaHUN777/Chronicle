@@ -131,9 +131,9 @@ func TestCampaignDiagnostics_UnknownCampaignIsNotAnEmptyAnswer(t *testing.T) {
 
 // ── calendar.render ─────────────────────────────────────────────────────────
 
-// twoCalendarCampaign is the shape the 2026-08-11 operator most likely had: one
-// in-world calendar (the campaign default) and one real-world calendar beside
-// it. The real-world one takes the second seat and gets NO sky, by [SKY-1].
+// twoCalendarCampaign has one in-world calendar (the campaign default) and
+// one real-world calendar beside it. The real-world one takes the second
+// seat and gets NO sky.
 func twoCalendarCampaign() CampaignCalendarFacts {
 	return CampaignCalendarFacts{
 		Found: true, CampaignID: "c1", CampaignName: "Test",
@@ -186,11 +186,10 @@ func TestCalendarRender_RealWorldBlockGetsNoSkyAndSaysWhy(t *testing.T) {
 	})
 }
 
-// TestCalendarRender_SoleRealWorldCalendarIsPromoted pins the correction the
-// 2026-08-11 report had to make to one of its own lanes: with no in-world
-// calendar, benchClassify promotes the real-world one to PRIMARY, and it DOES
-// get a sky. That flips the remedy from "signed behaviour, adding data will not
-// help" to "adding one moon fixes it", so the trace has to distinguish them.
+// TestCalendarRender_SoleRealWorldCalendarIsPromoted pins that with no
+// in-world calendar, benchClassify promotes the real-world one to PRIMARY,
+// which DOES get a sky — flipping the remedy from "adding data will not
+// help" to "adding one moon fixes it", so the trace must distinguish them.
 func TestCalendarRender_SoleRealWorldCalendarIsPromoted(t *testing.T) {
 	f := CampaignCalendarFacts{
 		Found: true, CampaignID: "c1", CampaignName: "Test",
@@ -251,11 +250,10 @@ func TestCalendarRender_SectionProvenance(t *testing.T) {
 	}
 }
 
-// TestCalendarRender_ClosedRsvpNamesBothCauses guards the sentence that answers
-// the operator's first observation. It has to say two things at once: the panel
-// IS there and collapsed, AND the integration they asked for does not exist at
-// any disclosure state. Saying only the first would send them to click a chevron
-// that does not answer their question.
+// TestCalendarRender_ClosedRsvpNamesBothCauses pins that the RSVP report says
+// two things at once: the panel IS there and collapsed, AND the schedule
+// integration does not exist at any disclosure state — saying only the first
+// would send a reader to click a chevron that answers nothing.
 func TestCalendarRender_ClosedRsvpNamesBothCauses(t *testing.T) {
 	f := asViewer(twoCalendarCampaign())
 	f.SectionsNeverChosen = true
@@ -530,14 +528,10 @@ func TestCampaignSurfaces_MatchesTheLiveTable(t *testing.T) {
 	})
 }
 
-// TestCampaignSurfaces_FrozenShellIsDiscoveredNotDeclared.
-//
-// [VS-2] SIGNED sunset the V2 shell as a clickable destination and preserved it
-// as a URL, and TestSunset_NoLiveDoorRemains enforces that by walking internal/
-// for the shell's path prefix. So campaign.surfaces classifies it by the
-// HANDLER the router reports and prints the router's own path — which keeps the
-// answer complete without this repo writing the path down, and makes the row
-// disappear on its own if the route is ever actually removed.
+// TestCampaignSurfaces_FrozenShellIsDiscoveredNotDeclared pins that the V2
+// shell (unreachable except by URL, per TestSunset_NoLiveDoorRemains) is
+// classified by the HANDLER the router reports rather than a declared path,
+// so the row disappears on its own if the route is ever removed.
 func TestCampaignSurfaces_FrozenShellIsDiscoveredNotDeclared(t *testing.T) {
 	// No declared row may carry the shell's path: that is what the sunset guard
 	// forbids, and stating it here means a later edit that re-adds one fails in
@@ -680,12 +674,10 @@ func TestCampaignConfig_PlacedSkyboxIsNamedAndDistinguished(t *testing.T) {
 		if !strings.Contains(got, "`skybox` ×2") {
 			t.Errorf("duplicates must be counted, not collapsed:\n%s", got)
 		}
-		// CALV5 rewording: the distinction between the two things nicknamed
-		// "skybox" survives (that is this test's whole point), but the text
-		// now also says the widget's engine was deleted and the placement
-		// renders the rebuilding notice — a diagnostic asserting the old
-		// "genuinely DOES render the Moon" claim would be lying to the
-		// operator about a dead pipeline.
+		// The two things nicknamed "skybox" must stay distinguished, and the
+		// text must say the widget's engine was deleted and the placement
+		// renders the rebuilding notice rather than claiming it still
+		// renders the Moon.
 		if !strings.Contains(got, "LEGACY skybox widget") || !strings.Contains(got, "distinct from the v4 sky band") {
 			t.Errorf("the two things called skybox must be distinguished:\n%s", got)
 		}
@@ -921,11 +913,9 @@ func TestCampaignDiagnosticsAreCampaignScopedForTheBatchWorkspace(t *testing.T) 
 	}
 }
 
-// TestDeployCheckPointsAtTheRenderTrace is the catalog-hygiene fix. Its own file
-// header records an incident in which "a label was read as evidence"; a marker
-// hit read as "the feature works" is the same mistake one layer up, and it is
-// the most likely wrong answer an assistant would give to "is RSVP on my
-// calendar?".
+// TestDeployCheckPointsAtTheRenderTrace pins that host.deploy-check's Desc
+// refuses a marker-hit-means-it-renders reading and points to calendar.render
+// instead: a marker in the build proves it shipped, never that it renders.
 func TestDeployCheckPointsAtTheRenderTrace(t *testing.T) {
 	var desc string
 	for _, d := range diagnosticCatalog() {

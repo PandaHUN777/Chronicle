@@ -65,14 +65,11 @@ func TestEffectiveVisibilityTooltip(t *testing.T) {
 }
 
 // TestEffectiveVisibilityBadge_Markup pins the tag-widening markup this
-// component owns (C-PERM-W1-TAG-GRANTS): the amber corner dot and the
-// naming tooltip. ADR-057 slice 3 moved the badge's role gate from the show-
-// page call site into visibilityGlance itself and moved the base-state
-// decision from the caller-supplied ev.BaseState to the live entity (via
-// baseVisibilityState) so every call site — including the several with no
-// EffectiveVisibility at all — agrees on one source of truth; ev now
-// contributes only the tag-widening extras. The "no viewer role" gate itself
-// is pinned separately, against the rendered HTML of real call sites, in
+// component owns: the amber corner dot and the naming tooltip. The base
+// state comes from the live entity (via baseVisibilityState), not the
+// caller-supplied ev.BaseState, so every call site agrees on one source of
+// truth; ev contributes only the tag-widening extras. The role gate itself
+// is pinned separately, against real call sites, in
 // visibility_glance_render_test.go.
 func TestEffectiveVisibilityBadge_Markup(t *testing.T) {
 	cc := &campaigns.CampaignContext{Campaign: &campaigns.Campaign{ID: "c1"}, MemberRole: campaigns.RoleOwner}
@@ -116,21 +113,13 @@ func TestEffectiveVisibilityBadge_Markup(t *testing.T) {
 	}
 }
 
-// TestEffectiveVisibilityTooltip_VisitorsOnlyWhenCampaignIsPublic pins the
-// correction applied after ADR-057 slice 3 consolidated seven copies of this
-// glance onto one function.
-//
-// An "everyone" entity reaches every campaign MEMBER. Whether it also reaches
-// a logged-out stranger is a property of the CAMPAIGN — only a public campaign
-// is readable by RoleNone at all — so the tooltip may only mention visitors
-// when the campaign is public. It previously said "including logged-out
-// visitors" unconditionally, which is false on a private campaign and is the
-// same defect class as the wrong-glance slice 2 fixed: a glance stating
-// something untrue about who can read the page. One site rendering it was
-// survivable; seven would not have been.
-//
-// Both directions are asserted. A test that only checked the public case
-// would pass against the unconditional wording that caused this.
+// TestEffectiveVisibilityTooltip_VisitorsOnlyWhenCampaignIsPublic pins that
+// an "everyone" entity's tooltip mentions logged-out visitors only when the
+// campaign is public: reaching every campaign MEMBER is a property of the
+// entity, but reaching a stranger is a property of the CAMPAIGN (only a
+// public campaign is readable by RoleNone). Both directions are asserted so
+// a test that only checked the public case can't pass against unconditional
+// wording.
 func TestEffectiveVisibilityTooltip_VisitorsOnlyWhenCampaignIsPublic(t *testing.T) {
 	everyone := func() *EffectiveVisibility {
 		return &EffectiveVisibility{BaseState: VisStateEveryone}

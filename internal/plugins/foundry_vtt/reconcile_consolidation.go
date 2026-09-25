@@ -11,62 +11,45 @@ import (
 )
 
 // consolidationMigrationVersion is the version number of
-// 001_consolidate_foundry_modules — the upgrade-path migration this reconciler
-// decides is applicable or not.
+// 001_consolidate_foundry_modules, the migration this reconciler decides is
+// applicable or not.
 const consolidationMigrationVersion = 1
 
-// predecessorTokenTable is the table `foundry_modules` (deleted in C-FMC-5c)
-// created and migration 001 renames. Its presence is the ONLY evidence that
-// this database was ever in the pre-consolidation state.
+// predecessorTokenTable is the table migration 001 renames from. Its
+// presence is the only evidence this database was ever in the
+// pre-consolidation state.
 const predecessorTokenTable = "foundry_module_campaign_tokens"
 
 // migrationSlug is the key this plugin's rows carry in
-// plugin_schema_versions. It is PluginHealthKey ("foundry_vtt", underscore),
-// NOT PluginSlug ("foundry-vtt", hyphen): cmd/server/main.go registers the
+// plugin_schema_versions: PluginHealthKey ("foundry_vtt", underscore), NOT
+// PluginSlug ("foundry-vtt", hyphen) — cmd/server/main.go registers the
 // schema under the underscore form, and a row written under the hyphen form
-// would be invisible to the runner — the reconciler would appear to work and
-// migration 001 would still be attempted and still fail. TestRegisteredPlugins_
-// FoundryVTTSlugMatchesReconciler pins the two together.
+// would be invisible to the runner. Pinned by
+// TestReconcileConsolidationState_UsesTheRunnersSlug.
 const migrationSlug = PluginHealthKey
 
 // ReconcileConsolidationState makes the foundry_vtt migration chain reachable
-// on every database, not just the ones that came through `foundry_modules`.
+// on every database. Migration 001's first statement renames
+// foundry_module_campaign_tokens to foundry_vtt_campaign_tokens; on a fresh
+// database that source table never existed, so the RENAME fails and the
+// migration runner (which stops on the first failed migration) can never
+// reach any later migration for this plugin. PreMigrationCheck does not catch
+// this: it only refuses when foundry_module_versions exists and has rows.
 //
-// THE BUG IT CLOSES (C-SWEEP-R4 / data/fvtt-fresh-db-rename). Migration 001 is
-// a consolidation migration: its first statement is
-//
-//	RENAME TABLE foundry_module_campaign_tokens TO foundry_vtt_campaign_tokens;
-//
-// On a brand-new self-hosted install that source table has never existed — the
-// plugin that created it was deleted before the install ever ran — so the
-// statement fails with Error 1146, the plugin is marked DEGRADED, and the
-// Foundry integration is permanently dead. It cannot self-heal: the runner
-// returns on the first failed migration, so no later migration for this plugin
-// is ever reached. Nothing in the suite noticed because there was no fresh-DB
-// replay anywhere in CI (see cmd/server/freshdb_migration_test.go).
-//
-// It is NOT closed by PreMigrationCheck, which sits immediately next to this
-// call: that check only refuses when foundry_module_versions exists AND has
-// rows. On a fresh database the table does not exist, so the check returns nil
-// and the doomed migration runs anyway.
-//
-// THE RULE. Migration 001 is applicable if and only if its source table is
-// present. When it is absent the RENAME can never succeed, so 001 is recorded
-// as applied without running, and migration 002 — idempotent DDL — establishes
-// the post-consolidation shape instead. Three histories converge on one schema:
+// The rule: migration 001 is applicable iff its source table is present.
+// When absent, 001 is recorded as applied without running, and migration
+// 002 (idempotent DDL) establishes the post-consolidation shape instead:
 //
 //	fresh install            source absent  → 001 skipped, 002 creates the table
 //	completed upgrade        source absent  → 001 already recorded, 002 no-ops
 //	upgrade crashed mid-001  source absent  → 001 skipped, 002 finishes the job
 //	pre-consolidation DB     source PRESENT → untouched; 001 runs for real
 //
-// The last row is what keeps this safe. The reconciler never skips a migration
-// that has real work to do: as long as the predecessor table exists, 001 runs
-// exactly as before and this function does nothing at all.
+// The reconciler never skips a migration with real work to do: as long as
+// the predecessor table exists, 001 runs exactly as before.
 //
 // Called from cmd/server/main.go alongside PreMigrationCheck, before
-// database.RunPluginMigrations. Idempotent and cheap — one information_schema
-// lookup, and at most one INSERT IGNORE.
+// database.RunPluginMigrations. Idempotent and cheap.
 func ReconcileConsolidationState(ctx context.Context, db *sql.DB) error {
 	if db == nil {
 		return errors.New("foundry_vtt.ReconcileConsolidationState: nil db handle")

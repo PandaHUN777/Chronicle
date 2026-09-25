@@ -2,10 +2,10 @@ package sessions
 
 import "time"
 
-// This file holds the slot-proposal + scheduler-notification domain types
-// (C-SCHED-P2). A proposal is a DM's set of 1..5 candidate slots; each slot
-// (option) is a UTC INSTANT (RC-12.5), rendered into the viewer's zone at read
-// time. Per-option responses live in their OWN table — never session_attendees.
+// This file holds the slot-proposal + scheduler-notification domain types.
+// A proposal is a DM's set of 1..5 candidate slots; each slot (option) is a
+// UTC instant, rendered into the viewer's zone at read time. Per-option
+// responses live in their own table, never session_attendees.
 
 // Proposal status values.
 const (
@@ -21,24 +21,20 @@ const (
 	ResponseMaybe = "maybe"
 )
 
-// Notification types. The scheduler was the only writer through C-SCHED-P3;
-// C-CAL-RSVP-P1 adds the first EXTERNAL one, which is what the store was always
-// documented to allow (T-B2, notifications_repository.go:10-13 — "the store
-// itself is generic ... but no other feature subscribes yet").
+// Notification types.
 const (
 	NotifProposalCreated   = "proposal_created"
 	NotifProposalResponse  = "proposal_response"
-	NotifProposalConfirmed = "proposal_confirmed" // C-SCHED-P3: winner picked → session created.
+	NotifProposalConfirmed = "proposal_confirmed" // winner picked, session created.
 	// NotifCalendarRSVP marks a calendar-event RSVP notification. The stored
-	// VALUE deliberately avoids spelling the owning plugin's slug: a quoted
-	// plugin-name literal outside that plugin's own directory fails the
-	// plugin-isolation guard (T-B2 / M-B2.1), and this file lives in sessions.
+	// value avoids spelling the owning plugin's slug: a quoted plugin-name
+	// literal outside that plugin's own directory fails the plugin-isolation
+	// guard, and this file lives in sessions.
 	NotifCalendarRSVP = "event_rsvp"
 	// NotifAvailabilityNudge is the Director asking a member who has never
-	// answered to set their availability (C-RSVP-P9). It is sent ONLY on an
-	// explicit press — there is no scheduled-job runner in this product, and a
-	// reminder that fires on a timer nobody agreed to is a different feature
-	// with different consent.
+	// answered to set their availability. Sent only on an explicit press —
+	// there is no scheduled-job runner, so a timer-fired reminder would need
+	// separate consent.
 	NotifAvailabilityNudge = "availability_nudge"
 )
 
@@ -106,10 +102,9 @@ type Notification struct {
 // --- API request DTOs (camelCase JSON) ---
 
 // CreateProposalRequest is the DM slot-builder submission: a title/note plus
-// 1..5 candidate slots. Slots are submitted as viewer-zone wall-clocks (date +
-// minute range in TZ); the service resolves them to UTC instants via timeutil,
-// which is the DST-correct path — the same discipline the availability overlay
-// uses. Storage is UTC (RC-12.5); only the API input is wall-clock.
+// 1..5 candidate slots, submitted as viewer-zone wall-clocks (date + minute
+// range in TZ). The service resolves them to UTC instants via timeutil for
+// DST correctness. Storage is UTC; only the API input is wall-clock.
 type CreateProposalRequest struct {
 	Title   string                `json:"title"`
 	Note    string                `json:"note"`

@@ -9,23 +9,16 @@
 #
 # `make docker-build` and `make docker-all-local` wrap those two commands.
 #
-# WHY THIS IS A SEPARATE FILE. docker-compose.yml used to carry both `image:`
-# and `build:` on the chronicle service, which gave one tag two producers:
-# `docker compose build` tagged a local build with the GHCR name, `docker
-# compose pull` overwrote it from the registry, and `docker compose up -d` did
-# neither when an image already held the tag. On 2026-08-11 that combination
-# produced a deploy that appeared to do nothing, and then an hour of diagnosis
-# from the OCI labels of a months-old local image that still held `:latest` —
-# labels which were accurate about that image and irrelevant to the running
-# container.
+# WHY THIS IS A SEPARATE FILE. A single service must not carry both `image:`
+# and `build:` — that gives one tag two producers (`docker compose build`
+# stamps a local build with the registry name; `docker compose pull`
+# overwrites it from the registry) and makes `docker compose up -d` do neither
+# when an image already holds the tag. So this override:
 #
-# So the override does two things the merged-in version could not:
-#
-#   1. It renames the image. A local build is `chronicle:local`, never
+#   1. Renames the image to `chronicle:local`, never
 #      `ghcr.io/<org>/chronicle:latest`. The published tag has exactly one
-#      producer — CI — and `docker image inspect` on it can no longer be
-#      answering about somebody's afternoon build.
-#   2. It sets `pull_policy: build`, cancelling the base file's
+#      producer — CI.
+#   2. Sets `pull_policy: build`, cancelling the base file's
 #      `pull_policy: always`. Without this, compose would try to pull
 #      `chronicle:local` from Docker Hub and fail.
 #
@@ -47,8 +40,8 @@ services:
         # Left empty unless you export them first, e.g.
         #   export VCS_REF=$(git rev-parse HEAD)
         #   export BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-        # Empty is honest: it records that this image's provenance was not
-        # captured, rather than inventing a plausible-looking value.
+        # Empty is honest: it records that provenance was not captured,
+        # rather than inventing a plausible-looking value.
         VCS_REF: ${VCS_REF:-}
         BUILD_DATE: ${BUILD_DATE:-}
         CHRONICLE_VERSION: ${CHRONICLE_VERSION:-}

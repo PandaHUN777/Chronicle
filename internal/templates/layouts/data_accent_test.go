@@ -7,10 +7,8 @@ import (
 	"testing"
 )
 
-// legacyChromeCSS reproduces the pre-C-ACCENT-TRIO AccentColorCSS output
-// verbatim (the exact fmt.Sprintf shipped before the accentSlotCSS refactor).
-// The trio's contract is that chrome-only campaigns render BYTE-IDENTICAL
-// CSS to what they rendered before — this oracle pins that.
+// legacyChromeCSS reproduces the original AccentColorCSS output verbatim, as
+// an oracle pinning that chrome-only campaigns render byte-identical CSS.
 func legacyChromeCSS(base string) string {
 	if base == "" {
 		return ""
@@ -129,11 +127,11 @@ func TestAccentColorCSS_SurfacePair(t *testing.T) {
 	})
 }
 
-// TestAccentColorCSS_SemanticSlots covers the C-ACCENT-SLOTS emission: the
-// two NEW semantic slots (Action highlight, App accent) emit a full derived
-// block under their own custom property when set, nothing when unset, and
-// never disturb the site/legacy-surface emission that precedes them
-// (pinned byte-identical by TestAccentColorCSS_ChromeByteIdentical).
+// TestAccentColorCSS_SemanticSlots covers the two semantic slots (Action
+// highlight, App accent): each emits a full derived block under its own
+// custom property when set, nothing when unset, and neither disturbs the
+// site/legacy-surface emission that precedes them (pinned byte-identical by
+// TestAccentColorCSS_ChromeByteIdentical).
 func TestAccentColorCSS_SemanticSlots(t *testing.T) {
 	t.Run("both new slots set emit derived blocks after site + legacy surface", func(t *testing.T) {
 		ctx := SetAccentColor(context.Background(), "#6366f1")

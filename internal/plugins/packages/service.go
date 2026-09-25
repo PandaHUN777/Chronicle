@@ -111,32 +111,27 @@ type PackageService interface {
 
 	// InstallDirForVersion returns the on-disk path for a SPECIFIC
 	// historical version of a package — regardless of which version
-	// is marked "installed" in the DB. Used by sub-plugins (foundry_vtt
-	// in C-FMC-5b) to serve a campaign-pinned version that may not be
-	// the package's currently-active install.
+	// is marked "installed" in the DB. Used by sub-plugins (foundry_vtt)
+	// to serve a campaign-pinned version that may not be the package's
+	// currently-active install.
 	//
 	// The path is computed deterministically from (type, slug, version);
 	// no filesystem check is performed. Callers needing existence
-	// confirmation should stat the returned path themselves.
-	//
-	// Added in C-FMC-5b. Empty string return if pkgType is unknown.
+	// confirmation should stat the returned path themselves. Empty string
+	// return if pkgType is unknown.
 	InstallDirForVersion(pkgType PackageType, slug, version string) string
 }
 
 // PostInstallHook is the extension point sub-plugins use to attach
 // package-type-specific logic to the generic install pipeline. The
-// foundry_vtt sub-plugin (C-FMC-5b) is the first consumer: it
-// registers a hook for PackageTypeFoundryModule that rewrites the
-// version field in the on-disk module.json so served manifests
-// reflect the installed version (not the upstream GitHub tag).
+// foundry_vtt sub-plugin registers a hook for PackageTypeFoundryModule
+// that rewrites the version field in the on-disk module.json so served
+// manifests reflect the installed version, not the upstream GitHub tag.
 //
-// The hook list is iterated after the zip is extracted and validated
-// but BEFORE the DB row is updated, so a hook failure aborts the
-// install with the catalog untouched. Hook errors fail the install
-// loudly — no silent warn-and-continue. Operators see immediate
-// failures instead of stale-on-disk state lasting hours.
-//
-// Defined here in C-FMC-5a; first caller wires in C-FMC-5b.
+// The hook list is iterated after the zip is extracted and validated but
+// BEFORE the DB row is updated, so a hook failure aborts the install with
+// the catalog untouched. Hook errors fail the install loudly — no silent
+// warn-and-continue.
 type PostInstallHook interface {
 	// PackageType returns the type this hook fires for. The packages
 	// service iterates registered hooks and calls only those matching
@@ -151,13 +146,12 @@ type PostInstallHook interface {
 	// Parameters:
 	//   - pkg: the package row as loaded — pkg.InstalledVersion still
 	//     holds the PREVIOUS version at hook time; the new version is
-	//     the `version` parameter. (Changed when hooks moved ahead of
-	//     the DB write; both existing hooks ignore pkg.)
+	//     the `version` parameter.
 	//   - version: the version string being installed.
 	//   - previousVersion: the version that was installed before this
-	//     call. Empty string on a first-ever install (no prior state).
-	//     Added in C-FMC-6 so foundry_vtt's auto-pin hook knows which
-	//     version to preserve for preserve-mode campaigns.
+	//     call. Empty string on a first-ever install (no prior state) —
+	//     foundry_vtt's auto-pin hook uses this to know which version to
+	//     preserve for preserve-mode campaigns.
 	//   - destDir: the extracted package's on-disk directory.
 	//
 	// Returning an error fails the install (packages.InstallVersion
@@ -194,9 +188,8 @@ type packageService struct {
 	// (the same rules the loader enforces at boot) on an extracted system
 	// package before the install is committed. Injected from the app layer
 	// (packages must not import systems) — see SetManifestValidator. Nil
-	// skips the check, preserving the pre-hook behavior for tests. This
-	// closes the "installed green but rejected at load" shadow-failure
-	// class (the Draw Steel 0.13.4 field-cap incident).
+	// skips the check. Closes the "installed green but rejected at load"
+	// shadow-failure class.
 	manifestValidator func(manifestPath string) error
 
 	// installLocks serializes InstallVersion per package ID. Without it a
@@ -215,8 +208,7 @@ type packageService struct {
 	// systems.LoadedHealth/DiagnosticEvents. A verification failure does
 	// NOT fail the install (files+DB are consistent); it is persisted as
 	// the package's last_error so the admin UI surfaces "installed X but
-	// serving Y" durably — install success must mean serving, not just
-	// "DB row written".
+	// serving Y" durably.
 	postInstallVerifier func(installPath, version string) error
 }
 
@@ -277,10 +269,6 @@ func SetPostInstallVerifier(svc PackageService, fn func(installPath, version str
 // pipeline. Sub-plugins call this at boot; the hook fires after every
 // install whose package type matches. Multiple hooks per type are
 // allowed; they fire in registration order.
-//
-// Defined in C-FMC-5a; first caller (foundry_vtt) wires in C-FMC-5b.
-// Until then the slice stays empty and the iteration in InstallVersion
-// is a no-op.
 func RegisterPostInstallHook(svc PackageService, h PostInstallHook) {
 	if s, ok := svc.(*packageService); ok {
 		s.postInstallHooks = append(s.postInstallHooks, h)
@@ -319,12 +307,10 @@ func (s *packageService) installDir(pkgType PackageType, slug, version string) s
 	}
 }
 
-// InstallDirForVersion is the public counterpart of installDir.
-// foundry_vtt (C-FMC-5b) calls this to resolve a campaign-pinned
-// historical version to its on-disk extracted directory so it can
-// read that version's module.json without going through the singular
-// Package.InstallPath field (which only tracks the currently-active
-// install, not every version still on disk).
+// InstallDirForVersion is the public counterpart of installDir. foundry_vtt
+// calls this to resolve a campaign-pinned historical version to its
+// on-disk extracted directory, since Package.InstallPath only tracks the
+// currently-active install, not every version still on disk.
 func (s *packageService) InstallDirForVersion(pkgType PackageType, slug, version string) string {
 	if version == "" {
 		return ""
@@ -595,22 +581,17 @@ func (s *packageService) installVersion(ctx context.Context, packageID, version 
 		)
 	}
 
-	// C-FMC-5c: the Foundry-module-specific install branch is removed
-	// from this generic plugin. foundry_vtt's PostInstallHook (registered
-	// in routes.go) now performs the module.json version rewrite for
-	// foundry-module typed installs. The hook runs BEFORE the DB update
-	// below — the fail-loud reorder moved the PostInstallHook dispatch
-	// loop ahead of UpdatePackage so a failing hook leaves the catalog
-	// pointing at the old (still-intact) install dir (see the hook
-	// dispatch loop further down).
+	// foundry_vtt's PostInstallHook (registered in routes.go) performs the
+	// module.json version rewrite for foundry-module typed installs; it
+	// runs BEFORE the DB update below, so a failing hook leaves the
+	// catalog pointing at the old (still-intact) install dir (see the
+	// hook dispatch loop further down).
 	//
-	// For system packages, rewrite manifest.json version to match the release
-	// tag. The manifest embedded in the GitHub release may have a stale version.
-	//
-	// Fail loudly on rewrite errors (C-FMC-5a fail-loud contract): a
-	// system whose served manifest.json carries a stale version
-	// misleads downstream tooling the same way the old Foundry path
-	// did before C-FMC-5b. Cleanup + retry on failure.
+	// For system packages, rewrite manifest.json version to match the
+	// release tag: the manifest embedded in the GitHub release may have a
+	// stale version. Fail loudly on rewrite errors — a served manifest.json
+	// with a stale version misleads downstream tooling. Cleanup + retry on
+	// failure.
 	if pkg.Type == PackageTypeSystem {
 		if err := rewriteSystemManifestVersion(destDir, version); err != nil {
 			_ = os.RemoveAll(destDir)
@@ -621,10 +602,9 @@ func (s *packageService) installVersion(ctx context.Context, packageID, version 
 		// enforces at boot (content caps, slugs, field types, renderer
 		// bindings…), injected from the app layer. Without this, a
 		// manifest the loader will reject installs "green" and then
-		// shadow-fails at load while the old version keeps serving
-		// (the Draw Steel 0.13.4 field-cap incident). Runs after the
-		// version rewrite so it validates exactly the bytes that will
-		// be served.
+		// shadow-fails at load while the old version keeps serving. Runs
+		// after the version rewrite so it validates exactly the bytes
+		// that will be served.
 		if s.manifestValidator != nil {
 			if err := s.manifestValidator(filepath.Join(destDir, "manifest.json")); err != nil {
 				_ = os.RemoveAll(destDir)
@@ -633,22 +613,18 @@ func (s *packageService) installVersion(ctx context.Context, packageID, version 
 		}
 	}
 
-	// Capture the previous installed version BEFORE updating the
-	// package row, so the post-install hook receives both the new
-	// and the previous version. foundry_vtt's auto-pin hook
-	// (C-FMC-6) needs this to know which version campaigns were
-	// effectively running. Empty string on first-ever install — the
-	// hook treats that as "no auto-pin needed" since there's no
-	// prior state to preserve.
+	// Capture the previous installed version BEFORE updating the package
+	// row, so the post-install hook receives both the new and the previous
+	// version (foundry_vtt's auto-pin hook needs this to know which
+	// version campaigns were effectively running). Empty string on
+	// first-ever install — the hook treats that as "no auto-pin needed".
 	previousVersion := pkg.InstalledVersion
 
 	// Run any registered PostInstallHook whose PackageType matches —
-	// BEFORE the DB row update. A hook failure removes destDir and
-	// aborts with the catalog untouched; previously the row was
-	// updated first, so a failing hook (e.g. foundry_vtt's module.json
-	// rewrite) deleted the install dir while the DB kept pointing at
-	// it — latest-tracking campaigns then resolved to a missing dir.
-	// Order is registration order.
+	// BEFORE the DB row update. A hook failure removes destDir and aborts
+	// with the catalog untouched, so a failing hook (e.g. foundry_vtt's
+	// module.json rewrite) never leaves the DB pointing at a deleted
+	// install dir. Order is registration order.
 	for _, hook := range s.postInstallHooks {
 		if hook.PackageType() != pkg.Type {
 			continue
@@ -693,12 +669,10 @@ func (s *packageService) installVersion(ctx context.Context, packageID, version 
 	// immediately re-set it if the loader did NOT pick up this install.
 	_ = s.repo.SetLastError(ctx, pkg.ID, "")
 
-	// Verify the loader is actually serving what we just installed
-	// ("success" must mean serving, not "DB row written" — the Draw
-	// Steel 0.13.4 incident had a green check while the loader kept the
-	// old version). Verification failure does not fail the install: the
-	// files and DB are consistent; the mismatch is persisted for the
-	// admin badge/banner instead.
+	// Verify the loader is actually serving what we just installed —
+	// "success" must mean serving, not just "DB row written". Verification
+	// failure does not fail the install: the files and DB are consistent;
+	// the mismatch is persisted for the admin badge/banner instead.
 	if pkg.Type != PackageTypeFoundryModule && s.postInstallVerifier != nil {
 		if verr := s.postInstallVerifier(destDir, version); verr != nil {
 			msg := fmt.Sprintf("installed %s but it is not being served: %v", version, verr)
@@ -1441,12 +1415,6 @@ func repoPath(repoURL string) string {
 	}
 	return owner + "/" + repo
 }
-
-// C-FMC-5c removed rewriteModuleJSONVersion from this generic plugin.
-// Foundry-specific module.json version rewriting now lives in
-// foundry_vtt's PostInstallHook, where it belongs. System packages use
-// rewriteSystemManifestVersion (below) for the equivalent operation
-// on manifest.json.
 
 // rewriteSystemManifestVersion updates the "version" field in a system
 // package's manifest.json to match the installed version tag. Same purpose

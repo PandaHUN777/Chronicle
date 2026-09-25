@@ -1,11 +1,8 @@
-// logging_test.go pins the ADR-058 audit's logging finding
-// (.ai/designs/2026-09-12-security-audit-findings.md, "the sensitive-
-// parameter list omits `sig` and `expires`"): internal/plugins/media's
-// signed URLs put a live, directly-usable credential — an HMAC signature
-// plus the expiry it is valid until — in the query string. Before this,
-// sensitiveParams omitted both, so every media request wrote that
-// credential to the request log in plaintext, where it stayed valid (and
-// readable by anyone with log access) for the rest of its TTL.
+// logging_test.go pins that sensitiveParams redacts `sig` and `expires`:
+// internal/plugins/media's signed URLs put a live, directly-usable
+// credential — an HMAC signature plus the expiry it is valid until — in the
+// query string, and an omission here would write that credential to the
+// request log in plaintext for the rest of its TTL. See ADR-058.
 package middleware
 
 import (

@@ -20,13 +20,10 @@ type ItemTypeFinder interface {
 // (role + userID) may see, applying the entities plugin's own canonical
 // visibility policy (default is_private, custom per-subject grants, tag
 // grants). Wraps entities.EntityService.FilterViewableEntityIDs — the SAME
-// method sessions and the relations widget already use — so the Armory
-// gallery never hand-rolls its own copy of that predicate. That hand-rolled
-// copy (`role < 2 AND is_private = false`) is finding 2 in
-// .ai/designs/2026-09-12-security-audit-findings.md: it never consulted
-// entities.visibility or entity_permissions, so a visibility='custom' item
-// (whose is_private is untouched by SetEntityPermissions) stayed listed to
-// Players and to anonymous visitors.
+// method sessions and the relations widget use — so the Armory gallery
+// never hand-rolls its own copy of that predicate, which used to miss
+// visibility='custom' items (is_private untouched by SetEntityPermissions)
+// and leave them listed to Players and anonymous visitors.
 type EntityVisibilityFilter interface {
 	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
@@ -66,9 +63,9 @@ type armoryService struct {
 }
 
 // NewArmoryService creates a new Armory service. entityVisibility is the
-// canonical visibility gate (see EntityVisibilityFilter) — required so a
-// Player/anonymous viewer's list can never fall back to "everything visible"
-// by construction; see visibleItemIDs's fail-closed branch.
+// canonical visibility gate (see EntityVisibilityFilter), required so a
+// Player/anonymous viewer's list can never fall back to "everything
+// visible" — see visibleItemIDs's fail-closed branch.
 func NewArmoryService(repo ArmoryRepository, typeFinder ItemTypeFinder, entityVisibility EntityVisibilityFilter) ArmoryService {
 	return &armoryService{repo: repo, typeFinder: typeFinder, entityVisibility: entityVisibility}
 }
@@ -80,9 +77,8 @@ func (s *armoryService) SetTagLister(tl TagLister) {
 
 // ListItems resolves item types, narrows the campaign's matching items to
 // what the viewer may see, and returns one page of cards. The total is the
-// size of that SAME narrowed set (see visibleItemIDs), so a filtered list and
-// its count can never disagree — the failure mode finding 2 also covered
-// (an inflated count is itself a leak under ADR-055 rule 3).
+// size of that SAME narrowed set (see visibleItemIDs), so a filtered list
+// and its count can never disagree — an inflated count is itself a leak.
 func (s *armoryService) ListItems(ctx context.Context, campaignID string, role int, userID string, opts ItemListOptions) ([]ItemCard, int, error) {
 	typeIDs, err := s.typeFinder.FindItemTypeIDs(ctx, campaignID)
 	if err != nil {
@@ -149,33 +145,24 @@ func (s *armoryService) CountItems(ctx context.Context, campaignID string, role 
 }
 
 // visibleItemIDs returns the item entity IDs matching opts' type/search/tag/
-// instance filters, narrowed to the viewer's visibility.
+// instance filters, narrowed to the viewer's visibility. Callers pass a
+// co-DM in as a promoted RoleOwner via cc.VisibilityRole() upstream, so
+// only a true OWNER is unrestricted here.
 //
-// Only an OWNER is unrestricted here (role >= permissions.RoleOwner) —
-// that is the Armory gallery's existing behaviour, UNCHANGED by this fix.
-// Whether a co-DM (a DM-granted Player promoted for visibility purposes)
-// should see MORE than a Player is a separate, undecided product question
-// booked in .ai/todo.md ("does the co-DM promotion cross plugin lines?") and
-// deliberately out of scope here.
-//
-// Everyone below Owner, Scribes included, is narrowed through the
-// SAME canonical visibility policy the entities plugin itself applies
-// (EntityVisibilityFilter), replacing the hand-rolled `is_private == false`
-// check finding 2 flagged — so this gallery can no longer disagree with the
+// Everyone below Owner, Scribes included, is narrowed through the SAME
+// canonical visibility policy the entities plugin itself applies
+// (EntityVisibilityFilter), so this gallery can't disagree with the
 // entity page about what is hidden.
 func (s *armoryService) visibleItemIDs(ctx context.Context, campaignID string, typeIDs []int, role int, userID string, opts ItemListOptions) ([]string, error) {
 	allIDs, err := s.repo.ListItemIDs(ctx, campaignID, typeIDs, opts)
 	if err != nil {
 		return nil, err
 	}
-	// Bypass at OWNER, not Scribe, because that is where the canonical
-	// policy bypasses: visibilityFilter (entities/repository.go) returns an
-	// empty predicate only for role >= RoleOwner. For a Scribe it still
-	// evaluates, and its custom branch requires an actual matching grant —
-	// a visibility='custom' entity is NOT automatically visible to a
-	// Scribe. Short-circuiting at Scribe here would have left this gallery
-	// more permissive than the entity page for exactly the state finding 2
-	// was about, which is the same disagreement in a narrower audience.
+	// Bypass at OWNER, not Scribe: the canonical policy (entities/
+	// repository.go's visibilityFilter) returns an empty predicate only
+	// for role >= RoleOwner. For a Scribe it still evaluates, and a
+	// visibility='custom' entity is NOT automatically visible without an
+	// actual matching grant.
 	if role >= permissions.RoleOwner || len(allIDs) == 0 {
 		return allIDs, nil
 	}

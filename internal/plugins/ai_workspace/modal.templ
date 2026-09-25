@@ -1,17 +1,9 @@
-// modal.templ — HTMX fragment returned by the GenerateAIExport
-// handler. Same structure as the campaigns-plugin AI Export modal
-// from PR #350; moved into the AI Workspace plugin by V1-B per
-// reports/chronicle/2026-05-26-c-ai-workspace-scoping.md §4 Phase 2.
-//
-// Functionally identical to the pre-migration modal:
-//   - same select-all <pre> body
-//   - same Copy button wiring (data-widget="ai-export"; the global
-//     /static/js/widgets/ai_export.js handles clipboard write)
-//   - same Alpine.js show/hide via x-data + click.outside
-//
-// The token-estimate header is already embedded in the markdown body
-// (from aiexport.RenderHeader), so the modal surfaces no separate
-// token UI — the <pre>'s first lines are the estimate.
+// modal.templ is the HTMX fragment returned by the GenerateAIExport
+// handler: a select-all <pre> body with Copy button wiring
+// (data-widget="ai-export"; /static/js/widgets/ai_export.js handles
+// the clipboard write). The token-estimate header is embedded in the
+// markdown body (from aiexport.RenderHeader), so no separate token
+// UI is rendered here.
 
 package ai_workspace
 

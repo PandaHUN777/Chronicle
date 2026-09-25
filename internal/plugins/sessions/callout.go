@@ -5,23 +5,16 @@ import (
 	"time"
 )
 
-// The player call-to-action (C-RSVP-P10).
+// The player call-to-action banner.
 //
-// TWO ASKS, ONE MOMENT. The operator asked for two things — that the product
-// ASK a player for their timezone rather than silently guessing, and that
-// players see something on the page when an RSVP opens. Both are the same
-// question from the player's side ("is there something I owe the table?"), both
-// want the same answer surface, and building them as two mechanisms would mean
-// two polls, two banners that can stack, and two places to get the dismissal
-// wrong. So this is one decision, made once, server-side.
-//
-// WHY SERVER-SIDE AND POLLED, rather than pushed at the moment RSVP is armed:
-// a player is almost never looking at the page in the second the GM arms it. A
-// fire-once toast would be seen by nobody and would then be gone. What a player
-// needs is the STATE — "there is an unanswered request" — which survives a
-// reload, and which stops being shown the moment they answer. This mirrors the
-// bell badge exactly (notifications_handler.go), including returning nothing at
-// all when there is nothing to say.
+// It unifies two asks — an unanswered RSVP, and an unset timezone — into one
+// decision made once, server-side, rather than two banners that could stack.
+// It is server-side and polled rather than pushed at the moment an RSVP
+// opens, because a player is rarely looking at the page in that instant; what
+// they need is STATE ("there is an unanswered request") that survives a
+// reload and stops the moment they answer, mirroring the bell badge
+// (notifications_handler.go), including returning nothing when there is
+// nothing to say.
 
 // CalloutKind names what the banner is asking for. The zero value is "nothing",
 // so a caller that ignores the error still shows nothing rather than something
@@ -50,17 +43,11 @@ type Callout struct {
 }
 
 // calloutNotifTypes are the notification types that represent something a
-// player is expected to ANSWER, as opposed to something they are merely being
-// told.
-//
-// The distinction is the whole point of the banner. NotifProposalConfirmed
-// ("the time is settled") and NotifProposalResponse ("somebody replied to your
-// proposal") are news; raising a persistent banner for them would train players
-// to dismiss the banner unread, and the one that actually needs an answer would
-// go with it. NotifAvailabilityNudge is deliberately NOT here either: the
-// Director already chose to send that one to the bell, and promoting their
-// nudge into a page-wide banner would be this code overriding their judgement
-// about how loud to be.
+// player is expected to ANSWER, as opposed to news (NotifProposalConfirmed,
+// NotifProposalResponse) or a Director-directed nudge
+// (NotifAvailabilityNudge) that stays in the bell. Raising a persistent
+// banner for every notification type would train players to dismiss it
+// unread, burying the one that actually needs an answer.
 var calloutNotifTypes = map[string]bool{
 	NotifProposalCreated: true,
 	NotifCalendarRSVP:    true,
@@ -69,13 +56,11 @@ var calloutNotifTypes = map[string]bool{
 // BuildCallout decides what one player should be shown, from their unread
 // notifications and their stored account timezone.
 //
-// PRECEDENCE IS DELIBERATE AND IS NOT "most recent wins". An unanswered RSVP
-// outranks the timezone ask because it is time-limited — a session gets
-// scheduled with or without that player, and the window closes. A missing
-// timezone is wrong every day but wrong in a way that keeps until tomorrow.
-// Showing both at once was considered and rejected: two stacked banners above
-// the page content is how a shell starts eating the screen, and the second one
-// gets dismissed by reflex along with the first.
+// An unanswered RSVP always outranks the timezone ask, never "most recent
+// wins": the RSVP is time-limited (a session gets scheduled with or without
+// that player), while a missing timezone is wrong every day but keeps until
+// tomorrow. The two are never shown together, since stacked banners crowd
+// the page and train a reflex dismissal that loses both.
 //
 // zoneSet reports whether the account carries an IANA zone. It is passed rather
 // than read here so this stays pure and so the caller owns the auth seam.

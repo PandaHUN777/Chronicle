@@ -42,10 +42,9 @@
      */
     _fetchMapData: function (mapId) {
       var self = this;
-      // Public-capable web endpoint (cordinator#39 finding 4) — NOT /api/v1,
-      // which is API-key/Foundry auth with no public-campaign path, so the
-      // block stayed blank for public-campaign visitors. /meta returns the same
-      // image + dimensions + visibility-filtered markers.
+      // Public-capable web endpoint, not /api/v1 (API-key/Foundry auth only,
+      // no public-campaign path). /meta returns image + dimensions +
+      // visibility-filtered markers.
       var url = '/campaigns/' + encodeURIComponent(this.campaignId) +
         '/maps/' + encodeURIComponent(mapId) + '/meta';
 
@@ -157,8 +156,7 @@
         // Markers are stored as percentages (0-100). Convert to pixel coords
         // for Leaflet's CRS.Simple, with Y flipped because the simple CRS
         // origin is bottom-left while marker coordinates are top-left.
-        // Mirrors the conversion the full map page does in maps.templ; the
-        // earlier embed used raw [y, x] which placed pins at wrong positions.
+        // Mirrors the conversion the full map page does in maps.templ.
         var lat = imageH - (mk.y / 100) * imageH;
         var lng = (mk.x / 100) * imageW;
         var marker = L.marker([lat, lng], { icon: icon }).addTo(markerTarget);

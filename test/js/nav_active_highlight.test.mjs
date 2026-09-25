@@ -1,16 +1,12 @@
 // nav_active_highlight.test.mjs — contract for boot.js's boosted-nav sidebar
 // active-link highlighter (updateSidebarActiveLinks).
 //
-// Regression guard for C-NAV-ACTIVE-FIX: after an hx-boost swap (which leaves
-// #sidebar un-re-rendered), the highlighter used to re-apply a hardcoded class
-// vocabulary that no longer matched what the server actually renders for
-// active/inactive nav links (layouts/app.templ's sidebarNavActive /
-// sidebarNavInactive). That left the just-left link's "active" indicator
-// classes stuck (never removed) while the newly-active link only got a
-// partial set — the "wrong / doubled active nav item" bug. The fix reads the
-// live vocabulary from #sidebar's data-nav-active-classes /
-// data-nav-inactive-classes attributes (the single source of truth, populated
-// server-side from the same Go constants used to render every link).
+// After an hx-boost swap (which leaves #sidebar un-re-rendered), the
+// highlighter must read the live active/inactive class vocabulary from
+// #sidebar's data-nav-active-classes / data-nav-inactive-classes attributes —
+// the single source of truth, populated server-side from the same Go
+// constants used to render every link (layouts/app.templ) — rather than a
+// hardcoded vocabulary that can drift out of sync with it.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -22,8 +18,8 @@ import vm from 'node:vm';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const src = readFileSync(path.join(here, '..', '..', 'static', 'js', 'boot.js'), 'utf8');
 
-// The real current server vocabulary (layouts/app.templ:92-98), duplicated
-// here ONLY as fixture data for these tests — not by boot.js itself anymore.
+// The real current server vocabulary (layouts/app.templ), duplicated here
+// only as fixture data for these tests.
 const SERVER_ACTIVE = ['sidebar-nav-active', 'text-sidebar-active', 'border-accent'];
 const SERVER_INACTIVE = ['text-sidebar-text', 'hover:text-sidebar-active'];
 const SHARED_BASE = ['sidebar-nav-glow', 'flex', 'items-center', 'border-l-2', 'border-transparent'];
@@ -193,11 +189,11 @@ test('longest-prefix match wins between two candidates sharing a prefix', () => 
 });
 
 test('nav links are identified by the parsed vocabulary, not a hardcoded marker token (r2-1)', () => {
-  // `border-accent` is in the active vocabulary but is NOT one of the old
-  // hardcoded identification literals (text-sidebar-text / text-sidebar-active).
-  // The pre-r2-1 code identified nav links by those two literals only, so a link
-  // styled with any OTHER vocabulary class was skipped entirely; deriving the
-  // marker set from the parsed vocabulary recognizes it.
+  // `border-accent` is in the active vocabulary but is not one of the fixed
+  // identification literals (text-sidebar-text / text-sidebar-active); the
+  // highlighter must derive its marker set from the parsed vocabulary, not
+  // those two literals alone, or a link styled with any other class is
+  // skipped entirely.
   const target = { href: '/campaigns/camp1/foo', classes: [...SHARED_BASE, 'border-accent'] };
   const other = { href: '/campaigns/camp1/bar', classes: [...SHARED_BASE, ...SERVER_INACTIVE] };
   const { linkEls, navigateTo } = boot({ links: [target, other] });

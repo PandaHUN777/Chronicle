@@ -1,8 +1,6 @@
 // Package systems — operator_diag.go is the operator-facing analogue of the
 // campaign AI-Export: a catalog of named, read-only diagnostics the admin runs
-// and pastes to the AI assistant. It implements the "AI's only hands" model from
-// cordinator/plans/2026-06-26-debug-cockpit-and-ai-assist-capability-spec.md §B
-// (named, parameterized, read-only diagnostics) + §C2 (read-only, secret-redacted).
+// and pastes to the AI assistant.
 //
 // Why a CATALOG and not one big dump: a monolithic export wastes the assistant's
 // context with data it didn't ask for. Instead the assistant requests ONE named
@@ -64,42 +62,34 @@ type Diagnostic struct {
 func diagnosticCatalog() []Diagnostic {
 	return []Diagnostic{
 		// host.* comes FIRST: every diagnostic below describes what the server
-		// is serving, and all of them are worthless if the server itself is
-		// not the build the operator thinks it is. Defined in
-		// operator_diag_host.go.
+		// is serving, and all are worthless if the build itself is wrong.
+		// Defined in operator_diag_host.go.
 		hostBuildDiagnostic(),
-		// The composite sits second: it is the ONE thing to run after a deploy,
-		// and it assembles what host.build, host.assets, host.embedded and
+		// The composite is the ONE thing to run after a deploy: it assembles
+		// what host.build, host.assets, host.embedded and
 		// packages.installed-vs-loaded each answer separately. Defined in
 		// operator_diag_deploy.go.
 		hostDeployCheckDiagnostic(),
 		hostRuntimeDiagnostic(),
 		// What the server has been getting WRONG, defined in
-		// operator_diag_errors.go. Placed this high because it is the question
-		// an operator arrives with ("what broke overnight?") and because until
-		// now the only answer was `docker logs` — i.e. shell access, which is
-		// the exact dependency this whole host.* group exists to remove. The
-		// summary is listed after the listing but is usually the better first
-		// read; its Desc says so.
+		// operator_diag_errors.go — the diagnostic route to that question
+		// instead of shell/log access. The summary is usually the better
+		// first read; its Desc says so.
 		hostErrorsDiagnostic(),
 		hostErrorsSummaryDiagnostic(),
 		// The asset half of the same question, defined in
 		// operator_diag_assets.go. host.embedded sits alongside host.assets
 		// because Chronicle serves its front-end from TWO places — the on-disk
-		// static root and each plugin's //go:embed-ed FS — and only one of them
-		// is reachable by a shell. Listing them apart is what stops the next
-		// empty `grep /app/static` from being read as missing code.
+		// static root and each plugin's //go:embed-ed FS — and only one of
+		// them is reachable by a shell.
 		hostAssetsDiagnostic(),
 		hostAssetContainsDiagnostic(),
 		hostEmbeddedDiagnostic(),
 		hostEmbeddedContainsDiagnostic(),
 		// The extension tiers, defined in operator_diag_plugins.go.
-		// host.widgets answers the operator's original question ("calendar (and
-		// other widget) versions") and host.plugins answers "is this plugin
-		// even loaded?". Both sit after the raw asset listings because both are
-		// INTERPRETATIONS of the same two storage mechanisms — a reader who
-		// disbelieves a row here should be able to drop down to host.assets /
-		// host.embedded and see the file itself.
+		// host.widgets answers "what widget versions are live?" and
+		// host.plugins answers "is this plugin even loaded?" — both
+		// interpretations of the same two storage mechanisms listed above.
 		hostWidgetsDiagnostic(),
 		hostPluginsDiagnostic(),
 		{
@@ -204,15 +194,10 @@ func diagnosticCatalog() []Diagnostic {
 			Desc:  "All campaigns with their ids — the entry point for the entity.* and campaign.*/calendar.* diagnostics, which all need a campaign id. Run this first if you don't know the id.",
 			Run:   renderCampaignList,
 		},
-		// The campaign family, in the 2026-08-11 ranking, immediately after the
-		// discovery entry that supplies their argument. They answer a different
-		// question from everything above: host.* says WHICH CODE IS RUNNING,
-		// these say WHY THIS CAMPAIGN LOOKS LIKE THIS. Defined in
-		// operator_diag_campaign.go.
-		//
-		// calendar.render leads because four independent causes currently
-		// render as one identical unfilled Bench, and it is the only one of the
-		// four that turns a render decision into text.
+		// The campaign family, placed after the discovery entry that supplies
+		// their argument. They answer a different question from everything
+		// above: host.* says WHICH CODE IS RUNNING, these say WHY THIS
+		// CAMPAIGN LOOKS LIKE THIS. Defined in operator_diag_campaign.go.
 		calendarRenderDiagnostic(),
 		calendarConfigDiagnostic(),
 		campaignSurfacesDiagnostic(),
@@ -722,22 +707,19 @@ type Probe struct {
 
 // defaultProbes is the curated probe library (state the server can't self-report).
 //
-// Two kinds of entry live here now, and the difference matters:
+// Two kinds of entry live here:
 //
 //   - Probes for state genuinely outside the process — the browser's view, the
 //     database, the Docker daemon.
-//   - TRAP annotations. Several natural-looking shell commands return an answer
-//     that is correct about what it measured and MISLEADING about what the
-//     reader wanted to know. Both wrong turns of the 2026-08-11 incident were
-//     of that kind: `docker inspect` labels described a different image, and a
-//     grep of the container filesystem could never have found a plugin asset
-//     because those bytes are compiled into the binary. Those probes are kept
-//     and annotated rather than removed, because the operator will type them
-//     anyway — the value is in the warning next to the output.
+//   - TRAP annotations: natural-looking shell commands whose answer is correct
+//     about what it measured but misleading about what the reader wanted to
+//     know (e.g. `docker inspect` labels describing a different image than
+//     the running container, or a filesystem grep that can't find an asset
+//     compiled into the binary). Kept and annotated, not removed, because the
+//     operator will type them anyway.
 //
-// A probe that a host.* diagnostic now answers better is likewise KEPT and its
-// Why says which one to prefer. Silently deleting it would leave an operator
-// who remembered it running it from memory with no note attached.
+// A probe that a host.* diagnostic now answers better is likewise kept, with
+// its Why saying which one to prefer.
 func defaultProbes() []Probe {
 	return []Probe{
 		{

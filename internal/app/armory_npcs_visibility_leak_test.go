@@ -1,40 +1,20 @@
 package app
 
-// armory_npcs_visibility_leak_test.go — end-to-end proof for security-audit
-// finding 2 (.ai/designs/2026-09-12-security-audit-findings.md): the Armory
-// and NPC galleries hand-rolled their visibility filter as
-// `role < 2 AND e.is_private = false` (armory/repository.go, npcs/repository.go)
-// and never consulted entities.visibility or entity_permissions. Switching an
-// entity to visibility='custom' never clears is_private (SetEntityPermissions
-// only touches it on the 'default' branch), so a custom-restricted entity
-// stayed listed to Players and to anonymous visitors, with a count that
-// included it.
+// armory_npcs_visibility_leak_test.go pins that the Armory and NPC galleries
+// list entities through the entities plugin's canonical
+// FilterViewableEntityIDs (the same entityVisibilityFilterAdapter the
+// sessions plugin uses), not a hand-rolled predicate — a hand-rolled
+// `role < 2 AND is_private = false` filter ignores entities.visibility /
+// entity_permissions, so a `visibility='custom'`-restricted entity (which
+// SetEntityPermissions does not clear is_private for) still leaked to
+// Players and anonymous visitors. Runs against a real database, in
+// internal/app (armory/npcs may not import the entities repository
+// directly, per plugin isolation), because a mock of the predicate would not
+// prove the wiring is real.
 //
-// WHY THIS TEST LIVES HERE, NOT IN internal/plugins/armory OR .../npcs:
-// the fix routes both galleries' visibility decision through the entities
-// plugin's own canonical FilterViewableEntityIDs (via the SAME
-// entityVisibilityFilterAdapter routes.go already wires for the sessions
-// plugin) instead of a hand-rolled predicate — see
-// .ai/designs/2026-09-12-security-audit-findings.md finding 2 and CLAUDE.md's
-// plugin-isolation rule (armory/npcs may not import the entities plugin's
-// repository directly). internal/app is the composition root that already
-// imports every plugin (see map_audience_parity_test.go,
-// bestiary_import_visibility_test.go for the same pattern), so it is the one
-// place that can wire the REAL armory/npcs services to the REAL entities
-// repository and prove the seam actually closes the leak.
-//
-// A mock of the visibility predicate would prove nothing here (see
-// error_handler_api_type_test.go's header on that failure mode): after the
-// fix, armory's and npcs's own repositories implement NO predicate at all —
-// they hand back unfiltered candidate IDs and defer entirely to the entities
-// plugin's SQL. The only way to prove the wiring is real is to run it against
-// a real database.
-//
-// Skipped under -short. DSN/skip convention matches
-// internal/plugins/entities/repository_integration_test.go. Run with
-// `make docker-up && make migrate-up && go test ./internal/app/... -run
-// CustomVisibilityLeak -v`, or against tools/start-test-db.sh's local MariaDB
-// via CHRONICLE_TEST_DB_DSN.
+// Skipped under -short. Run with `make docker-up && make migrate-up && go
+// test ./internal/app/... -run CustomVisibilityLeak -v`, or against
+// tools/start-test-db.sh's local MariaDB via CHRONICLE_TEST_DB_DSN.
 
 import (
 	"context"

@@ -1,7 +1,7 @@
-// routes.go — the binding UI routes (C-WIDGET-BINDING-P4a). Campaign-scoped;
-// all writes are Scribe+. Generic across widget types (the handler validates
-// host_type/widget_type against the registry). No addon gate — the affordance
-// only appears on already-rendered, addon-gated widget blocks.
+// The binding UI routes. Campaign-scoped; all writes are Scribe+. Generic
+// across widget types (the handler validates host_type/widget_type against
+// the registry). No addon gate — the affordance only appears on
+// already-rendered, addon-gated widget blocks.
 package widgetbindings
 
 import (

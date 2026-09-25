@@ -73,15 +73,11 @@ templ ImportResultPage(campaignID, campaignName string, report *ImportReport) {
 	}
 }
 
-// ImportResultPanel reports a PARTIAL import: the campaign exists, but some
-// objects in the file could not be recreated.
-//
-// It exists because import is best-effort — one bad row does not abandon the
-// campaign — and until sweep R4 stage 16 that best-effort behaviour was
-// indistinguishable from a clean restore. The operator was redirected
-// straight to the new campaign with the losses in a server log they will
-// never read. A backup tool that reports success while dropping rows teaches
-// the operator to stop checking, which is the failure mode that matters.
+// ImportResultPanel reports a partial import: the campaign exists, but some
+// objects in the file could not be recreated. Import is best-effort (one
+// bad row does not abandon the campaign), so this panel is what keeps that
+// best-effort behaviour distinguishable from a clean restore, instead of
+// leaving losses only in a server log.
 templ ImportResultPanel(campaignID, campaignName string, report *ImportReport) {
 	<div class="card p-6 border-l-4 border-amber-500">
 		<div class="flex items-start gap-3">

@@ -1,11 +1,11 @@
 package app
 
-// error_handler_login_test.go — the 401→login translation rules
-// (cordinator#30 r2). A 401 must redirect to /login ONLY when landing there
-// helps the user navigate: direct browser requests and HTMX BOOSTED
-// navigations. A lazily-loaded FRAGMENT that 401s (e.g. an owner-only
-// widget on a public page viewed anonymously) must NOT hijack the whole
-// page — it falls through to the toast/no-swap branch.
+// error_handler_login_test.go pins the 401→login translation rule: a 401
+// redirects to /login only when landing there helps the user navigate
+// (direct browser requests and HTMX boosted navigations). A lazily-loaded
+// fragment that 401s (e.g. an owner-only widget on a public page viewed
+// anonymously) must not hijack the whole page — it falls through to the
+// toast/no-swap branch.
 
 import (
 	"net/http"

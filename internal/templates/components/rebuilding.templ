@@ -3,17 +3,10 @@ package components
 // CALV5-PLACEHOLDER: this file exists only while the calendar is rebuilt (V5)
 // and is deleted with the last placeholder that uses it.
 //
-// It is a SIBLING of PluginUnavailable rather than a reuse of it, deliberately.
-// That component says the feature "encountered a database error" and tells the
-// reader to contact their server administrator — true for a failed migration,
-// false here, and on a self-hosted instance the administrator is usually the
-// person reading it. A rebuild is a planned absence, and saying so is the whole
-// job of these two.
-//
-// Neither renders anything that could be mistaken for data: no empty grid, no
-// zeroed counts, no disabled controls implying something is coming back this
-// minute. Chronicle's own convention — a "needs backend" chip rather than a
-// fabricated number — is the same instinct.
+// Deliberately separate from PluginUnavailable: that component implies a
+// database error and tells the reader to contact an administrator, which is
+// wrong for a planned rebuild. Neither component here renders anything that
+// could be mistaken for data (empty grids, zeroed counts, disabled controls).
 
 // FeatureRebuilding is the full-surface notice: the feature's own page.
 templ FeatureRebuilding(featureName string) {
@@ -38,11 +31,8 @@ templ FeatureRebuilding(featureName string) {
 }
 
 // FeatureRebuildingBlock is the compact variant for a slot inside another page
-// — an entity block, a dashboard block, a bound widget host.
-//
-// It keeps the slot occupied ON PURPOSE. An entity layout that quietly dropped
-// its calendar block would look to the owner like their layout had been edited,
-// and rebuilding the layout by hand is work they would have to undo later.
+// — an entity block, a dashboard block, a bound widget host. It keeps the
+// slot occupied rather than removing it, so the owner's layout isn't altered.
 templ FeatureRebuildingBlock(featureName string) {
 	<div class="border border-dashed border-border rounded-lg p-6 text-center">
 		<i class="fa-solid fa-screwdriver-wrench text-fg-muted mb-2"></i>

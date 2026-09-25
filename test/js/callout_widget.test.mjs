@@ -1,17 +1,13 @@
-// callout_widget.test.mjs — the player call-to-action widget (C-RSVP-P10).
+// callout_widget.test.mjs — the player call-to-action widget.
 //
-// THIS SUITE EXISTS BECAUSE OF THE DEFECT IT IS MODELLED ON. `collect_rsvps`
-// was pinned by a Go test asserting the server OMITS it and a JS test feeding a
-// fixture that CARRIES it; both stayed green for the feature's whole life while
-// the product shipped a checkbox that could never be unchecked. So these tests
-// deliberately consume the SERVER'S OWN MARKUP — the exact strings
-// callout_handler.go's renderCallout emits — rather than a hand-built fixture.
-// If the server stops shipping `hidden`, or renames a data attribute, the
-// mismatch surfaces here instead of on somebody's phone.
+// These tests deliberately consume the server's own markup — the exact
+// strings callout_handler.go's renderCallout emits — rather than a hand-built
+// fixture, so a server-side rename or dropped attribute (e.g. `hidden`)
+// surfaces here rather than in production.
 //
 // The widget owns exactly two things the server cannot do: filling in the
-// browser's timezone, and dismissal. Both are tested, plus the degrade path for
-// a browser that will not report a zone at all.
+// browser's timezone, and dismissal. Both are tested, plus the degrade path
+// for a browser that will not report a zone at all.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -250,9 +246,8 @@ test('an empty host is not an error', () => {
 
 // --- the contract with the server -----------------------------------------
 //
-// The hooks the widget reaches for must be the ones the Go renderer emits. This
-// is the assertion that would have caught the collect_rsvps defect: it reads
-// BOTH sides and compares them, instead of trusting a local fixture.
+// The hooks the widget reaches for must be the ones the Go renderer emits;
+// reads both sides and compares them instead of trusting a local fixture.
 
 test('every hook the widget queries is one the server actually renders', () => {
   const widget = readFileSync(widgetPath, 'utf8');

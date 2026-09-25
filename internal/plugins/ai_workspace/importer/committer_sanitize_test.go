@@ -1,26 +1,12 @@
-// committer_sanitize_test.go is the LOAD-BEARING SEC-6 ingress
-// mirror. It pins the structural invariant that every entity-
-// mutation call site in committer.go (creator.Create /
-// creator.Update / creator.UpdateEntry) is preceded by a
-// MarkdownToHTML() funnel call in the same function body — i.e.
-// every byte of HTML the import path stores has flowed through
-// sanitize.HTML at least once before persistence.
-//
-// Mirror of internal/plugins/ai_workspace/aiexport/renderer_test.go
-// (PR #349's TestRenderers_FunnelThroughHtmlToMarkdown). Same
-// shape, opposite direction.
-//
-// Pinpoint quality: on failure, the test reports the EXACT line
-// number of the unprotected entity-mutation call inside the
-// offending function. The dispatch is explicit that vague failure
-// messages should be tightened before commit — and this is the
-// dispatch's load-bearing acceptance criterion.
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1;
-// cordinator/reports/chronicle/2026-05-26-c-sec-chunk-6-amended.md
-// (egress pin pattern this mirrors);
-// cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §5 (V1 acceptance invariants).
+// committer_sanitize_test.go is the SEC-6 ingress mirror. It pins the
+// structural invariant that every entity-mutation call site in
+// committer.go (creator.Create / creator.Update / creator.UpdateEntry)
+// is preceded by a MarkdownToHTML() funnel call in the same function
+// body — every byte of HTML the import path stores has flowed through
+// sanitize.HTML before persistence. Mirror of
+// aiexport/renderer_test.go's TestRenderers_FunnelThroughHtmlToMarkdown,
+// same shape opposite direction. On failure it reports the exact line
+// of the unprotected call.
 
 package importer
 
@@ -42,11 +28,6 @@ import (
 // Adding a function here is a security-relevant change; the PR
 // description must explain why the funnel guarantee still holds.
 var exemptFunctions = map[string]string{
-	// V1.5 (C-AI-WORKSPACE-V1-G) renamed overwriteExisting → commitUpdate
-	// for vocabulary consistency with the new front-matter `action: update`
-	// verb. Exemption reason is identical — the caller (commitRow OR
-	// commitUpdateExplicit) is responsible for the MarkdownToHTML funnel
-	// before invoking; both callers are pinned by this same test.
 	"commitUpdate": "Receives already-sanitized bodyJSON + bodyHTML as " +
 		"parameters from commitRow or commitUpdateExplicit; both callers " +
 		"are pinned by this same test and required to call MarkdownToHTML " +
@@ -78,12 +59,10 @@ func TestCommitter_EntityMutationsFunnelThroughMarkdownToHTML(t *testing.T) {
 		"UpdateEntry": true,
 	}
 
-	// V1.5 (C-AI-WORKSPACE-V1-G) — wrapper functions on the Committer
-	// itself that are exempt from the body check (they receive pre-
-	// sanitized values from their caller) but whose CALLERS must
-	// still funnel through MarkdownToHTML. Treating these as
-	// transitive mutators ensures `commitUpdateExplicit` (and any
-	// future wrapper-of-a-wrapper) gets pinned correctly.
+	// Wrapper functions on the Committer that are exempt from the body
+	// check (they receive pre-sanitized values from their caller) but
+	// whose callers must still funnel through MarkdownToHTML. Treating
+	// these as transitive mutators pins wrapper-of-a-wrapper callers too.
 	transitiveMutators := exemptFunctions
 
 	for _, decl := range file.Decls {
@@ -179,7 +158,8 @@ func TestCommitter_EntityMutationsFunnelThroughMarkdownToHTML(t *testing.T) {
 // TestCommitter_NoDirectGoldmarkBypass guards against a future
 // refactor that imports goldmark directly into committer.go
 // (bypassing MarkdownToHTML's sanitize.HTML step). Same shape as
-// PR #349's getConverter-direct-access guard.
+// aiexport's TestRenderers_FunnelThroughHtmlToMarkdown getConverter
+// guard.
 func TestCommitter_NoDirectGoldmarkBypass(t *testing.T) {
 	src, err := os.ReadFile("committer.go")
 	if err != nil {

@@ -1,14 +1,8 @@
 // settings_tabs.go — Declarative tab registry for the Campaign Settings
-// page. Per reports/chronicle/2026-05-26-c-ai-workspace-scoping.md §1.1
-// and §4 Phase 1. Built-in tabs are constructed inside Settings handlers
-// with their per-tab dependencies captured in closures; plugins can
+// page. Built-in tabs are constructed inside Settings handlers with
+// their per-tab dependencies captured in closures; plugins can
 // contribute additional tabs via RegisterSettingsTab without forking
 // settings.templ.
-//
-// The registry preserves existing UX byte-for-byte: same six tabs, same
-// icons, same labels, same role gates. The refactor's value is for
-// future plugins (AI Workspace V1 Phase 2) — no functional change to
-// the operator-visible Settings page.
 
 package campaigns
 
@@ -27,16 +21,16 @@ import (
 //   - Label is the human-readable button text.
 //   - Icon is a FontAwesome class (e.g. "fa-solid fa-gear").
 //   - MinRole gates both the button and the content. A viewer whose
-//     role is below MinRole sees neither. Today's gates: General /
-//     People / Integrations / Activity = RolePlayer (any member);
-//     Features / AI Export = RoleOwner. New plugin-contributed tabs
-//     set MinRole to whatever discipline they need; the campaigns
-//     plugin is the single enforcement point.
+//     role is below MinRole sees neither. Today's built-in gates:
+//     General / People / Integrations / Activity = RolePlayer (any
+//     member). New plugin-contributed tabs set MinRole to whatever
+//     discipline they need; the campaigns plugin is the single
+//     enforcement point.
 //   - SortOrder controls render order across the tab bar AND the
 //     content blocks. Lower renders first. Built-ins use multiples of
 //     10 (10..60) so plugins can insert between them; the AI Workspace
-//     plugin (Phase 2) will register itself at SortOrder 55 to land
-//     between AI Export (50) and Activity (60).
+//     plugin registers itself at SortOrder 55, between Integrations
+//     (40) and Activity (60).
 //   - Content is the rendered tab body. The handler captures all
 //     per-tab dependencies (csrfToken, members, addons, services, ...)
 //     in this closure at Settings-handler time, so CampaignSettingsPage
@@ -58,11 +52,9 @@ type SettingsTab struct {
 // can capture per-request state (campaign ID, csrf token via context,
 // member role for finer-grained rendering, etc).
 //
-// The factory shape (rather than a static SettingsTab) is the
-// difference between Phase 1's API sketch and the working shape — the
-// AI Workspace plugin (Phase 2) is the first caller and needs the per-
-// request binding. Built-in tabs don't go through this path; they're
-// constructed inline in the Settings handler.
+// The factory shape (rather than a static SettingsTab) lets a plugin's
+// Content closure capture per-request state; built-in tabs don't go
+// through this path, they're constructed inline in the Settings handler.
 //
 // Tabs added here merge with the built-ins at render time; sorting is
 // stable per SortOrder + insertion order so a plugin contributing two
@@ -76,20 +68,10 @@ func (h *Handler) RegisterSettingsTab(factory func(*CampaignContext) SettingsTab
 // request-scoped state (csrf token, fetched members, the operator's
 // role, etc).
 //
-// The data parameters mirror what the Settings handler already loads
-// today; the only structural change vs the pre-refactor templ is that
-// the closures live here instead of being inlined inside settings.templ.
-//
-// C-EXT-HUB Phase 1 (2026-05-29) removed the "features" tab (slot 20).
-// Per-campaign feature enable/disable lives on the new top-level
-// Extensions hub at `/campaigns/:id/extensions`. The addons store was
-// otherwise unchanged — removing the tab here was the entire
-// operator-visible delta for the settings page. The now-orphaned
-// `settingsFeaturesTab` templ component (and the never-linked
-// `PluginHubPage` it sat beside) had zero callers left anywhere in the
-// tree and were deleted in the ADR-056 dead-code sweep (2026-09-12).
-// SortOrder 20 is intentionally left vacant for any future plugin tab
-// that wants to land between General (10) and People (30).
+// Per-campaign feature enable/disable lives on the top-level Extensions
+// hub at `/campaigns/:id/extensions`, not on a Settings tab; SortOrder
+// 20 is intentionally left vacant for any future plugin tab that wants
+// to land between General (10) and People (30).
 func (h *Handler) builtInSettingsTabs(
 	cc *CampaignContext,
 	transfer *OwnershipTransfer,
@@ -107,9 +89,8 @@ func (h *Handler) builtInSettingsTabs(
 			SortOrder: 10,
 			Content:   settingsGeneralTab(cc, csrfToken, systemOptionsJSON(systemOptions)),
 		},
-		// Slot 20 (Features) retired by C-EXT-HUB Phase 1; per-
-		// campaign feature toggles moved to the top-level Extensions
-		// hub.
+		// Slot 20 (Features) retired; per-campaign feature toggles
+		// moved to the top-level Extensions hub.
 		{
 			ID:        "people",
 			Label:     "People",
@@ -127,11 +108,9 @@ func (h *Handler) builtInSettingsTabs(
 			Content:   settingsIntegrationsTab(cc, csrfToken, h.baseURL),
 		},
 		// SortOrder slot 50 is intentionally left empty — the AI
-		// Workspace plugin (NW-2.2+ ai_workspace) registers its tab at
-		// slot 55 via campaigns.RegisterSettingsTab. The campaigns-side
-		// AI Export tab was retired in C-AI-WORKSPACE-V1-B; the
-		// renderer + tab content now live in
-		// internal/plugins/ai_workspace/.
+		// Workspace plugin registers its tab at slot 55 via
+		// campaigns.RegisterSettingsTab; that tab's renderer + content
+		// live in internal/plugins/ai_workspace/.
 		{
 			ID:        "activity",
 			Label:     "Activity",
@@ -188,17 +167,15 @@ func (h *Handler) visibleSettingsTabs(
 // interpolates the returned value into an Alpine.js `x-data` expression
 // (settings.templ), and because the browser HTML-decodes an attribute
 // before Alpine evaluates it as JavaScript, an unvalidated request value
-// is a reflected-XSS vector (audit SEC-1; cordinator core-tenets §T-B1).
-// Constraining the result to a developer-defined tab ID from `tabs`
-// closes that vector at the source; the templ sink additionally escapes
-// it (defense in depth).
+// is a reflected-XSS vector. Constraining the result to a developer-
+// defined tab ID from `tabs` closes that vector at the source; the templ
+// sink additionally escapes it (defense in depth).
 //
 // Matching against the already-role-filtered `tabs` slice (rather than a
 // static allowlist) also means a viewer cannot pre-select a tab their
-// role hides, and the fallback fixes the blank-tab-body symptom an
-// unknown tab produced (no `x-show` predicate matched). "general" is a
-// safe fallback: MinRole RolePlayer makes it visible to every role, and
-// Settings is owner-gated, so it is always present in `tabs`.
+// role hides. "general" is a safe fallback: MinRole RolePlayer makes it
+// visible to every role, and Settings is owner-gated, so it is always
+// present in `tabs`.
 func sanitizeSettingsTab(requested string, tabs []SettingsTab) string {
 	for _, t := range tabs {
 		if t.ID == requested {

@@ -193,9 +193,8 @@ func (h *MapAPIHandler) CreateDrawing(c echo.Context) error {
 }
 
 // apiUpdateDrawingRequest is the JSON body for updating a drawing.
-// apiUpdateDrawingRequest is the JSON body for updating a drawing.
 // PARTIAL update: absent preserves, explicit null clears, a present value
-// replaces (sweep R4 / ADR-054 #6) — see maps.UpdateDrawingInput.
+// replaces (.ai/conventions.md, "Partial-Update Endpoints") — see maps.UpdateDrawingInput.
 type apiUpdateDrawingRequest struct {
 	Points            patch.Field[json.RawMessage] `json:"points"`
 	StrokeColor       patch.Field[string]          `json:"stroke_color"`
@@ -356,9 +355,9 @@ func (h *MapAPIHandler) CreateToken(c echo.Context) error {
 
 // apiUpdateTokenRequest is the JSON body for updating a token.
 // PARTIAL update: absent preserves, explicit null clears, a present value
-// replaces (sweep R4 / ADR-054 #6) — see maps.UpdateTokenInput. This is the
-// route a Foundry-side token drag hits: before this fix a {x, y}-only push
-// zeroed IsHidden, IsLocked, both HP bars and every aura/light/vision field.
+// replaces (.ai/conventions.md, "Partial-Update Endpoints") — see maps.UpdateTokenInput. This is the route a
+// Foundry-side token drag hits, so an {x, y}-only push must not zero
+// IsHidden, IsLocked, HP bars or aura/light/vision fields.
 type apiUpdateTokenRequest struct {
 	Name              string                       `json:"name"`
 	ImagePath         patch.Field[string]          `json:"image_path"`
@@ -532,7 +531,7 @@ func (h *MapAPIHandler) CreateLayer(c echo.Context) error {
 
 // apiUpdateLayerRequest is the JSON body for updating a layer.
 // PARTIAL update: absent preserves, explicit null clears, a present value
-// replaces (sweep R4 / ADR-054 #6) — see maps.UpdateLayerInput.
+// replaces (.ai/conventions.md, "Partial-Update Endpoints") — see maps.UpdateLayerInput.
 type apiUpdateLayerRequest struct {
 	Name              string               `json:"name"`
 	SortOrder         patch.Field[int]     `json:"sort_order"`
@@ -674,10 +673,10 @@ type apiCreateMarkerRequest struct {
 
 // apiUpdateMarkerRequest is the JSON body for updating a marker.
 // PARTIAL update: absent preserves, explicit null clears, a present value
-// replaces (sweep R4). foundry_id keeps its clearability here — this is the
-// surface that owns the pairing, and an explicit null still unpairs — while
-// the Chronicle web form, which never sends the key, can no longer NULL it
-// by omission.
+// replaces. foundry_id keeps its clearability here — this is the surface
+// that owns the pairing, and an explicit null still unpairs — while the
+// Chronicle web form, which never sends the key, can no longer NULL it by
+// omission.
 type apiUpdateMarkerRequest struct {
 	Name              patch.Field[string]  `json:"name"`
 	Description       patch.Field[string]  `json:"description"`

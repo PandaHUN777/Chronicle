@@ -5,18 +5,13 @@ import (
 	"testing"
 )
 
-// Calendaria stores months, weekdays, moons, seasons and eras as JSON OBJECTS,
+// Calendaria stores months, weekdays, moons, seasons and eras as JSON objects,
 // which parseCalendaria walks with `for k, v := range`. Go randomises map
-// iteration, so every one of those lists needs a TOTAL comparator or the same
-// bytes parse into a different order run to run — and the order is exactly what
-// becomes MonthInput.SortOrder / the INSERT order the repository reads rows back
-// in (GetMoons / GetSeasons have no ORDER BY, so the read-back order IS the
-// insert order). Moons were never sorted at all; seasons sorted on DayStart,
-// which presets/elven.json ties three ways at 0.
-//
-// Each subtest parses the SAME bytes many times and fails if any two parses
-// disagree. Ten iterations already catch a randomised 2-element list with
-// probability 1-2^-9; the counts below are generous on top of that.
+// iteration, so every one of those lists needs a total comparator or the same
+// bytes parse into a different order run to run — and that order becomes
+// MonthInput.SortOrder and the repository's read-back order (GetMoons /
+// GetSeasons have no ORDER BY). Each subtest parses the same bytes many times
+// and fails if any two parses disagree.
 
 const orderParseRuns = 100
 

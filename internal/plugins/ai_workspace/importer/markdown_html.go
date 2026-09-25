@@ -1,13 +1,8 @@
-// markdown_html.go converts page bodies from markdown to HTML +
-// applies sanitize.HTML on the output. This is the ingress mirror
-// of SEC-6-AMENDED's egress invariant — every body the AI Workspace
-// stores MUST pass through sanitize.HTML before any persistence
-// hand-off.
-//
-// V1 Phase 4 doesn't actually store anything (commit handler is
-// Phase 5), but this file establishes the funnel + the AST
-// structural pin lands in Phase 5 to enforce that Phase 5's
-// committer routes through MarkdownToHTML rather than calling
+// markdown_html.go converts page bodies from markdown to HTML and
+// applies sanitize.HTML on the output — the SEC-6 ingress funnel every
+// body the AI Workspace stores must pass through before persistence.
+// The AST structural pin in committer_sanitize_test.go enforces that
+// the committer routes through MarkdownToHTML rather than calling
 // goldmark + sanitize separately.
 
 package importer
@@ -44,20 +39,14 @@ var md = goldmark.New(
 
 // MarkdownToHTML converts page-body markdown to sanitized HTML.
 // Single funnel — callers MUST route through this function rather
-// than calling goldmark.Convert + sanitize.HTML separately.
+// than calling goldmark.Convert + sanitize.HTML separately: (1)
+// goldmark parses + renders to HTML with no raw HTML passthrough,
+// (2) sanitize.HTML strips any residual <script>/javascript:/on*
+// handlers per the bluemonday UGC policy, so the output is safe for
+// storage in EntryHTML and for direct render via templ.Raw().
 //
-// The pipeline:
-//
-//  1. goldmark parses + renders to HTML (no raw HTML passthrough).
-//  2. sanitize.HTML strips any residual <script> / javascript: /
-//     on* handlers per the bluemonday UGC policy — same allowlist
-//     SEC-6-AMENDED egress uses.
-//  3. Output is safe for storage in EntryHTML (Phase 5 committer)
-//     + safe for direct render via templ.Raw() in any consumer.
-//
-// Returns the empty string for empty input. On parse failure the
-// error message is friendly-worded (no raw `goldmark:` prefix
-// reaches operator UIs); the underlying goldmark error is preserved
+// Returns the empty string for empty input. Parse-failure errors are
+// friendly-worded for operator UIs; the goldmark error is preserved
 // via %w for log-side debugging.
 func MarkdownToHTML(input string) (string, error) {
 	if input == "" {

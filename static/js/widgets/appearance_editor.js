@@ -11,10 +11,10 @@
  *   data-brand-name   -- Current brand name (may be empty)
  *   data-brand-logo   -- Current brand logo path (may be empty)
  *   data-accent-color -- Current accent color hex (may be empty)
- *   data-accent-action -- Current action-highlight accent hex (C-ACCENT-SLOTS
- *                          slot 2 -- primary buttons, hover/press, FABs; may be empty)
- *   data-accent-app    -- Current app-identity accent hex (C-ACCENT-SLOTS
- *                          slot 3 -- character pages, calendar app; may be empty)
+ *   data-accent-action -- Current action-highlight accent hex (primary
+ *                          buttons, hover/press, FABs; may be empty)
+ *   data-accent-app    -- Current app-identity accent hex (character pages,
+ *                          calendar app; may be empty)
  *   data-topbar-style -- Current topbar style JSON (default "{}")
  */
 (function () {
@@ -43,10 +43,10 @@
       var saved = {
         brandName: config.brandName || '',
         accentColor: config.accentColor || '',
-        // C-ACCENT-SLOTS: the two new semantic slots (Action highlight,
-        // App accent). Read from the data-accent-action/-app attributes;
-        // config keys are the camelCase form of the dash-case data attrs
-        // (Chronicle.register's config parser convention, same as accentColor).
+        // Action highlight and App accent slots, read from the
+        // data-accent-action/-app attributes; config keys are the camelCase
+        // form of the dash-case data attrs (Chronicle.register's config
+        // parser convention, same as accentColor).
         accentAction: config.accentAction || '',
         accentApp: config.accentApp || '',
         fontFamily: config.fontFamily || '',
@@ -87,10 +87,9 @@
           gradient_from: saved.topbarStyle.gradient_from || '',
           gradient_to: saved.topbarStyle.gradient_to || '',
           gradient_dir: saved.topbarStyle.gradient_dir || 'to-r',
-          // Carry image_path through the draft so the preview can show the saved
-          // topbar image and so a Save that includes topbar-style does not blank
-          // it out (C-CUSTOMIZE-RESCUE — previously omitted here, which made the
-          // preview never show the image and risked wiping image_path on save).
+          // Carry image_path through the draft so the preview can show the
+          // saved topbar image and a Save that includes topbar-style does
+          // not blank it out.
           image_path: saved.topbarStyle.image_path || ''
         },
         topbarContent: {
@@ -110,14 +109,12 @@
       var gradientPanel = el.querySelector('#appearance-topbar-gradient');
       var imagePanel = el.querySelector('#appearance-topbar-image');
 
-      // The "Image" mode button and its upload panel are now first-class parts
-      // of the templ (branding.templ Top Bar Style card + TopbarImageSection) —
-      // they used to be injected here at runtime and saved via a full-page
-      // reload (audit §8.2 "weird block thing"; core-tenets §T-B3). Upload and
+      // The "Image" mode button and upload panel are rendered by the templ
+      // (branding.templ Top Bar Style card + TopbarImageSection). Upload and
       // remove are HTMX-driven (hx-post/hx-delete swapping
-      // #appearance-topbar-image-section in place). The only wiring left in JS
-      // is syncing the editor's draft/saved image state after each swap — see
-      // the htmx:afterSwap listener further down.
+      // #appearance-topbar-image-section in place); the only JS wiring left
+      // is syncing draft/saved image state after each swap (see the
+      // htmx:afterSwap listener further down).
       var solidColorInput = el.querySelector('#appearance-topbar-color');
       var gradFromInput = el.querySelector('#appearance-topbar-gradient-from');
       var gradToInput = el.querySelector('#appearance-topbar-gradient-to');
@@ -125,11 +122,9 @@
       var accentContainer = el.querySelector('#appearance-accent-colors');
       var accentLabel = el.querySelector('#appearance-accent-label');
 
-      // Preview elements for live accent/font/backdrop updates.
-      // Adoption pass (C-ACCENT-SLOTS scope item 2): the preview's primary
-      // button follows the ACTION slot (mirrors the real .btn-primary CSS
-      // swap in input.css) and the "Characters" category chip follows the
-      // APP slot (the one exemplar "character page" surface in this preview)
+      // Preview elements for live accent/font/backdrop updates. The primary
+      // button follows the Action slot (mirrors the .btn-primary CSS swap in
+      // input.css) and the "Characters" category chip follows the App slot,
       // instead of both trailing the site accent like every other element.
       var previewBtnPrimary = el.querySelector('#appearance-preview-btn-primary');
       var previewLink = el.querySelector('#appearance-preview-link');
@@ -296,15 +291,14 @@
         }
       }
 
-      // --- Action highlight + App accent (C-ACCENT-SLOTS slots 2+3) ---
+      // --- Action highlight + App accent pickers ---
       //
       // Both pickers share this generic wiring (unlike the bespoke Site
-      // accent block above, which predates this dispatch and is left
-      // untouched) since their swatch/reset/custom-picker markup and click
-      // behavior are identical, just scoped to a different container id and
-      // draft field. Returns a highlight(color) function so callers can
-      // re-sync the swatch ring when the value changes from elsewhere (e.g.
-      // the reset happens through the custom color input).
+      // accent block above) since their swatch/reset/custom-picker markup
+      // and click behavior are identical, just scoped to a different
+      // container id and draft field. Returns a highlight(color) function so
+      // callers can re-sync the swatch ring when the value changes elsewhere
+      // (e.g. via the custom color input's reset).
       function wireSemanticSlotPicker(containerId, customId, labelId, getDraft, setDraft, onChange) {
         var container = el.querySelector('#' + containerId);
         var custom = el.querySelector('#' + customId);
@@ -588,8 +582,7 @@
                 };
                 updateSaveBar();
                 // Apply all three accent slots to page CSS custom properties
-                // live (no reload — T-B3), so the change is visible site-wide
-                // immediately, not just in this tab's preview.
+                // live (T-B3), so the change is visible site-wide immediately.
                 applySlotToPage('--color-accent', draft.accentColor);
                 applySlotToPage('--color-accent-action', draft.accentAction);
                 applySlotToPage('--color-accent-app', draft.accentApp);
@@ -631,8 +624,8 @@
             });
           }
 
-          // Save action highlight if changed (C-ACCENT-SLOTS slot 2, same
-          // endpoint + form-encoded shape as the site accent, routed by slot).
+          // Save action highlight if changed (same endpoint + form-encoded
+          // shape as the site accent, routed by slot).
           if (draft.accentAction !== saved.accentAction) {
             pending++;
             Chronicle.apiFetch('/campaigns/' + campaignId + '/accent-color', {
@@ -649,7 +642,7 @@
             });
           }
 
-          // Save app accent if changed (C-ACCENT-SLOTS slot 3).
+          // Save app accent if changed.
           if (draft.accentApp !== saved.accentApp) {
             pending++;
             Chronicle.apiFetch('/campaigns/' + campaignId + '/accent-color', {
@@ -801,12 +794,11 @@
       }
 
       /**
-       * Update all SITE-accent-colored elements in the preview (C-ACCENT-SLOTS
-       * slot 1). The primary button and "Characters" category chip are no
-       * longer driven here — they follow the Action and App slots
-       * respectively (see updateActionPreview/updateAppPreview below), which
-       * this function re-triggers at the end so their site-accent fallback
-       * stays in sync whenever the site accent itself changes.
+       * Update all site-accent-colored elements in the preview. The primary
+       * button and "Characters" category chip follow the Action and App
+       * slots instead (updateActionPreview/updateAppPreview below), which
+       * this function re-triggers so their site-accent fallback stays in
+       * sync when the site accent changes.
        */
       function updateAccentPreview(color) {
         var accent = color || '#6366f1'; // fallback to default indigo
@@ -840,8 +832,8 @@
       }
 
       /**
-       * Update the preview's primary button — C-ACCENT-SLOTS slot 2 (Action
-       * highlight). Unset falls back to the draft site accent, mirroring the
+       * Update the preview's primary button (Action highlight slot). Unset
+       * falls back to the draft site accent, mirroring the
        * var(--color-accent-action, var(--color-accent, ...)) chain the real
        * .btn-primary CSS uses (input.css).
        */
@@ -851,11 +843,11 @@
       }
 
       /**
-       * Update the preview's "Characters" category chip — C-ACCENT-SLOTS
-       * slot 3 (App accent), the character-pages/calendar-app identity slot.
-       * Unset falls back to the draft site accent (a two-level simplification
-       * of the real fallback chain, which also passes through the legacy
-       * surface-1 accent — the preview has no wiring for that legacy value).
+       * Update the preview's "Characters" category chip (App accent slot,
+       * the character-pages/calendar-app identity slot). Unset falls back to
+       * the draft site accent — a simplification of the real fallback chain,
+       * which also passes through a legacy surface-1 accent this preview
+       * does not wire up.
        */
       function updateAppPreview() {
         if (!previewCat1) return;
@@ -942,14 +934,10 @@
        * Apply one accent slot's color to the page's CSS custom properties so
        * the change is visible site-wide without a full page reload. varPrefix
        * is the base custom property name (e.g. "--color-accent",
-       * "--color-accent-action", "--color-accent-app" — C-ACCENT-SLOTS
-       * generalized this from the single site-accent-only original so all
-       * three slots apply live on save the same way). An empty hex removes
-       * the inline override entirely — for the two new slots this correctly
-       * hands control back to their var() fallback chain (Tailwind config +
-       * inline style="" consumers), which is exactly the "unset = inherit"
-       * contract; there is no static input.css default to fall back to for
-       * these two, unlike the site slot.
+       * "--color-accent-action", "--color-accent-app"). An empty hex removes
+       * the inline override, handing control back to the var() fallback
+       * chain — unlike the site slot, the two new slots have no static
+       * input.css default to fall back to.
        */
       function applySlotToPage(varPrefix, hex) {
         var root = document.documentElement;

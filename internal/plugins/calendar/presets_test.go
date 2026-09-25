@@ -2,15 +2,9 @@ package calendar
 
 import "testing"
 
-// TestEveryShippedPresetParsesThroughTheImporter is the structural proof the
-// preset ruling depends on: a preset IS an export, and the only way to read one
-// is through the shipped parser.
-//
-// CALV5 SALVAGE: written for the recovered payloads. The pre-deletion gallery
-// asserted this implicitly by having no other code path; with the gallery UI
-// gone, the invariant needs saying out loud — otherwise a future preset could
-// be added in a shape only a bespoke loader understands, which is how the
-// second parser gets built.
+// TestEveryShippedPresetParsesThroughTheImporter pins that a preset IS an
+// export: every embedded preset must parse through the shipped importer, so a
+// future preset can't be added in a shape only a bespoke loader understands.
 func TestEveryShippedPresetParsesThroughTheImporter(t *testing.T) {
 	names, err := PresetNames()
 	if err != nil {
@@ -40,10 +34,8 @@ func TestEveryShippedPresetParsesThroughTheImporter(t *testing.T) {
 	}
 }
 
-// TestPresetNamesAreDeterministic guards the ordering bug the pre-deletion tree
-// carried a dedicated regression test for: map iteration produced a different
-// month order between runs, so the same preset built a different calendar
-// depending on when you clicked it.
+// TestPresetNamesAreDeterministic pins that PresetNames returns a stable order
+// across calls.
 func TestPresetNamesAreDeterministic(t *testing.T) {
 	first, err := PresetNames()
 	if err != nil {

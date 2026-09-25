@@ -1,11 +1,10 @@
 package ai_workspace
 
-// import_nav_test.go — pins the "website inside the website" bug class
-// (operator, 2026-06-12): the campaign settings route renders a FULL page
-// (campaigns.Settings has no IsHTMX fragment branch), so it must only ever be
-// reached by NAVIGATION (plain anchors under hx-boost), never by an hx-get
-// that fragment-swaps it into a host div. Canceling a failed AI import did
-// exactly that and nested the entire app inside the review host.
+// import_nav_test.go pins that the campaign settings route, which renders a
+// full page (campaigns.Settings has no IsHTMX fragment branch), is only ever
+// reached by navigation (plain anchors under hx-boost) and never by an
+// hx-get that would fragment-swap it into a host div, nesting the app
+// inside itself.
 
 import (
 	"os"

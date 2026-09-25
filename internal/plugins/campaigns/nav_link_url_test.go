@@ -52,8 +52,8 @@ func TestUpdateSidebarConfig_RejectsDangerousURLs(t *testing.T) {
 			updateSidebarConfigFn: func(_ context.Context, _, cfg string) error { *saved = cfg; return nil },
 		}}
 	}
-	// Sidebar link items (Items[type=link]) are guarded — the single unified
-	// model after C-NAV-V3 retired the legacy CustomLinks field.
+	// Sidebar link items (Items[type=link]) are guarded — the single
+	// unified model, replacing the legacy CustomLinks field.
 	for _, u := range dangerousURLs {
 		var saved string
 		items := []SidebarItem{{Type: "link", Label: "Evil", URL: u}}

@@ -1,7 +1,6 @@
-// reorder_entity_type_test.go — C-NAV-V3 r3 acceptance criterion: sub-category
-// types must be reorderable (persisted, surviving reload) via a dense
-// per-parent re-sequence of entity_types.sort_order. Before this the order was
-// frozen at creation (written once, campaign-wide, never updated by any path).
+// reorder_entity_type_test.go pins that sub-category types are reorderable
+// and the order persists across reload, via a dense per-parent re-sequence
+// of entity_types.sort_order.
 package entities
 
 import (

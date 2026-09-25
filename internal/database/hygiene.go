@@ -1,39 +1,19 @@
 // Package database — hygiene.go
-// Data-shape hygiene checks that run on every Chronicle boot as part of
-// RunStartupHealthChecks. These complement the schema-level checks
-// (migration version, critical columns) by catching invariants the FK
-// schema can't enforce on its own — referential rules stored in JSON
-// columns, model rules like the sub-category one-level-deep cap from
-// PR #241, and other state invariants that crop up as the schema
-// grows.
+// Data-shape hygiene checks run on every Chronicle boot as part of
+// RunStartupHealthChecks, catching invariants the FK schema can't enforce
+// on its own (rules stored in JSON columns, model rules like sub-category
+// nesting depth).
 //
-// Architecture: a small registry of HygieneCheck values. Each check
-// is a self-contained function; the engine iterates them and reports
-// counts. Adding a new invariant is a one-function append in the
-// `hygieneChecks` slice — no core orchestration changes. This is the
-// "future-proof" surface the operator asked for: the hygiene class is
-// extensible without re-touching the boot path.
+// A small registry of HygieneCheck values; the engine iterates them and
+// reports counts. Add a new check here when the DB schema can't enforce
+// the rule and drift is cheap to detect via SQL; skip it when the check
+// would scale with entity count (use a periodic admin job) or the right
+// action is auto-fix rather than warn (use a migration or admin action).
 //
-// All checks are WARN-level by design. A single inconsistent row must
-// not block a boot — the running server stays serviceable, the admin
-// sees a warning in the logs (and eventually in the admin hygiene
-// dashboard), and they fix via SQL or a re-parent UI. Auto-fix is
-// intentionally avoided: most inconsistencies reflect intent the
-// engine can't infer, and silently rewriting data is worse than the
-// warning.
-//
-// Add a new check when:
-//   - The DB schema can't enforce the rule (FK + types alone).
-//   - Detecting drift cheaply via SQL is feasible (sub-second on a
-//     reasonable instance).
-//   - Operators benefit from knowing on every boot, not only when
-//     triaging a user complaint.
-//
-// Don't add a check here when:
-//   - It scales with entity count (move to a periodic admin job).
-//   - The right action is auto-fix rather than warn (move to a
-//     migration or an admin one-click).
-
+// All checks are WARN-level: a single inconsistent row must not block a
+// boot. Auto-fix is intentionally avoided — most inconsistencies reflect
+// intent the engine can't infer, and silently rewriting data is worse
+// than the warning.
 package database
 
 import (
@@ -118,15 +98,11 @@ func checkDataHygiene(db *sql.DB, result *HealthCheckResult) {
 // --- Probes ---
 
 // probeSubcatDepth enforces "sub-cats are exactly one level deep". A
-// sub-cat (parent_type_id IS NOT NULL) whose parent is missing or
-// itself a sub-cat is a model violation — the rendering code (sidebar
-// filter, drill panel, variant picker) all assume single-level
-// nesting, and deeper nesting silently produces orphan items in the
-// UI.
-//
-// Rule enforced on writes at entities/service.go:909-919 (Create) and
-// :1041-1042 (Update). This probe surfaces rows that slipped past
-// those guards (raw SQL, pre-rule data, future bugs).
+// sub-cat (parent_type_id IS NOT NULL) whose parent is missing or itself
+// a sub-cat is a model violation: the sidebar filter, drill panel and
+// variant picker all assume single-level nesting. entities/service.go
+// rejects this on writes; this probe catches rows that slipped past
+// that guard via raw SQL or pre-rule data.
 func probeSubcatDepth(ctx context.Context, db *sql.DB) (int, string, error) {
 	const query = `
 		SELECT COUNT(*) FROM entity_types c
@@ -150,12 +126,10 @@ func probeSubcatDepth(ctx context.Context, db *sql.DB) (int, string, error) {
 	return count, detail, nil
 }
 
-// probeSubcatCampaign enforces "a sub-cat must share a campaign with
-// its parent". The campaigns FK doesn't constrain parent_type_id to
-// point at a same-campaign row, so a careless raw-SQL update or a
-// future bug could create a cross-campaign reference. The render code
-// would happily display the sub-cat under the wrong campaign's drill
-// panel.
+// probeSubcatCampaign enforces "a sub-cat must share a campaign with its
+// parent". The FK schema doesn't constrain parent_type_id to a
+// same-campaign row, so raw SQL or a bug could create a cross-campaign
+// reference that the render code would display under the wrong campaign.
 func probeSubcatCampaign(ctx context.Context, db *sql.DB) (int, string, error) {
 	const query = `
 		SELECT COUNT(*) FROM entity_types c
@@ -177,17 +151,15 @@ func probeSubcatCampaign(ctx context.Context, db *sql.DB) (int, string, error) {
 	return count, detail, nil
 }
 
-// probeSidebarSubcatLeak finds the exact bug class that motivated this
-// engine: persisted sidebar_config rows whose items reference a
-// sub-category entity_type. Sub-cats are template variants per ADR
-// (sub-cats-as-templates), they must never be SidebarItems. The
-// render-time filter at routes.go:2130 drops these silently, but
-// their persistence is a smell — past auto-add bugs or manual JSON
-// edits leak them in.
+// probeSidebarSubcatLeak finds persisted sidebar_config rows whose items
+// reference a sub-category entity_type. Sub-cats are template variants
+// (ADR: sub-cats-as-templates) and must never be SidebarItems; the
+// render-time filter drops them silently, but their persistence signals
+// drift worth surfacing.
 //
-// Uses MariaDB's JSON_TABLE (10.6+; Chronicle requires 10.11+). When
-// sidebar_config is NULL or empty, JSON_EXTRACT returns NULL and
-// JSON_TABLE produces no rows — safe no-op.
+// Uses MariaDB's JSON_TABLE (requires 10.11+). When sidebar_config is
+// NULL or empty, JSON_EXTRACT returns NULL and JSON_TABLE produces no
+// rows — safe no-op.
 func probeSidebarSubcatLeak(ctx context.Context, db *sql.DB) (int, string, error) {
 	const query = `
 		SELECT COUNT(*) FROM campaigns c,
@@ -218,9 +190,8 @@ func probeSidebarSubcatLeak(ctx context.Context, db *sql.DB) (int, string, error
 }
 
 // probeSidebarOrphanTypeID finds sidebar_config items whose type_id
-// references a deleted entity_type. The render-time filter quietly
-// drops orphans, but their accumulation in sidebar_config JSON is
-// unbounded and slows JSON parsing on every page load.
+// references a deleted entity_type. The render-time filter drops orphans
+// silently; this surfaces the drift so it can be cleaned up.
 func probeSidebarOrphanTypeID(ctx context.Context, db *sql.DB) (int, string, error) {
 	const query = `
 		SELECT COUNT(*) FROM campaigns c,

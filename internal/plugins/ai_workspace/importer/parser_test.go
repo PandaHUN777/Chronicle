@@ -2,10 +2,6 @@
 // parsing behavior. Test inputs mimic real AI output: mixed FM /
 // no-FM, malformed YAML, invalid enum, multi-page with FM, fallback
 // H1 split when no FM anywhere.
-//
-// Stop-and-flag check (scoping §1.4): real Claude/ChatGPT output
-// samples may differ from these fixtures. Phase 5's smoke test
-// expands the fixture set.
 package importer
 
 import (
@@ -225,7 +221,7 @@ type: character
 
 Body of page one.
 
-Some text with a `+ "`#`" + ` symbol that isn't an H1.
+Some text with a ` + "`#`" + ` symbol that isn't an H1.
 
 ---
 name: Page Two
@@ -285,9 +281,9 @@ Body B.`
 	}
 }
 
-// TestParse_PreambleBeforeFirstFMDropped — AI tools sometimes
-// disregard the §3.5 prompt's "no preamble" instruction. The
-// parser drops anything before the first `---` opener.
+// TestParse_PreambleBeforeFirstFMDropped: AI tools sometimes
+// disregard the prompt's "no preamble" instruction. The parser
+// drops anything before the first `---` opener.
 func TestParse_PreambleBeforeFirstFMDropped(t *testing.T) {
 	input := `Here are three new NPCs for your campaign:
 

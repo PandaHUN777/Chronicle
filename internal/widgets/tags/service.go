@@ -108,8 +108,7 @@ func (s *tagService) ListByCampaign(ctx context.Context, campaignID string, incl
 
 // Update validates the new name, regenerates the slug, and persists the
 // changes to the tag. Color and DmOnly are PARTIAL: a nil pointer means the
-// caller did not send that key, so the stored value is left alone. See
-// UpdateTagInput's doc comment for the incident this replaced.
+// caller did not send that key, so the stored value is left alone.
 func (s *tagService) Update(ctx context.Context, id int, input UpdateTagInput) (*Tag, error) {
 	// Verify the tag exists before updating.
 	tag, err := s.repo.FindByID(ctx, id)
@@ -122,9 +121,8 @@ func (s *tagService) Update(ctx context.Context, id int, input UpdateTagInput) (
 		return nil, apperror.NewBadRequest("tag name is required")
 	}
 
-	// Load-merge-write (sweep R4 / ADR-056). `tag` is the row as stored, so
-	// Color/DmOnly default to the stored value: only a key the caller
-	// actually sent can change it.
+	// Load-merge-write (ADR-056): `tag` is the row as stored, so Color/DmOnly
+	// default to the stored value; only a key the caller actually sent changes.
 	color := tag.Color
 	if input.Color != nil {
 		color = strings.TrimSpace(*input.Color)

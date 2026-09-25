@@ -1,21 +1,17 @@
 /**
  * surface_demo.js — a worked example of a Chronicle *System* consuming the
- * dynamic-surface frame (Chronicle.surface). It plays exactly the role a real
- * game-system pack (e.g. Draw Steel) plays: it registers box-body renderers and
- * mounts a character SHEET from a declarative schema. The FRAME owns the motion,
- * the boxes, the overlay stack and the data provider; this file only supplies
- * (a) sample character DATA and (b) the per-box render functions.
+ * dynamic-surface frame (Chronicle.surface). It registers box-body renderers
+ * and mounts a character sheet from a declarative schema; the frame owns the
+ * motion, boxes, overlay stack and data provider, this file only supplies
+ * sample character data and the per-box render functions. Swap the data and
+ * renderers and the same frame renders any system's sheet.
  *
- * Mounted by the Design Lab surface-demo page (/admin/design-lab). Pure browser
- * JS, no node runtime. The provider is SEEDED (zero network) so the demo works
- * offline. Intentionally Draw Steel-flavoured so it reads like a real sheet, but
- * nothing here is system-specific machinery — swap the data + renderers and the
- * same frame renders any system's sheet.
+ * Mounted by the Design Lab surface-demo page (/admin/design-lab). The
+ * provider is seeded (zero network) so the demo works offline.
  *
- * Load ordering: the page body renders BEFORE the global <script> tags in
- * base.templ, so dynamic_surface.js may not have run yet when this file is
- * parsed. We therefore poll for Chronicle.surface (the deferred frame runs after
- * parse, so once it exists the DOM — and our mount targets — are ready too).
+ * The page body renders before the global <script> tags in base.templ, so
+ * dynamic_surface.js may not have run yet when this file is parsed — poll
+ * for Chronicle.surface rather than assuming it exists.
  */
 (function () {
   'use strict';

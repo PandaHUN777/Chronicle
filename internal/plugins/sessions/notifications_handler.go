@@ -11,10 +11,11 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/auth"
 )
 
-// In-app notification HTTP surface (C-SCHED-P2). These routes are user-scoped
-// (NOT campaign-scoped) — the topbar bell is global — so they ride a plain
-// authenticated group, not the calendar-addon campaign group. Every read/write
-// is scoped to the authenticated user in the service/repo (IDOR guard).
+// In-app notification HTTP surface. These routes are user-scoped, not
+// campaign-scoped — the topbar bell is global — so they ride a plain
+// authenticated group, not the calendar-addon campaign group. Every
+// read/write is scoped to the authenticated user in the service/repo (IDOR
+// guard).
 
 // notifDTO is the camelCase list item the bell widget renders.
 type notifDTO struct {

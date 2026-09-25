@@ -1,18 +1,9 @@
-// ai_workspace_import_commit_route_test.go pins the owner-only
-// access control on POST /campaigns/:id/ai-workspace/import/commit
-// via AST inspection.
-//
-// Mirror of ai_workspace_import_parse_route_test.go; same shape.
-// The commit endpoint is the first AI Workspace route that mutates
-// the database — it creates entity-type rows + entity rows from
-// operator-supplied markdown. Non-owner access would let lower-role
-// members write content to the campaign under the owner's name and
-// would also expose DM-side material that may sit in the source
-// (Permitted / Everything content mode upstream).
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §5 acceptance invariants (owner-scoped); V1-E dispatch.
+// ai_workspace_import_commit_route_test.go pins the owner-only access
+// control on POST /campaigns/:id/ai-workspace/import/commit via AST
+// inspection. This endpoint creates entity-type and entity rows from
+// operator-supplied markdown; non-owner access would let lower-role members
+// write content under the owner's name and could expose DM-side material
+// from the source (Permitted / Everything content mode).
 
 package wire
 

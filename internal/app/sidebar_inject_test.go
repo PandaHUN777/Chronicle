@@ -1,7 +1,7 @@
-// sidebar_inject_test.go — C-NAV-V3: the render-side default injector that lets
-// the single unified items model render the full default sidebar for an empty
-// (never-customized or reconciler-skipped) config, plus the auto-add path that
-// now reaches converted campaigns.
+// sidebar_inject_test.go covers the render-side default injector that lets
+// the single unified items model render the full default sidebar for an
+// empty (never-customized or reconciler-skipped) config, plus the auto-add
+// path for converted campaigns.
 package app
 
 import (
@@ -56,11 +56,10 @@ func TestInjectDefaultSidebarItems_EmptyRendersFullDefault(t *testing.T) {
 			t.Errorf("sub-category type 30 must not be a sidebar item")
 		}
 	}
-	// Addon shortcuts match the injector's own registration list (the source of
-	// truth), derived here rather than hardcoding plugin slugs: internal/app is
-	// not the owning plugin directory, so literal plugin names in this test would
-	// leak across the plugin boundary and trip check-plugin-isolation.sh
-	// (0e / T-B2). defaultSidebarAddons lives in the allowlisted app wiring.
+	// Addon shortcuts are derived from defaultSidebarAddons (the injector's own
+	// registration list) rather than hardcoded plugin slugs, since internal/app
+	// is not the owning plugin directory and literal plugin names here would
+	// trip check-plugin-isolation.sh (T-B2).
 	wantAddons := map[string]bool{}
 	for _, a := range defaultSidebarAddons {
 		wantAddons[a.Slug] = true

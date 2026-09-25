@@ -35,7 +35,7 @@ func (h *Handler) SetUserDirectory(ud UserDirectory) { h.userDir = ud }
 // It is deliberately GetByID and not IsUserDmGranted(campaign, user):
 // campaigns' IsUserDmGranted re-reads the campaign row per call, so asking it
 // once per member would turn a roster render into an N+1. One read, one grant
-// set, every member labelled from it (WG-4).
+// set, every member labelled from it.
 type CampaignReader interface {
 	GetByID(ctx context.Context, id string) (*campaigns.Campaign, error)
 }
@@ -118,11 +118,10 @@ func (h *Handler) GetOverlayAPI(c echo.Context) error {
 // availability, via the bell in the top-right.
 // POST /campaigns/:id/availability/nudge
 //
-// OWNER / CO-DM ONLY, enforced here by role rather than by route — the same rule
-// the overlay's detail gate follows (design §5 / Q1). It has to be gated: this
-// is the one availability action that writes into other people's notification
-// lists, so an ungated version would be a campaign-wide broadcast handed to
-// anybody who could reach the URL.
+// OWNER / CO-DM ONLY, enforced here by role rather than by route: this is the
+// one availability action that writes into other people's notification lists,
+// so an ungated version would be a campaign-wide broadcast handed to anybody
+// who could reach the URL.
 func (h *Handler) NudgeAvailabilityAPI(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
 	if cc.MemberRole < campaigns.RoleOwner && !cc.IsDmGranted {
@@ -153,15 +152,12 @@ func (h *Handler) AvailabilityAnswersAPI(c echo.Context) error {
 }
 
 // availabilityAnswerStamped fills HasAnswered on a roster the caller already
-// built. BuildOverlay does its own stamping internally, so this exists for the
-// paths that need the roster WITHOUT an overlay — chiefly CampaignRoster, whose
-// consumers render a member list and would otherwise have to guess.
+// built. BuildOverlay does its own stamping internally, so this exists for
+// paths that need the roster WITHOUT an overlay — chiefly CampaignRoster.
 //
-// A failure degrades to "nobody has answered" rather than failing the render,
-// and that direction is chosen with eyes open: it can under-report an answer
-// (visible, correctable, and the Director can just look at the grid), where the
-// opposite would report silence as an answer and quietly restore the exact
-// ambiguity this feature exists to remove.
+// A failure degrades to "nobody has answered" rather than failing the
+// render: it can under-report an answer (visible, correctable), where the
+// opposite would report silence as an answer and hide it.
 func (h *Handler) availabilityAnswerStamped(ctx context.Context, campaignID string, in []overlayMemberInput) []overlayMemberInput {
 	rows, err := h.svc.AvailabilityAnswerStatuses(ctx, campaignID, in)
 	if err != nil || len(rows) != len(in) {
@@ -173,27 +169,23 @@ func (h *Handler) availabilityAnswerStamped(ctx context.Context, campaignID stri
 	return in
 }
 
-// --- the cross-plugin read seam (C-CALV4-RSVP-P8 §5) ------------------------
+// --- the cross-plugin read seam ---------------------------------------------
 //
-// The calendar's Bench RSVP panel prints the same availability this plugin
-// serves at /availability/overlay. The two surfaces read through the SAME two
-// functions below rather than each assembling a roster, because the thing they
-// must never disagree about is who is free and who may see it — and two
-// assemblies of the same facts is how that disagreement gets built.
-//
-// Neither takes an echo.Context: the calendar reaches them through a narrow
-// interface wired in internal/app/routes.go (house rule 8), so this plugin
-// gains no edge into the calendar and the calendar gains none into this one.
+// The two functions below expose the same availability this plugin serves at
+// /availability/overlay for other plugins to read, so a consumer never has to
+// assemble its own roster and risk disagreeing about who is free and who may
+// see it. Neither takes an echo.Context: a caller reaches them through a
+// narrow interface wired in internal/app/routes.go (house rule 8), so this
+// plugin gains no edge into the caller and the caller gains none into this one.
 
-// RosterEntry is one member of the overlay roster with NO availability attached
-// — the PARTY-VISIBLE half of the roster.
+// RosterEntry is one member of the overlay roster with NO availability
+// attached — the PARTY-VISIBLE half of the roster.
 //
-// The split matters and is the signed contract's (C-CALV4-RSVP-P8 §4): a
-// member's name, role, zone and answer are visible to the whole party, while
-// their availability LANES are owner / co-DM only. WeekOverlay.Members carries
-// both fused together and is therefore populated only under includeDetail, so a
-// player-facing surface that needs the names cannot use it. This type is what a
-// player is entitled to; nothing on it is gated.
+// A member's name, role, zone and answer are visible to the whole party,
+// while their availability LANES are owner / co-DM only. WeekOverlay.Members
+// carries both fused together and is populated only under includeDetail, so
+// a player-facing surface that needs the names cannot use it; this type is
+// what a player is entitled to, and nothing on it is gated.
 //
 // The ORDER is the identity key: hue and pattern are taken from the index, so
 // the order must not depend on availability, tally or answer.
@@ -209,10 +201,10 @@ type RosterEntry struct {
 	// TZ is the stored IANA zone, EMPTY when unset. Empty is a state, not a
 	// default: see OverlayMember.TZ.
 	TZ string
-	// HasAnswered is whether this member has ever saved an availability pattern
-	// (C-RSVP-P9). Party-visible by the same rule as name/role/zone: knowing
-	// that somebody has not answered yet is not knowing anything about WHEN
-	// they are free, which is the fact the lanes gate protects.
+	// HasAnswered is whether this member has ever saved an availability
+	// pattern. Party-visible by the same rule as name/role/zone: knowing that
+	// somebody has not answered yet says nothing about WHEN they are free,
+	// which is the fact the lanes gate protects.
 	HasAnswered bool
 }
 
@@ -239,11 +231,10 @@ func (h *Handler) CampaignRoster(ctx context.Context, campaignID string) []Roste
 // CampaignWeekOverlay builds the campaign's availability overlay for the week
 // containing weekStart, projected into viewerTZ.
 //
-// includeDetail IS THE PERMISSION and it is the caller's to decide, from role,
-// in a handler — never from a route (sessions/routes.go:29-46). When it is
-// false BuildOverlay omits Members and every *IDs array WHOLESALE: a
-// non-entitled viewer's payload does not contain another member's lane data at
-// all, hidden or otherwise. Absence is in the payload.
+// includeDetail IS THE PERMISSION and it is the caller's to decide, from
+// role, never from the route. When false, BuildOverlay omits Members and
+// every *IDs array wholesale: a non-entitled viewer's payload does not
+// contain another member's lane data at all, hidden or otherwise.
 func (h *Handler) CampaignWeekOverlay(ctx context.Context, campaignID, weekStart, viewerTZ string,
 	includeDetail bool) (*WeekOverlay, error) {
 	return h.svc.BuildOverlay(ctx, campaignID, h.overlayMembers(ctx, campaignID),
@@ -290,8 +281,8 @@ func (h *Handler) AddExceptionAPI(c echo.Context) error {
 }
 
 // ReplaceDayExceptionsAPI atomically replaces the current user's overrides for
-// one date with a composed set — the backend for the "compose the day" editor
-// (C-SCHED-P2 0c). An empty blocks array clears the day.
+// one date with a composed set — the backend for the "compose the day" editor.
+// An empty blocks array clears the day.
 // PUT /campaigns/:id/availability/exceptions
 func (h *Handler) ReplaceDayExceptionsAPI(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
@@ -320,19 +311,16 @@ func (h *Handler) DeleteExceptionAPI(c echo.Context) error {
 // --- helpers ---
 
 // resolveViewerTZ picks the zone the overlay renders in: an explicit ?tz=
-// override if valid, else the member's stored account zone, else UTC.
-//
-// The UTC fallback is correct HERE — the grid has to be drawn in some zone and
-// it labels which — and wrong for a per-member clock, which is why storedTZ
-// below reports absence rather than guessing (ADR-048 §18).
+// override if valid, else the member's stored account zone, else UTC. The
+// UTC fallback is correct here — the grid must be drawn in some zone — but
+// wrong for a per-member clock, which is why storedTZ below reports absence
+// rather than guessing.
 func (h *Handler) resolveViewerTZ(c echo.Context, userID string) string {
 	if tz := c.QueryParam("tz"); timeutil.IsValidLocation(tz) {
 		return tz
 	}
 	// The zone the viewer set for THEMSELVES on this campaign's availability
-	// page comes first: for most players it is the only zone they ever set, so
-	// reading users.timezone alone rendered their own heatmap in UTC while their
-	// blocks were stored in their real zone.
+	// page comes first: for most players it is the only zone they ever set.
 	if cc := campaigns.GetCampaignContext(c); cc != nil && cc.Campaign != nil && userID != "" {
 		if zones, err := h.svc.CampaignMemberZones(c.Request().Context(), cc.Campaign.ID); err == nil {
 			if tz := zones[userID]; tz != "" {
@@ -362,18 +350,12 @@ func (h *Handler) storedTZ(ctx context.Context, userID string) string {
 }
 
 // memberZone resolves the zone a member is REPORTED to be in, from both places
-// the product lets them set one:
-//
-//  1. member_availability.tz — what the availability page's control, labelled
-//     "Your timezone", writes. It is the only zone most players ever set,
-//     because that page never calls PUT /account/timezone.
-//  2. users.timezone — the account setting.
-//
-// Empty means genuinely not set anywhere, and stays a first-class state: the
-// callers that print a per-member CLOCK print a "zone not set" repair rather
-// than a UTC guess (ADR-048 §18). Reading only (2) is what made the Bench show
-// "zone not set" beside a player who HAD set their zone, permanently, with a
-// chip inviting the Director to chase them for it.
+// the product lets them set one: member_availability.tz (the availability
+// page's "Your timezone" control, which most players are the only zone they
+// ever set) first, then users.timezone. Empty means genuinely not set
+// anywhere and stays a first-class state — callers that print a per-member
+// clock show a "zone not set" repair rather than a UTC guess (see .ai.md
+// "Role and Zone Display Rules").
 func (h *Handler) memberZone(ctx context.Context, availabilityZones map[string]string, userID string) string {
 	if tz := availabilityZones[userID]; tz != "" {
 		return tz
@@ -405,16 +387,12 @@ func (h *Handler) dmGrantSet(ctx context.Context, campaignID string) map[string]
 
 // overlayMembers builds the deterministic roster the overlay renders: DM first,
 // then members by name, then user ID — so lane colors stay stable per member
-// across renders.
+// across renders. The order doubles as an identity key elsewhere (hue/pattern
+// index), so it must never depend on availability, tally or answer.
 //
-// The ORDER is also the identity key on the Bench's RSVP panel: hue and pattern
-// are taken from this index, so a member answering an RSVP may not move a single
-// element (C-CALV4-RSVP-P8 §3). Never sort by availability, tally or answer.
-//
-// Roles and zones are resolved HERE, once, from the truth sources — the roster's
-// own campaigns.Role, the campaign's DmGrantIDs, and users.timezone — so the
-// pure projection stays campaigns-free and there is exactly one role vocabulary
-// in the product (WG-4).
+// Roles and zones are resolved HERE, once, from the truth sources — the
+// roster's own campaigns.Role, the campaign's DmGrantIDs, and users.timezone —
+// so the pure projection stays campaigns-free.
 func (h *Handler) overlayMembers(ctx context.Context, campaignID string) []overlayMemberInput {
 	if h.memberLister == nil {
 		return nil
@@ -424,8 +402,8 @@ func (h *Handler) overlayMembers(ctx context.Context, campaignID string) []overl
 		return nil
 	}
 	grants := h.dmGrantSet(ctx, campaignID)
-	// ONE read for every member's own zone, then a per-member account-zone read
-	// only for the members that read did not answer (WG-4's one-read rule).
+	// One read for every member's own zone; a per-member account-zone read
+	// happens only for members that read did not answer.
 	zones, err := h.svc.CampaignMemberZones(ctx, campaignID)
 	if err != nil {
 		zones = nil // degrade to the account zone; never fail a roster render on it

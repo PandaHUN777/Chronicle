@@ -1,17 +1,16 @@
-// Contract tests for C-FMC-9 fixes:
+// Contract tests:
 //
-//  - Bug 2: ForcePinCampaign wraps the underlying error so the
-//    audit trail clearly shows "force-pin" was the failed path.
-//    Asserts the wrap is visible AND the original typed error is
-//    still unwrappable for callers using errors.As / errors.Is.
+//  - ForcePinCampaign wraps the underlying error so the audit trail
+//    shows "force-pin" was the failed path, while keeping the
+//    original typed error unwrappable via errors.As / errors.Is.
 //
-//  - Bug 1: showAffectedCampaignsOnClick produces an IIFE that
-//    targets the correct DOM ID (matches packages.sanitizeForID's
-//    rule of dots-to-hyphens).
+//  - showAffectedCampaignsOnClick produces an IIFE that targets the
+//    correct DOM ID (matches packages.sanitizeForID's rule of
+//    dots-to-hyphens).
 //
 //  - sanitizeVersionForDOMID stays in lock-step with packages's
-//    sanitizeForID (regression test — if either side drifts, the
-//    banner button silently fails to find its target).
+//    sanitizeForID — if either side drifts, the banner button
+//    silently fails to find its target.
 package foundry_vtt
 
 import (
@@ -23,13 +22,11 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/packages"
 )
 
-// TestForcePinCampaign_ErrorWrapsAndUnwraps — when SetPinnedVersion
+// TestForcePinCampaign_ErrorWrapsAndUnwraps: when SetPinnedVersion
 // returns a typed error, ForcePinCampaign wraps it for diagnostic
-// context. The wrap MUST preserve the original error chain so
-// callers using errors.As(err, &fe) can still extract the typed
-// Error. Without unwrapping, the categorized JSON error response
-// the handler emits would degrade to "internal" for every
-// force-pin failure.
+// context but must preserve the chain so errors.As(err, &fe) still
+// extracts the typed Error — otherwise the handler's categorized
+// JSON error response degrades to "internal" for every failure.
 func TestForcePinCampaign_ErrorWrapsAndUnwraps(t *testing.T) {
 	// Use a service whose pkgs reader returns nil package (triggers
 	// ErrNoPackageRegistered inside SetPinnedVersion).

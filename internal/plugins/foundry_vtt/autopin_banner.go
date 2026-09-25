@@ -9,47 +9,36 @@ import (
 	"time"
 )
 
-// Settings KV keys for the auto-pin banner (C-FMC-8).
+// Settings KV keys for the auto-pin banner.
 //
-// LatestAutoPinSummaryKey holds the JSON-serialized AutoPinSummary
-// of the most recent install that auto-pinned campaigns. Overwritten
-// on every install (only the latest summary is surfaced; older
-// summaries are still queryable via the security_events audit log).
+// LatestAutoPinSummaryKey holds the JSON-serialized AutoPinSummary of
+// the most recent install that auto-pinned campaigns; overwritten on
+// every install (older summaries stay queryable via security_events).
 //
-// AutoPinBannerDismissedAtKey holds a Unix-second timestamp string
-// of the last time the admin dismissed the banner. The banner shows
-// iff the latest summary's timestamp is strictly greater than the
-// dismissal timestamp.
+// AutoPinBannerDismissedAtKey holds a Unix-second timestamp of the
+// last dismissal. The banner shows iff the latest summary's
+// timestamp is strictly greater than the dismissal timestamp.
 const (
-	LatestAutoPinSummaryKey       = "foundry_vtt.latest_autopin_summary"
-	AutoPinBannerDismissedAtKey   = "foundry_vtt.autopin_banner_dismissed_at"
+	LatestAutoPinSummaryKey     = "foundry_vtt.latest_autopin_summary"
+	AutoPinBannerDismissedAtKey = "foundry_vtt.autopin_banner_dismissed_at"
 )
 
 // AutoPinSummarySchemaVersion is the current wire-shape version of
-// AutoPinSummary's JSON serialization. Bumped whenever the struct
-// gains a field that's load-bearing (i.e. callers can't safely
-// ignore). Added in C-FMC-ADMIN-UX-AUDIT Chunk 1.
+// AutoPinSummary's JSON serialization. Bump it whenever the struct
+// gains a field callers can't safely ignore.
 //
-// Read-path is LENIENT: existing serialized summaries that predate
-// this field deserialize SchemaVersion as 0 → treated as 1 (the
-// initial version that gained the field). Forward-incompatible
-// versions (SchemaVersion > AutoPinSummarySchemaVersion) are
-// REJECTED with a clear error so a future Chronicle version can't
-// silently drop data it doesn't understand. Pattern matches
-// PackageDescriptor (C-FMC-5a) and the audit's spec for this field.
+// Read path is lenient: SchemaVersion 0 (pre-versioning) is treated
+// as 1; a version higher than this constant is rejected so a future
+// Chronicle version can't silently drop data it doesn't understand.
 const AutoPinSummarySchemaVersion = 1
 
 // AutoPinSummary is the renderable bundle the admin banner displays.
-// Populated by AutoPinOnInstall + serialized to the settings KV;
+// Populated by AutoPinOnInstall and serialized to the settings KV;
 // read back by GetUnreadAutoPinSummary.
 type AutoPinSummary struct {
-	// SchemaVersion identifies the wire-shape version. Writers always
-	// set this to AutoPinSummarySchemaVersion (currently 1). Readers
-	// treat missing/zero as 1 (lenient pre-Chunk-1 backfill) and
-	// reject anything higher than AutoPinSummarySchemaVersion as
-	// forward-incompatible. The field is `omitempty` so a default-
-	// constructed (zero-value) summary doesn't accidentally
-	// serialize as `"schema_version":0` to confuse the read path.
+	// SchemaVersion is the wire-shape version; see
+	// AutoPinSummarySchemaVersion. `omitempty` so a zero-value summary
+	// doesn't serialize as `"schema_version":0` and confuse the read path.
 	SchemaVersion int `json:"schema_version,omitempty"`
 	// PreviousVersion is the version campaigns were effectively
 	// running before this install. The banner phrases it as the
@@ -67,15 +56,13 @@ type AutoPinSummary struct {
 }
 
 // storeAutoPinSummary serializes summary to the settings KV under
-// LatestAutoPinSummaryKey. Called by AutoPinOnInstall after the
-// per-campaign fan-out completes. Soft-fails (logs but doesn't
-// abort the install) if kv is nil or the write errors — the
-// summary is supplementary; missing it doesn't break installs.
+// LatestAutoPinSummaryKey, called by AutoPinOnInstall after the
+// per-campaign fan-out completes. The summary is supplementary, so a
+// nil kv or a write error doesn't abort the install.
 //
-// Always stamps SchemaVersion to the current AutoPinSummarySchemaVersion
-// regardless of the caller's value (defensive: a caller that
-// constructed the struct without setting the version field still
-// gets the correct on-disk shape).
+// Always stamps SchemaVersion to the current value regardless of the
+// caller's, so a struct built without setting it still serializes
+// correctly.
 func (s *service) storeAutoPinSummary(ctx context.Context, summary AutoPinSummary) error {
 	if s.kv == nil {
 		return nil // KV not wired (tests); skip silently
@@ -88,22 +75,18 @@ func (s *service) storeAutoPinSummary(ctx context.Context, summary AutoPinSummar
 	return s.kv.Set(ctx, LatestAutoPinSummaryKey, string(bytes))
 }
 
-// GetUnreadAutoPinSummary returns the latest summary if unread,
-// nil if no summary exists or the admin has already dismissed it.
-//
-// Read-only: doesn't touch the dismissal key. The banner handler
-// re-renders empty when this returns nil; the dismiss handler is
-// what updates the dismissal timestamp.
+// GetUnreadAutoPinSummary returns the latest summary if unread, nil
+// if no summary exists or the admin has already dismissed it.
+// Read-only: doesn't touch the dismissal key.
 func (s *service) GetUnreadAutoPinSummary(ctx context.Context) (*AutoPinSummary, error) {
 	if s.kv == nil {
 		return nil, nil
 	}
 	raw, err := s.kv.Get(ctx, LatestAutoPinSummaryKey)
 	if err != nil || raw == "" {
-		// Missing key returns an apperror.NotFound-shaped error from
-		// settings.Get. Treat any error as "no summary to surface" —
-		// the banner is supplementary, not load-bearing, so we don't
-		// abort the page render over a KV read issue.
+		// The banner is supplementary, not load-bearing: treat a
+		// missing key or any read error as "no summary to surface"
+		// rather than aborting the page render.
 		return nil, nil
 	}
 	var summary AutoPinSummary
@@ -111,16 +94,11 @@ func (s *service) GetUnreadAutoPinSummary(ctx context.Context) (*AutoPinSummary,
 		return nil, fmt.Errorf("parse stored autopin summary: %w", err)
 	}
 
-	// Schema-version handling (added in C-FMC-ADMIN-UX-AUDIT Chunk 1):
-	//   - 0 (pre-Chunk-1 summaries, no schema_version field) → treat
-	//     as 1 silently. Lenient backfill.
-	//   - 1..AutoPinSummarySchemaVersion → use as-is.
-	//   - >AutoPinSummarySchemaVersion → REJECT with a clear error so
-	//     a future Chronicle version can't silently drop data it
-	//     doesn't understand (e.g. operator downgrades binary while
-	//     KV still holds a newer summary).
+	// SchemaVersion 0 means a pre-versioning summary; treat as 1.
+	// A version newer than we know is rejected so a downgraded
+	// Chronicle binary can't silently drop data it doesn't understand.
 	if summary.SchemaVersion == 0 {
-		summary.SchemaVersion = 1 // pre-Chunk-1 lenient default
+		summary.SchemaVersion = 1
 	}
 	if summary.SchemaVersion > AutoPinSummarySchemaVersion {
 		return nil, fmt.Errorf(
@@ -129,8 +107,8 @@ func (s *service) GetUnreadAutoPinSummary(ctx context.Context) (*AutoPinSummary,
 			summary.SchemaVersion, AutoPinSummarySchemaVersion, LatestAutoPinSummaryKey)
 	}
 
-	// Check dismissal. A summary timestamp <= dismissed_at means
-	// the admin has already acknowledged this install.
+	// A summary timestamp <= dismissed_at means the admin has already
+	// acknowledged this install.
 	dismissedRaw, _ := s.kv.Get(ctx, AutoPinBannerDismissedAtKey)
 	if dismissedRaw != "" {
 		dismissed, parseErr := strconv.ParseInt(dismissedRaw, 10, 64)
@@ -142,9 +120,8 @@ func (s *service) GetUnreadAutoPinSummary(ctx context.Context) (*AutoPinSummary,
 }
 
 // DismissAutoPinBanner stamps the current Unix timestamp into the
-// dismissal settings key. Subsequent calls to GetUnreadAutoPinSummary
-// return nil until a new install produces a summary with a fresh
-// timestamp.
+// dismissal key, so GetUnreadAutoPinSummary returns nil until a new
+// install produces a summary with a fresher timestamp.
 func (s *service) DismissAutoPinBanner(ctx context.Context) error {
 	if s.kv == nil {
 		return errors.New("settings KV not configured; banner state can't persist")
