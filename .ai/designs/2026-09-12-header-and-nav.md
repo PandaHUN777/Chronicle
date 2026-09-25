@@ -8,7 +8,7 @@ addenda below supersede the July layout where they conflict. Order of work:
 operator, and never built. **Revive it; do not redesign it.** The nav's
 structural work (one item model, one reorder mechanic — C-NAV-V3) shipped and
 matches the code; it needs a polish slice, not a rethink.
-**Executor model:** Sonnet (`go-dev`); design questions go back to the lead,
+**Executor:** the `go-dev` agent; design questions go back to the lead,
 never guessed. **Owner-facing summary:** the top bar becomes yours — your
 name or logo, editable in place; a row of small live widgets you pick; the
 campaign switcher folded into the name. Two pieces (a moving sky background,

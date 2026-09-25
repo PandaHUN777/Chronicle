@@ -4,17 +4,16 @@
 https://claude.ai/code/artifact/d554c339-512f-4f01-9ead-06cafd69df90
 (three pages: Permissions, Chrome, Customize). No further renders are needed
 to start. Specs live in `2026-09-12-header-and-nav.md` (all addenda),
-ADR-057 as amended, `2026-09-12-permissions-indicator.md`,
-`2026-09-12-security-plan.md`. This file only orders the work.
+ADR-057 as amended, and the permissions-indicator and security plans (deleted
+once their open slices became issues; full text at
+https://github.com/keyxmakerx/Chronicle/tree/dfc73c78/.ai/designs). This file
+only orders the work.
 
-**Standing rules.** One slice = one PR, branched from main. Executor
-`go-dev` (Sonnet); every PR gets the `reviewer` pass before push; the
+**Standing rules.** One slice = one PR, branched from main. The `go-dev`
+agent implements; every PR gets the `reviewer` pass before push; the
 `migration-safety` gate on anything touching schema. `make verify` +
 `make test-js` green. Screenshots at desktop and 390px in headless Chromium
-against the canvas board the slice implements. **Nothing merges until the
-operator has deployed the calendar demolition and confirmed** (standing
-hold). Fable is not needed for any of this; call it back only for a design
-question the plans do not answer.
+against the canvas board the slice implements.
 
 **Defaults assumed where the operator did not pick** (say so in the PR):
 nav highlight style ships as **D living ring, Calm**, still fallback **J rail
