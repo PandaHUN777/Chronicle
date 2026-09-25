@@ -258,7 +258,38 @@ func (s *timelineService) ListTimelines(ctx context.Context, campaignID string, 
 	if err != nil {
 		return nil, fmt.Errorf("list timelines: %w", err)
 	}
-	return filterTimelinesByUser(timelines, v), nil
+	timelines = filterTimelinesByUser(timelines, v)
+	if err := s.recountEventsForViewer(ctx, timelines, v); err != nil {
+		return nil, err
+	}
+	return timelines, nil
+}
+
+// recountEventsForViewer overwrites each timeline's SQL-computed EventCount
+// with the number of events this viewer can actually open, reusing the same
+// per-event filter ListTimelineEvents applies to its rows (filterEventLinksByUser)
+// so the two can't disagree (ADR-055 rule 3: a count is content too). The SQL
+// count only ever applied the dm_only predicate; per-user visibility_rules
+// are Go-side, so without this step a viewer excluded from an event only by
+// rules saw a count one higher than their event list — revealing that a
+// hidden event exists.
+//
+// Owners/co-DMs and system callers keep the cheap SQL count: SkipsPerUserRules
+// means they see every event, so recounting would just repeat the SQL's own
+// answer at the cost of two extra queries per timeline.
+func (s *timelineService) recountEventsForViewer(ctx context.Context, timelines []Timeline, v permissions.Viewer) error {
+	if v.SkipsPerUserRules() {
+		return nil
+	}
+	role := v.Role()
+	for i := range timelines {
+		events, err := s.timelineEventLinks(ctx, timelines[i].ID, role)
+		if err != nil {
+			return fmt.Errorf("recount timeline %s events: %w", timelines[i].ID, err)
+		}
+		timelines[i].EventCount = len(filterEventLinksByUser(events, role, v))
+	}
+	return nil
 }
 
 // filterTimelinesByUser applies the per-user visibility layer to a timeline
@@ -305,7 +336,11 @@ func (s *timelineService) ListTimelinesForCalendar(ctx context.Context, calendar
 	if err != nil {
 		return nil, fmt.Errorf("list timelines for calendar: %w", err)
 	}
-	return filterTimelinesByUser(timelines, v), nil
+	timelines = filterTimelinesByUser(timelines, v)
+	if err := s.recountEventsForViewer(ctx, timelines, v); err != nil {
+		return nil, err
+	}
+	return timelines, nil
 }
 
 // UpdateTimeline modifies an existing timeline.
@@ -433,18 +468,27 @@ func (s *timelineService) UnlinkEvent(ctx context.Context, timelineID, eventID s
 // by date, and filtered by role-based and per-user visibility rules.
 func (s *timelineService) ListTimelineEvents(ctx context.Context, timelineID string, v permissions.Viewer) ([]EventLink, error) {
 	role := v.Role()
-	// Fetch linked calendar events.
+	events, err := s.timelineEventLinks(ctx, timelineID, role)
+	if err != nil {
+		return nil, err
+	}
+	return filterEventLinksByUser(events, role, v), nil
+}
+
+// timelineEventLinks fetches a timeline's linked calendar events and
+// standalone events and merges them into one sorted EventLink slice,
+// unfiltered by per-user visibility. It is the shared read both
+// ListTimelineEvents (the rows a viewer opens) and recountEventsForViewer
+// (the count a timeline reports) build on, so the two can't diverge.
+func (s *timelineService) timelineEventLinks(ctx context.Context, timelineID string, role int) ([]EventLink, error) {
 	events, err := s.repo.ListEventLinks(ctx, timelineID, role)
 	if err != nil {
 		return nil, fmt.Errorf("list timeline events: %w", err)
 	}
-
-	// Tag calendar events with their source.
 	for i := range events {
 		events[i].Source = "calendar"
 	}
 
-	// Fetch and merge standalone events.
 	standalone, err := s.repo.ListStandaloneEvents(ctx, timelineID, role)
 	if err != nil {
 		return nil, fmt.Errorf("list standalone events: %w", err)
@@ -453,22 +497,25 @@ func (s *timelineService) ListTimelineEvents(ctx context.Context, timelineID str
 		events = append(events, se.ToEventLink())
 	}
 
-	// Sort merged events by date then display order.
 	sortEventLinks(events)
-
-	// Apply per-user event link visibility rules. Owners/co-DMs and declared
-	// system callers see everything; an anonymous viewer does not (ADR-049).
-	if !v.SkipsPerUserRules() {
-		filtered := events[:0]
-		for _, el := range events {
-			vis := el.EffectiveVisibility()
-			if canUserView(vis, el.VisibilityRules, role, v.UserID()) {
-				filtered = append(filtered, el)
-			}
-		}
-		events = filtered
-	}
 	return events, nil
+}
+
+// filterEventLinksByUser applies the per-user visibility layer to a merged
+// event-link slice. Owners/co-DMs and declared system callers see
+// everything; an anonymous viewer does not (ADR-049).
+func filterEventLinksByUser(events []EventLink, role int, v permissions.Viewer) []EventLink {
+	if v.SkipsPerUserRules() {
+		return events
+	}
+	filtered := events[:0]
+	for _, el := range events {
+		vis := el.EffectiveVisibility()
+		if canUserView(vis, el.VisibilityRules, role, v.UserID()) {
+			filtered = append(filtered, el)
+		}
+	}
+	return filtered
 }
 
 // sortEventLinks sorts events by year, month, day, then display order.

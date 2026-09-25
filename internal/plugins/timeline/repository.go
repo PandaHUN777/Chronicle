@@ -121,9 +121,11 @@ func (r *timelineRepo) GetByID(ctx context.Context, id string) (*Timeline, error
 // through even when its row is filtered out.
 //
 // This does NOT close the gap for per-user visibility_rules (allowed_users/
-// denied_users): those are resolved in Go by canUserView (service.go's
-// ListTimelineEvents), which SQL cannot see, so a residual count difference
-// can still survive for those.
+// denied_users): those are resolved in Go by canUserView, which SQL cannot
+// see. The service layer closes it instead (ADR-055) — timelineService.ListTimelines
+// recounts each timeline via recountEventsForViewer, reusing the same
+// per-event filter ListTimelineEvents applies, for any viewer that doesn't
+// skip the per-user layer.
 func (r *timelineRepo) List(ctx context.Context, campaignID string, role int) ([]Timeline, error) {
 	// CALV5-PLACEHOLDER: linkedEventVisFilter (the `ce.visibility` +
 	// visibility_override fragment) went with the calendar_events join; V5
@@ -169,8 +171,9 @@ func (r *timelineRepo) List(ctx context.Context, campaignID string, role int) ([
 // cross-plugin "timelines for this calendar" read the Calendars dashboard
 // consumes via a service interface.
 //
-// EventCount visibility uses the same partial fix as List (see its doc
-// comment): the residual visibility_rules gap is not closed here either.
+// EventCount visibility uses the same SQL predicate as List (see its doc
+// comment); the visibility_rules gap it can't close is closed at the
+// service layer for both methods alike (timelineService.recountEventsForViewer).
 func (r *timelineRepo) ListByCalendar(ctx context.Context, calendarID string, role int) ([]Timeline, error) {
 	// CALV5-PLACEHOLDER: linkedEventVisFilter (the `ce.visibility` +
 	// visibility_override fragment) went with the calendar_events join; V5

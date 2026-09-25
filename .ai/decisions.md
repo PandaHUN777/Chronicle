@@ -884,6 +884,8 @@ A fourth permission tier (`PermGM`) was rejected: it would have required re-mint
 **Consequences:**
 - A campaign-wide visibility default for everything, and a creator-only "Private" entity mode, were both rejected (see ADR-056 for the latter).
 
+**Amendment:** Decision 4 said the timeline `EventCount` leak was fixed; it wasn't — the fold only reached the `dm_only` base-visibility predicate in the COUNT subqueries, never the per-user `visibility_rules` (`allowed_users`/`denied_users`) that resolve in Go (`canUserView`). A Player excluded from an event only by rules still saw a count one higher than the events they could open, an existence oracle. Closed by reusing rule 3's own read-path filter instead of duplicating it in SQL: `timelineService.ListTimelines`/`ListTimelinesForCalendar` recount each timeline's `EventCount` with the same per-event filter (`filterEventLinksByUser`) `ListTimelineEvents` applies to its rows, for any viewer that doesn't skip the per-user layer (`SkipsPerUserRules`); Owners/co-DMs and system callers keep the cheap SQL count since they see every event regardless.
+
 ---
 
 ## ADR-056: A toggle says what it does — code where the label is a promise, copy where the label is a name
