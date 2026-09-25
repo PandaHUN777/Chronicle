@@ -1,9 +1,7 @@
 # Chronicle Deployment Runbook
 
-The 2 AM operator's reference for installing, upgrading, backing up,
-restoring, and troubleshooting a Chronicle instance.
-
-If you're tagging or upgrading to 0.0.1, read §2, §6, and §10 first.
+The operator's reference for installing, upgrading, backing up, restoring,
+and troubleshooting a Chronicle instance.
 
 ## Contents
 
@@ -73,12 +71,9 @@ Everything operator-controlled lives in three named volumes
 file (`.env`). Back those up, you can resurrect anything else.
 
 The MariaDB tablespace row covers all relational state, including the
-player-to-character claim relationships introduced in 0.0.2
-(`entities.owner_user_id`, migration 22). `mysqldump --single-transaction`
-captures the column transparently — no separate handling — and `restore.sh`
-brings it back identically. If a player has claimed a character, that link
-is in the DB dump; if it isn't in the dump, the link didn't exist at backup
-time.
+player-to-character claim relationships (`entities.owner_user_id`, migration
+22). `mysqldump --single-transaction` captures it transparently and
+`restore.sh` brings it back identically — no separate handling.
 
 ## 4. Install
 
@@ -141,76 +136,73 @@ Every env var Chronicle reads. **Bold = required in production.**
 | `TRUSTED_PROXY_CIDRS` | loopback + private ranges | Comma-separated CIDR blocks or bare addresses whose `X-Real-IP` / `X-Forwarded-For` headers are believed. **Replaces** the default, does not extend it. See "Client IP behind a reverse proxy" below. |
 | `BACKUP_DIR` | `/app/data/backups` | Where backups land. Defaults to the persistent `/app/data` volume so a fresh deploy works without operator setup. Override only if you mount backups on a different path. Setting it explicitly to empty is unsupported (the admin UI will surface a "not configured" error and the in-process pre-migration backup will be skipped). |
 | `BACKUP_RETENTION_DAYS` | `7` | Used by `scripts/backup.sh`. The in-process rotator uses a separate hardcoded 7d for `chronicle_pre_migrate_*` artifacts. |
-| `BACKUP_REQUIRED` | `0` | When `1` or `true`, the in-process pre-migration capture is mandatory: any failure (mysqldump missing, dump zero bytes, manifest write fails) aborts startup before migrations apply. This covers BOTH gates — pending core migrations (`MigrateWithBackup`) and pending plugin migrations (`main.go`'s gate over `PendingPluginMigrations`); before the plugin gate existed, a release shipping only plugin migrations silently bypassed this variable entirely. Use in production. The default fail-open behavior (warn + proceed) preserves the legacy semantics for development setups that don't have `mariadb-client` installed. |
+| `BACKUP_REQUIRED` | `0` | `1`/`true` makes the in-process pre-migration capture mandatory: any failure (mysqldump missing, dump zero bytes, manifest write fails) aborts startup before migrations apply. Covers both gates — pending core migrations (`MigrateWithBackup`) and pending plugin migrations (`main.go`'s `PendingPluginMigrations` gate). Use in production; the default fail-open (warn + proceed) suits dev setups without `mariadb-client`. |
 | `BACKUP_SCRIPT_PATH` | `/app/scripts/backup.sh` | Used by the admin "Run backup" button. |
 | `RESTORE_SCRIPT_PATH` | `/app/scripts/restore.sh` | Used by the admin restore page. |
-| `CHRONICLE_VERSION` | (empty, except on tag builds) | Names the build explicitly. Read by `GET /api/version` (highest precedence, then the VCS revision compiled into the binary, then the main module version, then `unknown`), by the `host.build` admin diagnostic, and stamped into the pre-migration manifest's `chronicle_version=` line. CI passes it as a Docker build arg **only for `v*` tag builds**, where it is the tag name — a `main`-branch push leaves it empty on purpose, because that build's metadata version is the literal `latest`, which is a tag and not a version. Empty is the normal case, not a gap: the binary carries its own commit SHA (Dockerfile stage 2 installs `git` so the Go toolchain stamps `vcs.revision`), and `/api/version` falls through to it. Set it yourself only if you want a human-chosen name in that field. |
-| `MYSQL_ROOT_PASSWORD` | (compose, **required**) | Compose-only; sets the bundled MariaDB's root password **on first initialisation only**. Compose refuses to start without it. An install first started before this variable was required may still have the old default `rootsecret` as its root password unless rotated — see "Rotating the root password" below. |
+| `CHRONICLE_VERSION` | (empty, except on tag builds) | Read by `GET /api/version` (highest precedence, then the compiled-in VCS revision, then the main module version, then `unknown`), by the `host.build` diagnostic, and stamped into the pre-migration manifest's `chronicle_version=` line. CI sets it as a Docker build arg only for `v*` tag builds; a `main`-branch push leaves it empty since the binary already carries its own commit SHA (`vcs.revision`) that `/api/version` falls through to. Set it yourself only for a human-chosen name. |
+| `MYSQL_ROOT_PASSWORD` | (compose, **required**) | Compose-only; sets the bundled MariaDB's root password on first initialisation only — compose refuses to start without it. An install predating this requirement may still have the old default `rootsecret` unless rotated; see "Rotating the root password" below. |
 | `MYSQL_PASSWORD` | (compose) | Compose-only; must match `DB_PASSWORD`. |
 
 ### Rotating the root password
 
 `MYSQL_ROOT_PASSWORD` is read by the MariaDB image only when the data volume
 is empty, so changing it in `.env` does nothing to an existing database. To
-rotate on a running install (the database port is not published, so this is
-defence in depth rather than an open door):
+rotate on a running install (the DB port isn't published, so this is
+defence-in-depth, not an open door):
 
 ```
 docker compose exec -T mariadb mariadb -uroot -p"$OLD_ROOT_PASSWORD" \
   -e "ALTER USER 'root'@'localhost' IDENTIFIED BY '<new>'; ALTER USER 'root'@'%' IDENTIFIED BY '<new>'; FLUSH PRIVILEGES;"
 ```
 
-then set the new value in `.env` so the healthcheck and backup tooling agree.
+Then set the new value in `.env` so the healthcheck and backup tooling agree.
 
 ### Client IP behind a reverse proxy
 
-Chronicle resolves the client address with Echo's `IPExtractor`. It believes
-`X-Real-IP` and `X-Forwarded-For` **only** from a peer inside
-`TRUSTED_PROXY_CIDRS`, and otherwise records the peer itself. Three things
-depend on getting this right: per-IP rate limiting, the media serve limit, and
-the address written into every audit and security row.
+Chronicle resolves the client address with Echo's `IPExtractor`, believing
+`X-Real-IP`/`X-Forwarded-For` **only** from a peer inside
+`TRUSTED_PROXY_CIDRS` (otherwise it records the peer itself). Per-IP rate
+limiting, the media serve limit, and the address in every audit/security row
+depend on getting this right.
 
-The default covers loopback and the private ranges, which is correct for a proxy
-running as a container on the same Docker network. **It is not correct for a
-proxy that reaches Chronicle over a mesh VPN**, whose peer address lands in
-`100.64.0.0/10` and matches nothing in the default. That deployment records every
-public visitor as the proxy: one shared rate-limit bucket for the whole internet,
-and one address repeated down the audit log.
+The default covers loopback and private ranges — correct for a proxy on the
+same Docker network, wrong for one reaching Chronicle over a **mesh VPN**
+(peer address in `100.64.0.0/10`, matching nothing in the default): every
+public visitor then gets recorded as the proxy, sharing one rate-limit bucket
+and one audit-log address.
 
-Ask the running service rather than reasoning about your topology:
+Check the running service rather than guessing:
 
 ```bash
 docker compose logs --tail 500 chronicle \
   | grep -oE '"?remote_ip"?[=:]"?[^ ",}]+' | sort | uniq -c | sort -rn | head
 ```
 
-A single private address on nearly every row means the headers are not being
-believed. Set the variable to the proxy's own address:
+A single private address on nearly every row means the headers aren't
+believed. Set the variable to the proxy's own address — **name the proxy, not
+its range**: every host inside a trusted range can dictate the client IP of
+any request it relays, so a mesh-wide entry hands that power to every peer
+that ever joins.
 
 ```
 TRUSTED_PROXY_CIDRS=127.0.0.0/8,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fd00::/8,<proxy-address>
 ```
 
-**Name the proxy, not its range.** Every host inside a trusted range can dictate
-the client IP of any request it relays, so a mesh-wide entry hands that to every
-peer that ever joins. A bare address is read as a single host.
-
-**Then verify, because a wrong answer here is worse than the problem.** From
-outside the network, forge a header and see whether it lands:
+Then verify — a wrong answer here is worse than the problem. Forge a header
+from outside the network:
 
 ```bash
 curl -s -o /dev/null -H 'X-Forwarded-For: 203.0.113.99' https://your-instance/
 ```
 
-Re-read the logs. If `203.0.113.99` appears, your proxy is **appending** to
-`X-Forwarded-For` instead of replacing it, and any visitor can now choose the
-address recorded against them. Revert the setting and fix the proxy to set
+Re-read the logs. `203.0.113.99` appearing means the proxy is **appending**
+to `X-Forwarded-For` instead of replacing it, so any visitor can choose their
+own recorded address — revert the setting and fix the proxy to set
 `X-Real-IP` or overwrite `X-Forwarded-For` first. If the real client address
-appears, the configuration is sound.
+appears instead, the configuration is sound.
 
-An unparseable entry stops the server at startup with the offending value named.
-That is deliberate: the previous behaviour skipped what it could not parse, so a
-typo silently disabled client-IP resolution and nothing reported it.
+An unparseable entry stops the server at startup naming the offending value,
+rather than silently disabling client-IP resolution.
 
 ## 6. Upgrade / redeploy
 
@@ -222,17 +214,16 @@ docker compose logs -f chronicle                       # 4. watch the boot
 curl -s localhost:8080/api/version                     # 5. confirm what is RUNNING
 ```
 
-Step 5 is not ceremony. It is the only step that reports the software you are
+Step 5 is not ceremony: it is the only step that reports the software you are
 actually running — steps 1–4 can all succeed while the running container
-never changes (see "Why `docker compose up -d` alone is not an upgrade"
-below).
+never changes.
 
-**Why `docker compose up -d` alone is not an upgrade.** It will not rebuild and
-it will not re-pull when an image with that tag already exists locally — it
-starts what is already on the host. The compose file now sets
-`pull_policy: always` on the `chronicle` service so `up` does fetch the
-published image, but keep the explicit `docker compose pull` in the sequence:
-it is the step whose output tells you whether anything new arrived.
+**`docker compose up -d` alone is not an upgrade.** It will not rebuild and
+will not re-pull when an image with that tag already exists locally — it
+starts what is already on the host. The compose file sets `pull_policy:
+always` on the `chronicle` service so `up` does fetch the published image,
+but keep the explicit `docker compose pull` in the sequence: it is the step
+whose output tells you whether anything new arrived.
 
 **Never build a local image onto the published tag.** The `chronicle` service
 deliberately has no `build:` section, so `docker compose build` cannot tag a
@@ -248,58 +239,50 @@ docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
 
 ### One-way migrations: the calendar clean slate
 
-Three plugin migrations, shipped with the calendar rebuild (PR #595), delete
-the old calendar's data: `calendar/019_calv5_clean_slate`,
-`timeline/002_calv5_clear_calendar_links` and
+Three plugin migrations (calendar rebuild) delete the old calendar's data:
+`calendar/019_calv5_clean_slate`, `timeline/002_calv5_clear_calendar_links`,
 `sessions/006_calv5_clear_availability`. **Their down files are deliberately
-empty.** Once they have run, that data comes back only from a backup.
-
-Before the first upgrade that includes them:
-
-1. Take a backup yourself (`make backup`), even though the next step also takes one.
-2. Set `BACKUP_REQUIRED=1`. The pre-migration snapshot then becomes mandatory.
-   Pending plugin migrations trigger it too, not only core ones.
-3. Deploy only a build at or after commit `1bda7d6`. An earlier build
-   (`bfcaf24`) had a version of `019` that dropped tables other plugins still
-   point at. A database that ever booted that build has recorded version 19 and
-   will never run the corrected text.
-4. Watch the boot log for `019`, `002` and `006`, then confirm the version with
-   step 5 above.
+empty** — once run, that data returns only from a backup. Still-pending on an
+install: back up yourself first (`make backup`), set `BACKUP_REQUIRED=1` so
+the pre-migration snapshot is mandatory (pending plugin migrations trigger it
+too, not only core ones), and deploy only a build at or after commit
+`1bda7d6` — an earlier build (`bfcaf24`) shipped a version of `019` that
+dropped tables other plugins still point at, and a DB that ever booted it
+recorded version 19 permanently. Watch the boot log for `019`, `002`, `006`,
+then confirm the version with step 5 above.
 
 Rolling back to an older image afterwards still boots (ADR-045, §7), but the
-calendar data stays gone. To get it back, restore the
-`chronicle_pre_migrate_db_<timestamp>.sql.gz` snapshot taken on that boot
-(§9).
+calendar data stays gone; restore the `chronicle_pre_migrate_db_<timestamp>.sql.gz`
+snapshot taken on that boot to get it back (§9).
 
 ### Which image is actually running?
 
-Ask the process first — it is the only thing that can testify about itself:
+Ask the process first — it's the only thing that can testify about itself:
 
 ```sh
 curl -s localhost:8080/api/version        # commit SHA (or the tag on a release build)
 # Admin > Diagnostics > host.build        # binary path, size, mtime, uptime, VCS stamp
 ```
 
-Only if you need the image identity as well:
+Only if you need the image identity too:
 
 ```sh
 docker inspect --format '{{.Image}}' chronicle                  # the container's REAL image ID
 docker image inspect --format '{{.Id}}' ghcr.io/keyxmakerx/chronicle:latest   # what the TAG points at now
 ```
 
-**If those two IDs differ, the tag has moved and any label you read off it is
-describing a different artifact than the one you are running.** A local
-`:latest` image can carry perfectly consistent, truthful labels
-(`org.opencontainers.image.revision`, build date, etc.) while the running
-container was created from an entirely different image. An image label is a
-claim made by whoever last wrote that tag. It is never a claim about a
-process.
+**If those two IDs differ, the tag has moved** and any label read off it
+describes a different artifact than the one running — a local `:latest`
+image can carry consistent, truthful labels
+(`org.opencontainers.image.revision`, build date) while the running
+container was created from an entirely different image. A label is a claim
+made by whoever last wrote the tag, never a claim about a process.
 
-In step 4 you should see, in order (the backup lines appear only when the
-release actually ships pending migrations — an upgrade with none skips the
-backup by design, logging `no pending migrations` instead; a release shipping
-only PLUGIN migrations logs `pending plugin migration(s) detected — backing up
-before applying` between the health checks and the plugin migrations):
+In step 4 you should see, in order (backup lines appear only when the release
+ships pending migrations; none logs `no pending migrations` instead; a
+release shipping only PLUGIN migrations logs `pending plugin migration(s)
+detected — backing up before applying` between the health checks and the
+plugin migrations):
 
 ```
 creating pre-migration backup file=/app/data/backups/chronicle_pre_migrate_<TS>.sql.gz
@@ -309,16 +292,16 @@ migration version validated version=N
 health check summary passed=K warnings=0 failures=0
 ```
 
-If you see `pre-migration backup skipped: mysqldump not found`, your image
-predates 0.0.1. Pull a current one (`docker compose pull chronicle`), or, if
-you are running from source, rebuild via the override:
+`pre-migration backup skipped: mysqldump not found` means the image is
+missing `mariadb-client` — pull a current one (`docker compose pull
+chronicle`) or rebuild from source via the override:
 `docker compose -f docker-compose.yml -f docker-compose.build.yml build --no-cache chronicle`.
 
-If `failures=0` doesn't appear and the chronicle container exits, the
-release is broken — go to §7.
+If `failures=0` doesn't appear and the container exits, the release is
+broken — go to §7.
 
-The `--no-deps` flag is intentional: keep MariaDB and Redis up across the
-swap. They get restarted only when their image changes, which is rare.
+The `--no-deps` flag keeps MariaDB and Redis up across the swap; they restart
+only when their own image changes.
 
 ## 7. Rollback
 
@@ -326,70 +309,64 @@ swap. They get restarted only when their image changes, which is rare.
 without first running `make backup` and reviewing what the down migration
 does. `000001_baseline.down.sql` wipes all 34 core tables (total data loss).
 `000028_public_grant_subject.down.sql` deletes every `subject_type='public'`
-row from `entity_permissions` (public-visibility grants are unrecoverable
-without a restore). Additionally, backups inside the `chronicle-data` volume
-do not survive `docker compose down -v` — a volume-delete wipes your only
-local safety net. Always keep at least one offsite copy (see §8) before
-running any `migrate-down` or volume operation you are not fully confident
-about.
-
-Three scenarios. All use the existing health-check gate plus the
-pre-migration backup. **No new server code is ever needed for a rollback.**
+row from `entity_permissions` (unrecoverable without a restore). Backups
+inside the `chronicle-data` volume also do not survive `docker compose down
+-v` — a volume-delete wipes your only local safety net. Keep an offsite copy
+(§8) before any `migrate-down` or volume operation you're not fully
+confident about. The three scenarios below all use the existing health-check
+gate plus the pre-migration backup — no new server code is needed for a rollback.
 
 ### Downgrade / rollback behavior (ADR-045)
 
-An **image downgrade does not crash-loop**. When you pull an OLDER image whose migration set is behind the database's recorded
-version, the boot runner (`MigrateWithBackup`) detects "DB ahead of build", logs a
-loud warning (`database is AHEAD of this build — skipping migrations and starting
-anyway`), and **starts normally**. Migrations are additive, so the older binary runs
-fine on the newer schema; features added after the build's highest migration are
-simply unavailable until you redeploy a newer image. You can confirm the state in the
-admin UI at **`/admin/database`** (the "Core schema" card shows a "DB ahead of build"
-banner) or via `GET /admin/database/status`.
+An **image downgrade does not crash-loop**. When you pull an OLDER image whose
+migration set is behind the database's recorded version, the boot runner
+(`MigrateWithBackup`) detects "DB ahead of build", logs `database is AHEAD of
+this build — skipping migrations and starting anyway`, and **starts
+normally**. Migrations are additive, so the older binary runs fine on the
+newer schema; features added after the build's highest migration are simply
+unavailable until you redeploy a newer image. Confirm the state at
+**`/admin/database`** (a "DB ahead of build" banner) or `GET
+/admin/database/status`.
 
-You only need a **DB rollback** (restore a pre-migration backup) if the newer version
-had *dropped or renamed* a column the older build reads — in that case the startup
-health checks fail fast with a precise "critical column" error rather than serving a
-broken app.
+You only need a **DB rollback** (restore a pre-migration backup) if the newer
+version *dropped or renamed* a column the older build reads — then the
+startup health checks fail fast with a "critical column" error instead of
+serving a broken app.
 
-Two related boot behaviors:
-
-- **Dirty database** (a migration failed partway): the runner now **fails fast** with
-  restore guidance instead of auto-forcing-and-retrying (which could loop forever on a
-  non-idempotent migration). Restore the most recent pre-migration backup or repair
-  `schema_migrations` manually, then redeploy.
-- **Boot-failure backoff** (`BOOT_FAIL_BACKOFF`, default `45s`): on any unrecoverable
-  boot error the process sleeps before `os.Exit(1)`, so a `restart: unless-stopped`
-  container retries ~1/min instead of hot-looping ~60/min and flooding logs/disk
-  with repeated pre-migration backups. Set it lower in dev (e.g. `BOOT_FAIL_BACKOFF=2s`).
+- **Dirty database** (a migration failed partway): the runner **fails fast**
+  with restore guidance instead of auto-forcing-and-retrying, which could
+  loop forever on a non-idempotent migration. Restore the most recent
+  pre-migration backup or repair `schema_migrations` manually, then redeploy.
+- **Boot-failure backoff** (`BOOT_FAIL_BACKOFF`, default `45s`): on any
+  unrecoverable boot error the process sleeps before `os.Exit(1)`, so
+  `restart: unless-stopped` retries ~1/min instead of hot-looping ~60/min and
+  flooding logs/disk with repeated pre-migration backups. Lower it in dev
+  (e.g. `BOOT_FAIL_BACKOFF=2s`).
 
 ### Scenario A — server failed health checks at boot (most common)
 
-The chronicle container `os.Exit(1)`'d cleanly without serving any
-traffic. The DB schema may or may not have advanced.
+The chronicle container `os.Exit(1)`'d cleanly without serving any traffic.
+The DB schema may or may not have advanced.
 
 ```sh
 docker compose logs chronicle | grep -E 'health check|migration|critical column'
 ```
 
-Read which check failed. If it's a migration version mismatch and you
-need to roll back the schema:
-
-Pre-migration captures emit the same manifest format as `scripts/backup.sh`
+Read which check failed. If it's a migration version mismatch, roll back the
+schema. Pre-migration captures share `scripts/backup.sh`'s manifest format
 (`chronicle_pre_migrate_manifest_<TS>.txt` plus per-artifact db/media/redis
 files with sha256 verification), so `scripts/restore.sh --manifest <path>`
-can roll back from a pre-migration snapshot directly:
+rolls back from one directly — or use the **admin restore UI** at
+`/admin/restore`, where pre-migration manifests are listed alongside
+operator-triggered backups (`chronicle_pre_migrate=1` line in the body):
 
 ```sh
-# Find the most recent pre-migration manifest (one per boot that ran
-# migrations on a non-empty BackupDir).
+# Most recent pre-migration manifest (one per boot that ran migrations):
 docker compose exec -T chronicle ls -lt /app/data/backups/chronicle_pre_migrate_manifest_*.txt | head -3
 
-# Stop chronicle, leave DB + Redis up.
-docker compose stop chronicle
+docker compose stop chronicle   # leave DB + Redis up
 
-# Restore from the pre-migration bundle. restore.sh verifies sha256
-# of each artifact before touching the live DB.
+# restore.sh verifies sha256 of each artifact before touching the live DB
 docker compose run --rm chronicle sh /app/scripts/restore.sh \
   --manifest /app/data/backups/chronicle_pre_migrate_manifest_<TS>.txt \
   --yes --force
@@ -398,14 +375,8 @@ docker compose run --rm chronicle sh /app/scripts/restore.sh \
 docker compose up -d chronicle
 ```
 
-The same approach works from the **admin restore UI** at `/admin/restore`
-— pre-migration manifests appear in the list alongside operator-triggered
-backups, distinguished by a `chronicle_pre_migrate=1` line in the manifest
-body (the listing UI labels them as such).
-
 For DB-only rollbacks against a legacy `chronicle_pre_migrate_<TS>.sql.gz`
-file (taken before the symmetry refactor), the manual `gunzip | mysql`
-approach still works:
+file (no manifest), the manual `gunzip | mysql` approach still works:
 
 ```sh
 docker compose exec -T chronicle sh -c \
@@ -413,34 +384,16 @@ docker compose exec -T chronicle sh -c \
      | MYSQL_PWD="$DB_PASSWORD" mysql -h "$DB_HOST" -u "$DB_USER" "$DB_NAME"'
 ```
 
-#### Worked example — rolling back across the 0.0.2 → 0.0.1 boundary (migration 22)
-
-0.0.2 adds migration 22 (`entities.owner_user_id`, the player-character
-claim column). Two failure modes cross this boundary:
-
-- **0.0.2 binary boots, migration 22 succeeds, but a regression appears
-  later.** Roll the image tag back to 0.0.1 *without* restoring the DB.
-  The 0.0.1 binary's `ExpectedMigrationVersion` is 21 and `RunStartupHealthChecks`
-  will refuse to start against a schema at version 22 — that's the gate
-  doing its job. To downgrade safely, restore the most recent
-  `chronicle_pre_migrate_*.sql.gz` (taken just before migration 22 ran)
-  using the steps above, then pin `chronicle:0.0.1` and restart. Any
-  claim relationships created on 0.0.2 are dropped by this rollback —
-  that's intrinsic to undoing migration 22, not a bug in the procedure.
-- **0.0.2 binary fails health checks at boot.** `os.Exit(1)` happens
-  before any traffic is served. Use the standard Scenario A flow above;
-  the pre-migration backup is the version-21 schema and any
-  `entities.owner_user_id` column added by the failed 0.0.2 boot will be
-  rolled away with it.
-
-There is **no forward-compat fallback**: a 0.0.1 binary will not boot
-against a 0.0.2 schema. Either match the binary to the schema, or
-restore the schema to match the older binary.
+There is **no forward-compat fallback**: rolling an image tag back past a
+migration boundary needs the pre-migration snapshot taken just before that
+migration ran (above), then the older tag pinned and restarted. Any data
+added by that migration is dropped by the rollback — intrinsic to undoing
+it, not a bug in the procedure.
 
 ### Scenario B — server is up but a feature is broken
 
-No DB restore needed unless the broken release introduced a destructive
-migration (in which case use Scenario A). Roll the image tag back:
+No DB restore needed unless the release introduced a destructive migration
+(then use Scenario A). Roll the image tag back:
 
 ```sh
 # Edit docker-compose.yml: image: ghcr.io/.../chronicle:<previous-tag>
@@ -466,9 +419,9 @@ matching image tag and try again.
 ## 8. Backup procedure
 
 A backup you've never restored is a hope, not a backup — run
-`./tools/restore-drill.sh` monthly and before upgrades to prove the newest
-one actually restores, in a disposable container that never touches your
-live DB. See `docs/RESTORE-DRILL.md`.
+`./tools/restore-drill.sh` monthly and before upgrades to prove the newest one
+actually restores, in a disposable container that never touches your live DB
+(see `docs/RESTORE-DRILL.md`).
 
 `scripts/backup.sh` snapshots DB + media + (optionally) Redis. Driven via
 `make backup`:
@@ -526,46 +479,38 @@ about.
 preconditions are met. Walk-through:
 
 ```sh
-# 1. Identify the manifest you want to restore.
-make backup-list
-# Pick chronicle_manifest_<TS>.txt with the most recent timestamp you trust.
+make backup-list   # 1. pick chronicle_manifest_<TS>.txt, most recent you trust
 
-# 2. Stop the chronicle container. Restore over a running server is
-# never safe — the script refuses if /healthz answers.
+# 2. Restore over a running server is never safe — the script refuses
+# if /healthz answers.
 docker compose stop chronicle
 
-# 3. Run the restore. RESTORE_ARGS is required:
+# 3. RESTORE_ARGS is required; type "RESTORE" at the prompt.
 make restore RESTORE_ARGS="--manifest=/app/data/backups/chronicle_manifest_<TS>.txt"
-# Type "RESTORE" at the prompt.
 
-# 4. Start chronicle back up. RunStartupHealthChecks validates the
-# schema; if your image is incompatible with the restored migration
-# version, it'll refuse to boot and tell you so in the logs.
+# 4. RunStartupHealthChecks validates the schema; an incompatible image
+# refuses to boot and says so in the logs.
 docker compose start chronicle
 docker compose logs -f chronicle
 ```
 
 ### Verifying a 0.0.2+ restore
 
-After restore, confirm the player-character claim data round-tripped.
-Pre-restore claims must reappear post-restore — if they don't, the dump
-was taken before the claim was made (expected) or the dump's at a schema
-version below 22 (the binary will have refused to boot already). To
-verify manually:
+After restore, confirm the player-character claim data round-tripped:
+pre-restore claims must reappear post-restore. If they don't, either the
+dump predates the claim (expected) or it's below schema version 22 (the
+binary would have refused to boot already):
 
 ```sh
-# Quick row-count check.
 docker compose exec -T chronicle-db sh -c \
   'MYSQL_PWD="$MARIADB_PASSWORD" mysql -u "$MARIADB_USER" "$MARIADB_DATABASE" \
      -e "SELECT COUNT(*) AS claimed_characters FROM entities WHERE owner_user_id IS NOT NULL;"'
 ```
 
-End-to-end verification: log in as a player whose owned character
-predates the backup, navigate to `My Characters`
-(`GET /campaigns/:id/me`), and confirm the character card appears. If
-the player was claiming a character on 0.0.2 and the card is missing
-post-restore, the claim was created after the dump was taken — not a
-restore bug.
+End-to-end: log in as a player whose owned character predates the backup,
+open `My Characters` (`GET /campaigns/:id/me`), and confirm the character
+card appears. A missing card for a claim made on 0.0.2 means the claim
+postdates the dump — not a restore bug.
 
 ### Common restore arguments
 
@@ -612,38 +557,33 @@ problem — go to §7 Scenario A and roll back from `chronicle_pre_migrate_*`.
 
 ### `database at migration <N> but code requires <M>`
 
-Source: `internal/database/healthcheck.go` `checkMigrationVersion`.
-The image is too new for the DB or the DB is too new for the image. If
-you just upgraded and the DB is older: that's expected — wait for the
-boot to finish migrations. If it's been hung for > 30s, the migration is
-stuck; check `docker compose logs chronicle-db`. If the DB is newer than
-the code (you rolled back the image), restore the matching pre-migration
-backup (§7 Scenario A).
+Source: `internal/database/healthcheck.go` `checkMigrationVersion`. The image
+is too new for the DB or the DB is too new for the image. Just upgraded and
+DB older: expected, wait for migrations to finish (>30s hung → check `docker
+compose logs chronicle-db`). DB newer than code (rolled-back image): restore
+the matching pre-migration backup (§7 Scenario A).
 
 ### `<K> critical column(s) missing`
 
 Source: `internal/database/healthcheck.go` `checkCriticalColumns`. Migrations
-haven't run, or a column was dropped manually. Run `make migrate-up`
-from a host shell. If the migration itself is failing, check
-`docker compose logs chronicle` for the migration error and roll back
-per §7.
+haven't run, or a column was dropped manually. Run `make migrate-up` from a
+host shell; if the migration itself is failing, check `docker compose logs
+chronicle` for the error and roll back per §7.
 
 ### `pre-migration backup skipped: mysqldump not found`
 
-Source: `internal/database/healthcheck.go` `PreMigrationBackup`. The
-chronicle image was built before 0.0.1 and is missing `mariadb-client`.
-Pull a current image (`docker compose pull chronicle`) and retry; if you run
-from source, rebuild via the override instead —
+Source: `internal/database/healthcheck.go` `PreMigrationBackup`. The image is
+missing `mariadb-client`. Pull a current image (`docker compose pull
+chronicle`), or rebuild from source via the override —
 `docker compose -f docker-compose.yml -f docker-compose.build.yml build --no-cache chronicle`.
-Until you do, your upgrades have no automatic safety net.
+Until you do, upgrades have no automatic safety net.
 
 ### `pre-migration backup failed (non-fatal)`
 
-Same source. The backup attempted but failed — usually because
-`BACKUP_DIR` isn't writable or the disk is full. Check
-`docker compose exec chronicle df -h /app/data` and the directory's
-ownership. Boot continues without a backup; **fix this before the next
-migration window.**
+Same source. The backup attempted but failed — usually `BACKUP_DIR` isn't
+writable or the disk is full. Check `docker compose exec chronicle df -h
+/app/data` and the directory's ownership. Boot continues without a backup;
+**fix this before the next migration window.**
 
 ### `WARNING: Cannot create /app/data/media or /app/data/backups`
 

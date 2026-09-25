@@ -1,69 +1,55 @@
 # Operator Diagnostics
 
-This document describes Chronicle's **operator diagnostics** — a pair of
-admin-gated, read-only endpoints that report *the deployment reality* of a
-running Chronicle instance: which version of each system the loader is
-**actually serving**, the on-disk directory it serves from, and a content
-fingerprint of every served file.
+Chronicle's **operator diagnostics** are a pair of admin-gated, read-only
+endpoints that report *the deployment reality* of a running instance: which
+version of each system the loader is **actually serving**, the on-disk
+directory it serves from, and a content fingerprint of every served file. Use
+them to answer *"Admin▸Packages says this system is v0.13.0, so why is the
+old widget still rendering?"* without SSH or shell access to the host.
 
-If you operate a Chronicle instance and have ever asked *"Admin▸Packages says
-this system is v0.13.0, so why is the old widget still rendering?"* — this is
-the tool for that. It answers the underlying question without SSH or shell
-access to the host.
-
-It is also the operator-facing analogue of the campaign **AI-Export**: a catalog
-of named, targeted diagnostics you run one at a time and **paste back to an AI
-assistant**, so the assistant gets exactly the small slice of state it asked for
-rather than a giant dump.
-
-For interactive use there is also an **in-app AI Workspace**
-(`/admin/diagnostics/workspace`) that turns the catalog into a single
-copy-paste round-trip: you copy a machine-readable *functions list* to your AI,
-paste back the one request object it composes, **review and approve** what it
-wants to run, and get one compact, redacted result to paste back. See
-[The in-app AI Workspace](#the-in-app-ai-workspace-batch) below.
+They are the operator-facing analogue of the campaign **AI-Export**: a
+catalog of named, targeted diagnostics you run one at a time and **paste back
+to an AI assistant**, so it gets exactly the slice of state it asked for
+rather than a giant dump. The **in-app AI Workspace**
+(`/admin/diagnostics/workspace`) turns that into a single copy-paste
+round-trip — see [The in-app AI Workspace](#the-in-app-ai-workspace-batch).
 
 Source: `internal/systems/health.go`, `internal/systems/operator_diag.go`,
 `internal/systems/operator_batch.go`, the workspace UI in
 `internal/plugins/admin/diagnostics_workspace.templ` (+ handler/routes in the
-admin plugin), and the markdown/JSON endpoints in `internal/app/routes.go` (all
-on the admin route group).
+admin plugin), and the markdown/JSON endpoints in `internal/app/routes.go`
+(all on the admin route group).
 
 ---
 
 ## The problem it solves
 
-When a system package is installed or updated, several things have to line up:
+Installing or updating a system package requires three things to line up: the
+new version is **extracted** to disk, the **in-memory registry** picks it up
+on rescan, and the browser **fetches the new bytes** (not a stale `?v=`
+cache). When one silently fails, Admin▸Packages can report the new version
+while a stale copy renders — the UI only knows what it *installed*, not what
+the loader *serves*. Operator diagnostics report the served reality (loaded
+version + served dir + per-file `size · sha256 · mtime`) to prove which build
+is live:
 
-1. The new version has to be **extracted** to disk under the package media dir.
-2. The **in-memory system registry** has to pick up that new version on rescan.
-3. The browser has to **fetch the new bytes** (not a stale `?v=` cache).
-
-When one of those steps silently fails, Admin▸Packages can report the new
-version while a stale copy is what actually renders. The UI can't tell you which
-step broke, because the UI only knows what it *installed* — not what the loader
-*serves*. Operator diagnostics close that gap: they report the served reality
-(loaded version + served dir + per-file `size · sha256 · mtime`), so you can
-prove which build is live.
-
-- **`loaded_version` disagrees with the installed version** → the in-memory
-  registry never picked up the install (a stale registry; needs a rescan/restart).
-- **`loaded_version` agrees but a file's hash is the old content** → the
-  extraction is wrong (a botched copy, or a duplicate version folder shadowing
-  the new one).
+- **`loaded_version` disagrees with the installed version** → the registry
+  never picked up the install; needs a rescan/restart.
+- **`loaded_version` agrees but a file's hash is old content** → bad
+  extraction (a botched copy, or a duplicate version folder shadowing the new one).
 - **A file is `MISSING`** → a botched extraction.
 
 ---
 
 ## The two endpoints
 
-Both are registered on the **admin route group** (prefix `/admin`) and are
-therefore admin-gated. Both are **read-only**.
+Both are registered on the **admin route group** (prefix `/admin`), so both
+are admin-gated and read-only.
 
 ### 1. `GET /admin/extensions/health` — machine-readable health (JSON)
 
-Returns deployment health for every **loaded** system as JSON. Use this for
-tooling, monitoring, or scripted comparison between two installs.
+Deployment health for every **loaded** system, as JSON — for tooling,
+monitoring, or scripted comparison between two installs.
 
 ```
 GET /admin/extensions/health
@@ -86,13 +72,6 @@ Example response:
           "exists": true,
           "size": 4821,
           "sha256": "9f1c2a7b3d4e5f60",
-          "mtime": "2026-06-24T18:02:11Z"
-        },
-        {
-          "path": "widgets/character-sheet.js",
-          "exists": true,
-          "size": 38211,
-          "sha256": "a1b2c3d4e5f60718",
           "mtime": "2026-06-24T18:02:11Z"
         }
       ]
@@ -117,9 +96,10 @@ Field reference:
 
 ### 2. `GET /admin/diagnostics` — the diagnostics catalog (markdown)
 
-The human/AI-facing front door. Returns **markdown** (`text/markdown`). With no
-`?name`, it returns a tiny **catalog menu** (no payload data). With `?name=...`
-it runs exactly one named diagnostic and returns its small, redacted result.
+The human/AI-facing front door. Returns **markdown** (`text/markdown`). With
+no `?name`, it returns a tiny **catalog menu** (no payload data); with
+`?name=...` it runs exactly one named diagnostic and returns its small,
+redacted result.
 
 ```
 GET /admin/diagnostics                          # the catalog (menu only)
@@ -130,7 +110,6 @@ GET /admin/diagnostics?name=probes              # the probe library
 ```
 
 An unknown `name` returns `404` with a message pointing back at the catalog.
-
 Example catalog (no `?name`):
 
 ```markdown
@@ -146,117 +125,113 @@ and paste the (small, targeted) result back. Run with
 - **`probes`** — docker / browser-console / SQL / admin-URL commands …
 ```
 
-Example of running one diagnostic (`?name=system.versions`):
+Running one diagnostic (`?name=system.versions`):
 
 ```markdown
 ## system.versions
 
 - `drawsteel` v**0.13.0** (package) — `/app/media/packages/systems/drawsteel/0.13.0`
-- `dnd5e` v**1.2.0** (package) — `/app/media/packages/systems/dnd5e/1.2.0`
 ```
 
 ---
 
 ## The catalog model
 
-Rather than a single monolithic export, `/admin/diagnostics` is a **catalog** of
-small named checks. The motivation: a giant dump wastes an AI assistant's
-context with data it never asked for. Instead the assistant requests **one named
-diagnostic at a time** (e.g. *"run `system.files drawsteel`"*), the operator runs
-just that, and pastes back a small, targeted result. The full dump
-(`system.health`) still exists but is **opt-in** — requested by name only when a
-targeted diagnostic won't do.
+`/admin/diagnostics` is a **catalog** of small named checks rather than one
+monolithic export, so an AI assistant requests **one named diagnostic at a
+time** (e.g. *"run `system.files drawsteel`"*) instead of wasting context on
+a giant dump. The operator runs just that and pastes back a small, targeted
+result. The full dump (`system.health`) still exists but is **opt-in** —
+requested by name only when a targeted diagnostic won't do.
 
 ### The `host.*` family — Chronicle fingerprinting ITSELF
 
-Every `system.*` and `packages.*` diagnostic below describes **what is being
-served**. None of them can tell you **which build is doing the serving** — that
-gap is what the `host.*` family closes, guarding against two specific
-misreadings:
+Every `system.*` and `packages.*` diagnostic describes **what is being
+served**, never **which build is doing the serving** — that gap is what
+`host.*` closes, guarding against two misreadings:
 
-1. **A Docker image label read as the identity of a running process.**
-   `docker inspect <tag>` answers for whichever image holds that tag *now*,
-   never for the image a running container was created from — an image can sit
-   unused in the local store for months and still carry accurate, and
-   misleading, labels. **`host.build` reads the identity from inside the
-   process instead**, where nothing can have relabelled it.
+1. **A Docker image label read as a running process's identity.** `docker
+   inspect <tag>` answers for whichever image holds that tag *now*, never the
+   image a running container was created from. **`host.build` reads the
+   identity from inside the process instead**, where nothing can have
+   relabelled it.
 2. **An empty `grep /app/static` read as missing code.** Chronicle serves its
-   front-end from **two storage mechanisms**: the on-disk static root, and each
-   plugin's `//go:embed`-ed filesystem compiled *into the binary* and served at
-   `/static/plugins/<slug>/`. Only the first is reachable by `ls` or `grep`, so an
-   empty grep for a plugin asset is the **expected** result, not evidence.
-   **`host.embedded` lists what is inside the binary**, and `host.assets` /
-   `host.widgets` report the two scopes separately rather than conflating them.
+   front end from two mechanisms: the on-disk static root, and each plugin's
+   `//go:embed`-ed filesystem compiled *into the binary*, served at
+   `/static/plugins/<slug>/`. Only the first is `grep`-able, so an empty grep
+   for a plugin asset is **expected**, not evidence. **`host.embedded` lists
+   what is inside the binary**; `host.assets` / `host.widgets` report the two
+   scopes separately rather than conflating them.
 
 | `name`                   | Arg                                  | What you get |
 |--------------------------|--------------------------------------|--------------|
-| `host.build`             | —                                    | **THE "did my deploy actually land?" check.** Source revision from the compiled-in VCS stamps (or an explicit *"not stamped"* when the builder recorded none — **absent is not stale**), `CHRONICLE_VERSION`, the running executable's path/size/mtime, Go toolchain, process start + uptime, hostname, PID. Ends with *which of these to trust* and why image labels are not evidence. |
-| `host.deploy-check`      | `[<marker[,marker2]>]`               | **The one thing to run after a deploy.** Build identity + the bellwether assets that move on almost every build + the installed-vs-loaded package summary. Pass markers to also search for them across **both** the on-disk root and the embedded assets, reported separately. |
-| `host.runtime`           | —                                    | Uptime, goroutines, NumCPU/GOMAXPROCS, a compact memory slice and GC activity — "is it leaking / wedged / thrashing GC?" |
-| `host.errors`            | `[<count>]`                          | **THE "what broke overnight?" check.** Newest first: time + age, status, method, route template, error. See ADR-051 for what is and is not recorded. |
-| `host.errors-summary`    | —                                    | The same ring grouped by route + status with counts and first/last seen. Usually the better first read. |
-| `host.assets`            | `[<path-substring>]`                 | **THE "is my new CSS/JS actually being served?" check.** Per file: size, sha256[:16], mtime, and the exact `?v=` served — flagging any file whose served token does not match its bytes on disk. `FullDump` (it hashes every file it lists). |
-| `host.asset-contains`    | `<relpath>:<marker[,marker2]>`       | Marker check for one on-disk file. Confirms the served build's **content**, not just its hash. Traversal outside the static root is refused. |
-| `host.embedded`          | `[<plugin-slug>]`                    | Every `//go:embed`-ed plugin asset this binary serves. **These files are not on disk** — an empty `grep` is the expected result, not a finding. |
-| `host.embedded-contains` | `<slug>:<relpath>:<marker[,…]>`      | The marker check for assets compiled into the binary — the only way to ask "does the shipped build contain X?" when the bytes cannot be grepped. |
+| `host.build`             | —                                    | **THE "did my deploy actually land?" check.** Source revision from compiled-in VCS stamps (or *"not stamped"* — **absent is not stale**), `CHRONICLE_VERSION`, executable path/size/mtime, Go toolchain, process start + uptime, hostname, PID. Notes which fields to trust and why image labels aren't evidence. |
+| `host.deploy-check`      | `[<marker[,marker2]>]`               | **The one thing to run after a deploy.** Build identity + bellwether assets that move on almost every build + the installed-vs-loaded package summary. Markers are searched across both the on-disk root and embedded assets, reported separately. |
+| `host.runtime`           | —                                    | Uptime, goroutines, NumCPU/GOMAXPROCS, a compact memory slice, GC activity — "is it leaking / wedged / thrashing GC?" |
+| `host.errors`            | `[<count>]`                          | **THE "what broke overnight?" check.** Newest first: time + age, status, method, route template, error. See ADR-051 for what is/isn't recorded. |
+| `host.errors-summary`    | —                                    | The same ring grouped by route + status with counts and first/last seen — usually the better first read. |
+| `host.assets`            | `[<path-substring>]`                 | **THE "is my new CSS/JS actually being served?" check.** Per file: size, sha256[:16], mtime, and the served `?v=`, flagging any served token that doesn't match its on-disk bytes. `FullDump` (hashes every file listed). |
+| `host.asset-contains`    | `<relpath>:<marker[,marker2]>`       | Marker check for one on-disk file — confirms the served build's **content**, not just its hash. Traversal outside the static root is refused. |
+| `host.embedded`          | `[<plugin-slug>]`                    | Every `//go:embed`-ed plugin asset this binary serves. **Not on disk** — an empty `grep` is expected, not a finding. |
+| `host.embedded-contains` | `<slug>:<relpath>:<marker[,…]>`      | Marker check for assets compiled into the binary — the only way to ask "does the shipped build contain X?" when the bytes can't be grepped. |
 | `host.widgets`           | `[<name-substring>]`                 | **Widgets carry no version number**, so identity is a content fingerprint + build time. Walks both storage mechanisms and says which one each result came from. |
-| `host.plugins`           | —                                    | Per plugin: static mount + URL prefix, embedded asset count/size, whether it contributed migrations, applied-vs-available schema version. **Chronicle has no plugin loader** — a missing row is not a missing feature. |
+| `host.plugins`           | —                                    | Per plugin: static mount + URL prefix, embedded asset count/size, whether it contributed migrations, applied-vs-available schema version. **Chronicle has no plugin loader** — a missing row isn't a missing feature. |
 
 > **Providers.** `host.embedded`, `host.widgets`, `host.plugins`, `host.errors`
-> and `host.errors-summary` read app-layer state through provider injection
-> (`systems.Set*Provider`, wired in `RegisterRoutes`). An unwired provider prints
-> **"provider not wired"** and explicitly denies meaning "there are none" — the
-> two must never render the same. `internal/app/operator_diag_wiring_test.go`
-> fails CI if any declared provider has no call site on the boot path.
+> and `host.errors-summary` read app-layer state via provider injection
+> (`systems.Set*Provider`, wired in `RegisterRoutes`). An unwired provider
+> prints **"provider not wired"**, never the same as "there are none".
+> `internal/app/operator_diag_wiring_test.go` fails CI if a declared provider
+> has no call site on the boot path.
 
 ### Current diagnostics
 
-These are the named diagnostics in the catalog today (from
-`diagnosticCatalog()`), ordered cheapest / most common first. The `host.*` family
-above sorts ahead of everything here, for the reason given above.
+The named diagnostics in the catalog today (from `diagnosticCatalog()`),
+ordered cheapest / most common first. The `host.*` family above sorts ahead
+of everything here.
 
 | `name`            | Arg           | What you get |
 |-------------------|---------------|--------------|
 | `system.versions` | —             | One compact line per loaded system: id, served version, source, served dir. **The first thing to check for "is the new version live?"** |
 | `system.files`    | `<system-id>` | `size · sha256[:16] · mtime` of each widget/manifest file for one system. Proves which build the loader serves. Files that are gone render as `MISSING`. With no arg it lists the loaded ids. |
 | `system.health`   | —             | The full served-reality dump (all systems + all file fingerprints). Larger — request only when a targeted diagnostic isn't enough. |
-| `packages.installed-vs-loaded` | — | **THE check for "Admin▸Packages says X but the old file renders":** compares each installed system package's DB version to what the loader actually serves (matched by install path). Flags `NOT loaded` (the registry never picked up the install) and version `MISMATCH`. Requires the packages provider (wired at startup). |
-| `packages.on-disk-versions` | — | Lists every on-disk version folder per package, tagging `[installed-db]` (the DB's version) and `[LOADED]` (what the loader serves) — surfaces a stale folder shadowing the newest. |
+| `packages.installed-vs-loaded` | — | **THE check for "Admin▸Packages says X but the old file renders":** compares each installed system package's DB version to what the loader actually serves (matched by install path). Flags `NOT loaded` and version `MISMATCH`. Requires the packages provider (wired at startup). |
+| `packages.on-disk-versions` | — | Lists every on-disk version folder per package, tagging `[installed-db]` and `[LOADED]` — surfaces a stale folder shadowing the newest. |
+| `packages.prune-preview` | — | Read-only dry run: on-disk version folders safe to delete (everything except newest, DB-installed, and currently-loaded), with sizes and a reclaimable total. Deletes nothing. |
 | `systems.load-events` | —          | The loader's in-memory event log (newest first): `discovered` / `skipped` (a duplicate ignored, with the reason) / `failed`. Answers "did the new version load, and if a copy was skipped, why?" |
 | `system.file-contains` | `<system-id>:<relpath>:<marker[,marker2]>` | Reads a served file (clamped to its system dir) and reports whether each marker string is present — confirms the live build's **content**, not just its hash. (E.g. `drawsteel:widgets/character-sheet.js:playEntrance`.) |
-| `campaigns.list`  | —             | All campaigns with their ids (name + slug) — the **entry point** for the `entity.*` diagnostics, which need a campaign id. Run this first if you don't know it. |
+| `campaigns.list`  | —             | All campaigns with their ids (name + slug) — the **entry point** for the `entity.*` and `campaign.*` diagnostics, which need a campaign id. Run this first if you don't know it. |
 | `entity.types`    | `<campaignId>` | A campaign's entity types (id, slug, preset category, entity count) — discover the right type to pass to `entity.field-coverage` without knowing ids. |
 | `entity.find`     | `<campaignId>:<nameQuery>` | Search a campaign's entities by name/slug → id, name, slug, type. Find a hero's id without the URL. |
 | `entity.fields`   | `<campaignId>:<entityIdOrSlug>` | Dumps one entity's stored field key→value map (redacted, value-capped). **THE check for "is this hero's data actually populated?"** Empty `fields_data` is the "renders blank" signature. Requires the entity provider (wired at startup). |
 | `entity.sync-mappings` | `<campaignId>:<entityIdOrSlug>` | Is this entity **linked to an external (Foundry) actor?** Shows its sync mappings (external system/id ↔ chronicle id, last sync). **No mappings = nothing will ever sync to it** — the root cause of a permanently-blank hero. |
 | `entity.field-coverage` | `<campaignId>:<typeIdOrName>` | For one entity type, how many of its declared fields are non-empty across its entities (emptiest first, with %). Surfaces "declared but never populated" — the backfill/sync smell. |
+| `campaign.surfaces` | `<campaignId>` | Which calendar route a URL actually renders, read from the LIVE Echo table, flagged CURRENT / LEGACY / REDIRECT, plus sidebar link targets. THE check for "which calendar am I looking at?" and "the deploy landed but I still see the old thing." |
+| `campaign.config` | `<campaignId>` | Enabled addons and the block types placed in `dashboard_layout` / `owner_dashboard_layout` and on each entity template — establishes hand-placed vs. seeded by a default layout or migration. |
 | `sync.inbound`    | `<campaignId>:<entityIdOrSlug>` | The most recent **inbound** sync payloads an external client (e.g. the Foundry module) sent for this entity. Compare against `entity.fields`: arriving-but-not-stored → a storage bug; not arriving → a Foundry mapping gap. In-memory ring (no DB; rolls over on restart). |
 | `sync.recent`     | —             | The last several inbound payloads across **all** entities — a quick "is anything syncing at all?" check. |
 | `probes`          | —             | The run-and-paste-back probe library (below). |
 
-> **Three-way data trace.** `sync.inbound` (Foundry **sent**) → `entity.fields` (Chronicle **stored**) → `entity.field-coverage` (schema **declared**) pinpoints exactly where a value dies: arrived-but-unstored = a Chronicle storage bug; never-arrived = a Foundry/adapter mapping gap; stored-but-sheet-blank = a rendering problem.
+> **Three-way data trace.** `sync.inbound` (Foundry **sent**) → `entity.fields` (Chronicle **stored**) → `entity.field-coverage` (schema **declared**) pinpoints exactly where a value dies: arrived-but-unstored = a Chronicle storage bug; never-arrived = a Foundry/adapter mapping gap; stored-but-sheet-blank = a rendering problem. The `campaign.*` diagnostics answer a different question from `host.*` and `system.*`: not which code is running, but why THIS CAMPAIGN looks like this. A "Campaign provider not wired" result means nobody was asked, not that the campaign has no addons/blocks — fix the wiring in `RegisterRoutes` before drawing any conclusion.
 
 ### Current probes
 
 `probes` returns a curated library of commands for state the **server cannot
-self-report** — what the browser actually loads, what's on disk, what the logs
-say, which image the container runs. Chronicle **never executes these** — they
-are commands *you* run and paste the output back (the response even includes a
-`PASTE OUTPUT BELOW:` slot per probe). Each probe declares *where* it runs:
-`docker` (host shell), `browser-console` (DevTools), `sql` (DB container), or
-`url` (admin URL).
+self-report** — what the browser loads, what's on disk, what the logs say,
+which image the container runs. Chronicle **never executes these**; they are
+commands *you* run and paste back (the response includes a `PASTE OUTPUT
+BELOW:` slot per probe). Each declares *where* it runs: `docker` (host
+shell), `browser-console` (DevTools), `sql` (DB container), or `url` (admin
+URL).
 
 Placeholders you substitute locally: `<chronicle>` / `<db>` container names,
-`<media>` the in-container media path (see the served dir from `system.versions`),
-`<campaignId>` the campaign UUID.
+`<media>` the in-container media path (see the served dir from
+`system.versions`), `<campaignId>` the campaign UUID.
 
-The probes today (from `defaultProbes()`):
-
-Two probes are labelled **TRAP**. They are kept, not deleted, because an
-operator reaches for these commands whether or not the library lists them — so
-the library's job is to print the command *together with the way it misleads*
-and name the `host.*` diagnostic that answers better. A probe that a `host.*`
-diagnostic now supersedes says so in its own text rather than disappearing.
+The probes today (from `defaultProbes()`). Two are labelled **TRAP**: an
+operator reaches for these commands regardless of whether the library lists
+them, so each prints the command *together with the way it misleads* and
+names the `host.*` diagnostic that answers better.
 
 | ID | Where | What it tells you |
 |----|-------|-------------------|
@@ -279,30 +254,27 @@ diagnostic now supersedes says so in its own text rather than disappearing.
 
 ## Security model
 
-Operator diagnostics are designed to be safe to expose to an operator (and,
-indirectly, to an AI assistant via copy-paste). Four properties hold by
-construction:
+Four properties hold by construction, making these safe to expose to an
+operator and, indirectly, to an AI assistant via copy-paste:
 
-1. **Read-only by construction.** The diagnostics only `os.Stat` and hash files
-   the loader **already serves** — they never write, mutate, or execute anything
-   on the host, and they touch no campaign data. `health.go` is pure I/O over the
-   loaded systems' own directories.
+1. **Read-only by construction.** Diagnostics only `os.Stat` and hash files
+   the loader **already serves** — they never write, mutate, or execute
+   anything on the host, and touch no campaign data. `health.go` is pure I/O
+   over the loaded systems' own directories.
 
 2. **Secret redaction (defense-in-depth).** Every diagnostic's output passes
-   through `redactSecrets` before it leaves the server. A regex
-   (`secretLine`) scrubs `key: value` / `key=value` lines whose key looks
-   credential-bearing — `password`, `passwd`, `secret`, `token`, `api[-_ ]key`,
-   `access[-_ ]key`, `private[-_ ]key`, `authorization`, `bearer`, including
-   prefixed env names like `DB_PASSWORD` / `MY_API_KEY` — replacing the value
-   with `[REDACTED]` through end-of-line. The systems diagnostics are secret-free
-   *anyway*; redaction is a backstop so a *future* diagnostic that accidentally
-   echoes a config value can't leak a credential. (It is careful to leave prose
-   like "secretive" and bare `sha256:` hash lines alone.)
+   through `redactSecrets`, whose regex (`secretLine`) scrubs `key: value` /
+   `key=value` lines with a credential-bearing key — `password`, `passwd`,
+   `secret`, `token`, `api[-_ ]key`, `access[-_ ]key`, `private[-_ ]key`,
+   `authorization`, `bearer`, including prefixed env names like
+   `DB_PASSWORD` — replacing the value with `[REDACTED]` through end-of-line
+   (leaving prose like "secretive" and bare `sha256:` lines alone). The
+   diagnostics are secret-free anyway; this is a backstop against a future one
+   that accidentally echoes a config value.
 
-3. **Admin-gated.** Both routes are registered on the admin route group
-   (`adminGroup`, prefix `/admin`) in `internal/app/routes.go`, so they inherit
-   the admin authentication/authorization middleware. Non-admins can't reach
-   them.
+3. **Admin-gated.** Both routes sit on the admin route group (`adminGroup`,
+   prefix `/admin`) in `internal/app/routes.go`, inheriting the admin
+   auth/authz middleware. Non-admins can't reach them.
 
 4. **Probes are suggested, never executed.** The probe library is a set of
    *commands for the operator to run*. Chronicle emits them as text (with a
@@ -314,8 +286,8 @@ construction:
 
 ## How to add a new diagnostic or probe
 
-The catalog is deliberately **modular and templated**: the renderer, route, and
-redaction never change. Adding a check is **appending one struct**.
+The catalog is **modular and templated**: the renderer, route, and redaction
+never change. Adding a check is appending one struct.
 
 ### Add a diagnostic
 
@@ -364,90 +336,49 @@ anything the operator fills in locally.
 
 ## Worked example: diagnosing a stale package install
 
-Symptom: you installed Draw Steel **v0.13.0** (Admin▸Packages confirms it), but
-the character sheet in the browser is missing a feature you know shipped in that
-version. Walk the diagnostics from cheapest to most specific.
+Symptom: you installed Draw Steel **v0.13.0** but the character sheet is
+missing a feature that shipped in it. Walk the diagnostics cheapest to most
+specific, pasting back only the step that surprises you:
 
-**Step 1 — `system.versions`.** Is the new version even live?
-
-```
-GET /admin/diagnostics?name=system.versions
-```
-
-```markdown
-- `drawsteel` v**0.12.1** (package) — `/app/media/packages/systems/drawsteel/0.12.1`
-```
-
-`loaded_version` is **0.12.1**, not 0.13.0. The loader is serving an *older*
-version than Admin▸Packages installed → the **in-memory registry never picked up
-the install**. The fix is on the registry side (rescan/restart), not the files.
-If instead it had read `v0.13.0`, move on to Step 2.
-
-**Step 2 — `system.files drawsteel`.** If the version is right, is the *content*
-right?
-
-```
-GET /admin/diagnostics?name=system.files&arg=drawsteel
-```
-
-```markdown
-loaded v**0.13.0** from `/app/media/packages/systems/drawsteel/0.13.0`
-
-- `manifest.json` — 4821 · `9f1c2a7b3d4e5f60` · 2026-06-24T18:02:11Z
-- `widgets/character-sheet.js` — 38211 · `a1b2c3d4e5f60718` · 2026-06-24T18:02:11Z
-```
-
-Version matches and no file is `MISSING`. If a hash here is the *old* content,
-the extraction is wrong — jump to the `package-*` probes to find the bad folder.
-
-**Step 3 — `probes`, browser side.** The server says it's serving 0.13.0; does
-the browser actually *load* 0.13.0?
-
-```
-GET /admin/diagnostics?name=probes
-```
-
-Run `served-widget-version` in the page's DevTools console. If the
-`character-sheet.js?v=...` URL still carries `0.12.1`, the browser holds a stale
-cached URL — a hard refresh / cache bust fixes it. Then run
-`served-widget-content` to confirm the fetched bytes contain the new build's
-marker.
-
-**Step 4 — `probes`, host side.** If versions agree everywhere but the code is
-still wrong, you likely have a **duplicate version folder shadowing the new one**.
-Run `package-version-dirs` (lists every installed folder), then
-`package-file-marker` (`grep -rl <marker>` — shows *which* folder actually has the
-new code). Compare that folder to the served `dir` from Step 1: if the new code
-lives in a folder the loader **isn't** serving, a stale duplicate is winning.
-Finally `chronicle-logs` shows the loader's own account ("ignoring duplicate
-system", "replacing system with preferred copy", rescan lines), and `image-digest`
-rules out a stale backend image if merged *backend* changes also aren't live.
-
-Reading the result, in short:
-
-- **version wrong** (Step 1) → stale registry; rescan/restart.
-- **version right, hash wrong / `MISSING`** (Step 2) → bad extraction; check the
-  on-disk folders with the `package-*` probes.
-- **server right, browser `?v=` stale** (Step 3) → cache; hard refresh.
-- **everything agrees but old code on disk in another folder** (Step 4) → a
-  duplicate version folder is shadowing the new one.
-
-Paste only the step that surprised you back to the assistant — that's the whole
-point of the catalog.
+1. **`system.versions`** — is the new version even live? `loaded_version`
+   below installed → **the registry never picked up the install**; fix is
+   rescan/restart, not the files. If it reads the new version, continue.
+   ```
+   GET /admin/diagnostics?name=system.versions
+   ```
+2. **`system.files drawsteel`** — if the version is right, is the *content*
+   right? No `MISSING` file and hashes match → extraction is fine, move on.
+   A hash matching the *old* content means bad extraction — check the
+   `package-*` probes for the bad folder.
+   ```
+   GET /admin/diagnostics?name=system.files&arg=drawsteel
+   ```
+3. **`probes`, browser side** — the server says 0.13.0; does the browser
+   *load* 0.13.0? Run `served-widget-version` in DevTools: if the `?v=`
+   still carries the old version, it's a stale cached URL (hard refresh).
+   Then `served-widget-content` confirms the fetched bytes carry the new
+   build's marker.
+4. **`probes`, host side** — versions agree everywhere but the code is still
+   wrong: a **duplicate version folder is shadowing the new one**. Run
+   `package-version-dirs`, then `package-file-marker` (`grep -rl <marker>`)
+   to find which folder actually has the new code; compare it to the served
+   `dir` from step 1. `chronicle-logs` shows the loader's own account
+   ("ignoring duplicate system", rescan lines); `image-digest` rules out a
+   stale backend image if merged backend changes also aren't live.
 
 ---
 
 ## The in-app AI Workspace (batch)
 
 The two endpoints above are the raw machine surface. The **AI Workspace** at
-`GET /admin/diagnostics/workspace` is the human-friendly front end, modeled on
-the campaign **AI Workspace** import flow (export → paste → review → commit). It
-collapses "request a diagnostic, run it, paste it back" into a single batch
-round-trip with a **human-approval gate**, so the AI can ask for a dozen checks
-at once without you running each by hand — and without the AI ever touching the
+`GET /admin/diagnostics/workspace` is the human-friendly front end, modeled
+on the campaign **AI Workspace** import flow (export → paste → review →
+commit). It collapses "request a diagnostic, run it, paste it back" into a
+single batch round-trip with a **human-approval gate**, so the AI can ask for
+a dozen checks at once without you running each by hand or ever touching the
 server directly.
 
-The loop has four steps, all on one page:
+Four steps, all on one page:
 
 1. **Copy the functions list.** The page renders a compact, machine-readable
    JSON *functions spec* (every read-only diagnostic + the exact request shape).
@@ -484,33 +415,33 @@ The loop has four steps, all on one page:
 |-------------|---------|
 | `v`         | Spec version (currently `1`; omittable). A mismatch is rejected. |
 | `note`      | Optional free text — what the AI is investigating. Echoed into the result for audit. |
-| `full_dump` | **The security gate for heavy diagnostics.** A function marked `full_dump` in the spec (e.g. `system.health`) will not run unless this is `true`. It defaults to `false`, so a stray full dump can't flood your context. |
+| `full_dump` | **The security gate for heavy diagnostics.** A function marked `full_dump` in the spec (e.g. `system.health`) won't run unless this is `true` (default `false`), so a stray full dump can't flood your context. |
 | `calls[]`   | The diagnostics to run, each `{ "name", "arg"? }`. Cap: 50 per batch. |
 
 ### Validation & safety
 
-- **Bounded toolset.** Only names in the live catalog run; unknown names surface
-  as skipped rows (not an error). Unknown *top-level* keys are rejected so a
-  typo can't silently drop a field. Caps: 50 calls per batch, 64 KB per paste.
-- **Re-validated on run.** The approve step re-parses the original pasted text
-  server-side and re-derives runnability *and* deduplication from the live
-  catalog — it never trusts a client-built plan, so a forged plan can't smuggle
-  a gated call through.
-- **Deduplicated.** Identical `(name, arg)` calls run once (the second+ show as
-  `duplicate` in the manifest), so a batch can't amplify into repeated expensive
-  file-hash sweeps.
-- **Output-capped.** The assembled result is capped (~256 KB) with a truncation
-  notice, so even an authorized full dump on a large install stays compact; the
-  footer reports byte size and a rough token estimate for context budgeting.
-- **Read-only + redacted + admin-gated**, exactly as the underlying catalog
-  (every result still passes through `redactSecrets`; `note`/`name`/`arg` echoed
-  into the result are sanitized so a crafted value can't corrupt the manifest).
-- **Full dump is opt-in twice:** the AI must set `full_dump: true` *and* you must
-  approve the plan that contains it.
-- **Audited.** Every run is logged to the admin security/activity feed
-  (`admin.diagnostics_batch_run`) with actor, IP, and counts (never the payload).
+- **Bounded toolset.** Only names in the live catalog run; unknown names
+  surface as skipped rows, not an error. Unknown top-level keys are rejected
+  so a typo can't silently drop a field. Caps: 50 calls per batch, 64 KB per paste.
+- **Re-validated on run.** Approve re-parses the original pasted text
+  server-side and re-derives runnability and deduplication from the live
+  catalog — never trusts a client-built plan, so a forged one can't smuggle a
+  gated call through.
+- **Deduplicated.** Identical `(name, arg)` calls run once (second+ show as
+  `duplicate` in the manifest), so a batch can't amplify into repeated
+  expensive file-hash sweeps.
+- **Output-capped.** The assembled result is capped (~256 KB) with a
+  truncation notice, so even an authorized full dump stays compact; the
+  footer reports byte size and a rough token estimate.
+- **Read-only + redacted + admin-gated**, exactly as the underlying catalog —
+  every result passes through `redactSecrets`, and `note`/`name`/`arg` echoed
+  into the result are sanitized so a crafted value can't corrupt the manifest.
+- **Full dump is opt-in twice:** the AI must set `full_dump: true` *and* you
+  must approve the plan that contains it.
+- **Audited.** Every run is logged to the admin activity feed
+  (`admin.diagnostics_batch_run`) with actor, IP, and counts, never the payload.
 
-> Not yet implemented: per-route **rate-limiting**. Lower priority given the
+> Not yet implemented: per-route rate-limiting — lower priority given the
 > admin gate plus the bounded/deduped/capped toolset above.
 
 Routes (admin-gated, in `internal/plugins/admin/routes.go`): `GET

@@ -9,130 +9,59 @@
 
 ## Handler Pattern
 
-Handlers are **thin**. Bind request, call service, render response. NO business logic.
+Handlers are **thin**: bind request, call service, render response. No business logic, no direct repo calls, no SQL, no side effects.
 
 ```go
-// GOOD -- handler is thin, delegates to service
 func (h *CampaignHandler) Create(c echo.Context) error {
     var req CreateCampaignRequest
-    if err := c.Bind(&req); err != nil {
-        return apperror.NewBadRequest("invalid request body")
-    }
-    if err := c.Validate(req); err != nil {
-        return err
-    }
-
-    userID := middleware.GetUserID(c)
-
-    campaign, err := h.service.Create(c.Request().Context(), userID, req.ToInput())
-    if err != nil {
-        return err
-    }
-
-    if isHTMX(c) {
-        return render(c, http.StatusCreated, templates.CampaignCard(campaign))
-    }
-    return render(c, http.StatusCreated, templates.CampaignShow(campaign))
-}
-
-// BAD -- business logic in handler
-func (h *CampaignHandler) Create(c echo.Context) error {
-    // DO NOT: validate business rules here
-    // DO NOT: call repository directly
-    // DO NOT: construct SQL here
-    // DO NOT: send emails or trigger side effects here
+    if err := c.Bind(&req); err != nil { return apperror.NewBadRequest("invalid request body") }
+    if err := c.Validate(req); err != nil { return err }
+    campaign, err := h.service.Create(c.Request().Context(), middleware.GetUserID(c), req.ToInput())
+    if err != nil { return err }
+    if middleware.IsHTMX(c) { return middleware.Render(c, http.StatusCreated, templates.CampaignCard(campaign)) }
+    return middleware.Render(c, http.StatusCreated, templates.CampaignShow(campaign))
 }
 ```
 
 ## Service Pattern
 
-Services own **all business logic**. They accept and return domain types only.
-They NEVER import `echo` or HTTP types.
+Services own **all business logic**. They accept and return domain types only, and NEVER import `echo` or HTTP types.
 
 ```go
-// CampaignService handles business logic for campaign operations.
 type CampaignService interface {
     Create(ctx context.Context, userID string, input CreateCampaignInput) (*Campaign, error)
-    GetByID(ctx context.Context, id string) (*Campaign, error)
-    List(ctx context.Context, userID string, opts ListOptions) ([]Campaign, error)
-    Update(ctx context.Context, id string, userID string, input UpdateCampaignInput) (*Campaign, error)
-    Delete(ctx context.Context, id string, userID string) error
-}
-
-type campaignService struct {
-    repo  CampaignRepository
-    cache *redis.Client
-}
-
-func NewCampaignService(repo CampaignRepository, cache *redis.Client) CampaignService {
-    return &campaignService{repo: repo, cache: cache}
 }
 ```
 
 ## Repository Pattern
 
-Repositories own **all SQL**. One per aggregate root. Hand-written SQL with
-`database/sql` + `go-sql-driver/mysql`. Use `?` placeholders (not `$1`).
+Repositories own **all SQL**, one per aggregate root, hand-written with `database/sql` + `go-sql-driver/mysql`. Use `?` placeholders, not `$1`.
 
 ```go
-// CampaignRepository defines the data access contract for campaigns.
-type CampaignRepository interface {
-    Create(ctx context.Context, campaign *Campaign) error
-    FindByID(ctx context.Context, id string) (*Campaign, error)
-}
-
 func (r *campaignRepository) FindByID(ctx context.Context, id string) (*Campaign, error) {
-    query := `SELECT id, name, slug, description, created_by, created_at, updated_at
-              FROM campaigns WHERE id = ?`
-
     var c Campaign
-    err := r.db.QueryRowContext(ctx, query, id).Scan(
-        &c.ID, &c.Name, &c.Slug, &c.Description,
-        &c.CreatedBy, &c.CreatedAt, &c.UpdatedAt,
-    )
+    err := r.db.QueryRowContext(ctx,
+        `SELECT id, name FROM campaigns WHERE id = ?`, id).Scan(&c.ID, &c.Name)
     if errors.Is(err, sql.ErrNoRows) {
         return nil, apperror.NewNotFound("campaign not found")
     }
-    if err != nil {
-        return nil, fmt.Errorf("querying campaign by id: %w", err)
-    }
-    return &c, nil
+    return &c, err
 }
 ```
 
 ## Templ Component Pattern
 
-One component per file. File name matches component name. Props as function args.
+One component per file; file name matches component name; props as function args.
 
 ```go
-// CampaignCard renders a summary card for the campaign listing.
 templ CampaignCard(campaign *model.Campaign) {
-    <div class="card" id={ fmt.Sprintf("campaign-%s", campaign.ID) }>
-        <h3>{ campaign.Name }</h3>
-        <p>{ campaign.Description }</p>
-        <button
-            hx-get={ fmt.Sprintf("/campaigns/%s", campaign.ID) }
-            hx-target="#detail-panel"
-            hx-swap="innerHTML"
-        >View Details</button>
-    </div>
+    <div class="card" id={ fmt.Sprintf("campaign-%s", campaign.ID) }>{ campaign.Name }</div>
 }
 ```
 
 ## HTMX Fragment Detection
 
-Use the shared middleware helpers — not local copies:
-
-```go
-// Check if request is HTMX (also rejects HX-Boosted to avoid fragments on navigation).
-if middleware.IsHTMX(c) {
-    return middleware.Render(c, http.StatusOK, MyFragment(data))
-}
-return middleware.Render(c, http.StatusOK, MyFullPage(data))
-```
-
-`middleware.IsHTMX(c)` checks both `HX-Request == "true"` and `HX-Boosted != "true"`.
-`middleware.Render(c, status, component)` sets Content-Type and writes the Templ component.
+Use the shared middleware helpers, never local copies (see the Handler Pattern example). `middleware.IsHTMX(c)` checks both `HX-Request == "true"` and `HX-Boosted != "true"`, so boosted navigation still gets a full page. `middleware.Render(c, status, component)` sets Content-Type and writes the Templ component.
 
 ## Error Handling
 
@@ -142,191 +71,74 @@ Domain errors from `internal/apperror/`. Never expose raw DB errors.
 apperror.NewNotFound("campaign not found")
 apperror.NewBadRequest("name is required")
 apperror.NewForbidden("you do not own this campaign")
-apperror.NewInternal("unexpected error")     // Logs real error, returns generic
+apperror.NewInternal("unexpected error")     // logs real error, returns generic
 apperror.NewConflict("slug already exists")
 apperror.NewUnauthorized("invalid session")
 ```
 
 ## Partial-Update Endpoints (nil-preserve semantics)
 
-For Update handlers that accept a payload describing one or more rows, **prefer
-explicit nil-preserve guards or load-merge-write over unconditional field
-assignment.** Pointer-typed input fields (`*string`, `*int`, `*bool`, etc.)
-collapse "absent" and "explicit null" at the JSON bind layer — nil at the
-service is the signal for "the caller didn't send this field; keep current
-value", not "overwrite to NULL".
+The contract, the same everywhere: **an ABSENT key preserves. An EXPLICIT `null` clears. A present value replaces.**
+
+A plain pointer (`*string`, `*int`, …) collapses "absent" and "explicit null" at the JSON bind layer, so it cannot express this. Use `internal/patch`'s `Field[T]` instead — it records presence in `UnmarshalJSON`, since `encoding/json` only calls that for keys the body actually carries.
 
 ```go
-// ❌ Wrong — partial-save silently blanks Description if absent from request.
-cal.Description = input.Description
-
-// ✓ Right — nil-guard preserves the existing value.
-if input.Description != nil {
-    cal.Description = input.Description
-}
-```
-
-For broader surfaces (e.g. weather, where 14+ pointer fields can each be
-absent), `load-merge-write` is cleaner than a wall of nil-guards: load the
-existing row, overlay the non-nil input fields, write the merged result.
-
-**Trade-off, and how it was resolved.** A plain
-pointer collapses "absent" and "explicit null", so nil-preserve made it
-impossible to clear a field by sending null — and the note above recommended
-a dedicated endpoint as the escape hatch. That trade-off is retired. The
-house answer is now **three-state**, and it is the same everywhere:
-
-> **An ABSENT key preserves. An EXPLICIT `null` clears. A present value replaces.**
-
-The distinction must be REAL, not implied by a type: use
-`internal/patch`'s `Field[T]`, which records presence in `UnmarshalJSON` —
-encoding/json only calls it for keys the body actually carries.
-
-```go
-// Request struct (handler) and the service input it feeds. Field is
-// Echo-free, so the same type crosses the boundary unchanged.
-type updateSessionRequest struct {
-    Summary patch.Field[string] `json:"summary"`
-    Status  patch.Field[string] `json:"status"`
-}
-
-// Service: load-merge-write. `stored` is the row as read, so every merge
-// defaults to the stored value.
 stored.Summary = input.Summary.Ptr(stored.Summary) // nullable column
 stored.Status  = input.Status.Val(stored.Status)   // NOT NULL column
 ```
 
-- `Ptr(cur)` merges onto a **nullable** model field: absent → `cur`,
-  null → `nil` (cleared), value → a pointer to it.
-- `Val(cur)` merges onto a **non-nullable** one: absent → `cur`, value →
-  the value. An explicit null also preserves, because a NOT NULL column has
-  no cleared state and writing its zero silently IS the data loss.
-- **Validators read the MERGED value, not the raw input.** An absent name is
-  not an empty name.
-- **A refused write is dropped to ABSENT, not to null.** "You may not set
-  this field" is not authority to erase what is there — the maps marker
-  handler used to send a non-Owner's `visibility_rules` as nil and wipe the
-  Owner's rules.
-
-**Where the contract came from.** An audit reproduced seven independent
-whole-replace PUTs and found the behaviour was accidental per field: pointer
-fields preserved, value-typed fields cleared, two pointers cleared on purpose.
-Measured consequences ranged from a lost schedule, to a Foundry `{name}` push
-**un-privating a hidden character entity to every player**, to every sync
-update detaching an entity from the hierarchy, to NULLing the Foundry pairing
-key. This one contract closed all of them.
-
-**Every fixed endpoint is pinned in all three directions** — absent preserves,
-present replaces, explicit null clears — and the contract is documented where
-the endpoint is described (`API-CONTRACT.md` in the Foundry module for the
-public wire; the plugin's `.ai.md` for the web routes).
-
-**The structural ratchet** is `internal/patch/partial_update_contract_test.go`.
-It does NOT try to detect "a service assigns this field unguarded" — that needs
-cross-package data flow and would be almost all false positives, because plenty
-of unguarded assignments are correct. It pins the PRECONDITION instead: a field
-can only preserve an absence if its type can represent one. Every field of a
-contract-governed `Update*Input` must be `patch.Field[T]`, a pointer, a map or
-a slice, and the whole-tree inventory of `Update*Input` structs is frozen, so a
-new one has to be classified out loud. Named exceptions carry a reason.
+- `Ptr(cur)` (nullable field): absent → `cur`, null → `nil` (cleared), value → pointer to it.
+- `Val(cur)` (non-nullable field): absent → `cur`, value → the value; explicit null also preserves, since a NOT NULL column has no cleared state and writing its zero silently is the data loss.
+- Validators read the MERGED value, not the raw input — an absent name is not an empty name.
+- A refused write drops to ABSENT, not null: denying a field is not authority to erase it.
+- For a broad surface (many optional fields), load-merge-write beats a wall of nil-guards.
+- Every governed endpoint is pinned in all three directions, documented where it's described (`API-CONTRACT.md` for the Foundry wire; the plugin's `.ai.md` for web routes).
+- `internal/patch/partial_update_contract_test.go` pins the precondition: every field of a contract-governed `Update*Input` must be `patch.Field[T]`, a pointer, a map, or a slice; the whole-tree inventory is frozen, so a new one must be classified out loud (named exceptions carry a reason).
 
 ## Create Endpoints — visibility comes from the campaign, not from a zero value
 
-The partial-update contract above is about a STORED value an absent key must
-preserve. Create has no stored value, so it looks like the contract does not
-apply — and that reading is how four of the five entity-creation paths shipped
-a `CreateEntityInput` with `IsPrivate: false` baked in.
+An absent `is_private` on create must defer to the campaign's `DefaultVisibility` setting, not default to public — a value-typed `bool` can't tell "omitted" from "sent false", so binding one straight answers "public" either way.
 
-There is still something an absent key must not overwrite: the campaign's
-`DefaultVisibility` setting. A DM who sets "DM Only" is saying *new content
-starts hidden*, and the only opening that instruction has is a client that did
-not state a preference of its own. A value-typed `bool` cannot tell "the client
-omitted is_private" from "the client sent is_private: false", so every path
-that bound one answered "public" to both.
-
-**Resolve it through `campaigns.CampaignSettings.ResolveNewEntityPrivacy`.**
-It is the single implementation; re-deriving the rule inline from
-`DefaultVisibility` is exactly how the paths drifted apart.
+Resolve it through `campaigns.CampaignSettings.ResolveNewEntityPrivacy`, the single implementation — don't re-derive the rule inline.
 
 ```go
-// ❌ Wrong — a DM-only campaign still gets a public entity.
-input := entities.CreateEntityInput{Name: req.Name, IsPrivate: req.IsPrivate}
-
-// ✓ Right — absent defers to the campaign, explicit wins.
-//   req.IsPrivate is patch.Field[bool].
 input := entities.CreateEntityInput{
     Name:      req.Name,
-    IsPrivate: settings.ResolveNewEntityPrivacy(req.IsPrivate),
+    IsPrivate: settings.ResolveNewEntityPrivacy(req.IsPrivate), // req.IsPrivate is patch.Field[bool]
 }
 ```
 
-Two rules that come with it:
+- Absent and explicit-false stay different; the campaign default fills only the first. A path with no client input at all (the bestiary import) is always the absent case and can call `DefaultsToPrivate()` directly.
+- An unreadable campaign fails CLOSED: private, with a loud log — never public. Read the setting at most once per request (a sync batch may carry 2000 changes; the default can't change mid-request).
 
-- **Absent and explicit-false stay different.** The campaign default fills in
-  the first; it must never override the second. Collapsing them in either
-  direction is its own bug. A creation path with no client input at all (the
-  bestiary import, whose interface has no `is_private` parameter) is always
-  the absent case and can call `DefaultsToPrivate()` directly.
-- **An unreadable campaign fails CLOSED.** "We could not find out what the DM
-  asked for" resolves to private, with a loud log — never to public. Recovering
-  from an over-hidden entity is one toggle; recovering from a leak is not
-  possible. Read the setting lazily and at most once per request: a sync batch
-  may carry 2000 changes, and the default cannot change mid-request.
-
-Pinned by `default_visibility_test.go` (campaigns),
-`default_visibility_create_test.go` (entities),
-`create_default_visibility_test.go` (syncapi) and
-`bestiary_import_visibility_test.go` (app).
+Pinned by `default_visibility_test.go` (campaigns), `default_visibility_create_test.go` (entities), `create_default_visibility_test.go` (syncapi), `bestiary_import_visibility_test.go` (app).
 
 ## Test Pattern (Table-Driven)
 
 ```go
-func TestCampaignService_Create(t *testing.T) {
-    tests := []struct {
-        name    string
-        input   CreateCampaignInput
-        setup   func(*mockCampaignRepo)
-        wantErr bool
-    }{
-        {
-            name:  "creates campaign successfully",
-            input: CreateCampaignInput{Name: "Eldoria"},
-            setup: func(m *mockCampaignRepo) {
-                m.createFn = func(ctx context.Context, c *Campaign) error { return nil }
-            },
-        },
-        {
-            name:    "fails with empty name",
-            input:   CreateCampaignInput{Name: ""},
-            wantErr: true,
-        },
-    }
-    for _, tt := range tests {
-        t.Run(tt.name, func(t *testing.T) {
-            repo := &mockCampaignRepo{}
-            if tt.setup != nil { tt.setup(repo) }
-            svc := NewCampaignService(repo, nil)
-            _, err := svc.Create(context.Background(), "user-1", tt.input)
-            if tt.wantErr {
-                assert.Error(t, err)
-            } else {
-                assert.NoError(t, err)
-            }
-        })
-    }
+tests := []struct {
+    name    string
+    input   CreateCampaignInput
+    wantErr bool
+}{
+    {name: "creates campaign successfully", input: CreateCampaignInput{Name: "Eldoria"}},
+    {name: "fails with empty name", input: CreateCampaignInput{Name: ""}, wantErr: true},
+}
+for _, tt := range tests {
+    t.Run(tt.name, func(t *testing.T) {
+        _, err := svc.Create(context.Background(), "user-1", tt.input)
+        if tt.wantErr { assert.Error(t, err) } else { assert.NoError(t, err) }
+    })
 }
 ```
 
 ## Widget Registration (Frontend JS)
 
+Mounts to `data-widget="<slug>"` elements, fetches its own data, renders itself.
+
 ```javascript
-/**
- * @module editor - TipTap rich text editor widget.
- * Mounts to any element with data-widget="editor".
- * Data attrs: data-endpoint (API URL), data-editable ("true"/"false")
- */
 Chronicle.register('editor', {
-    init(el, config) { /* Mount TipTap, fetch from config.endpoint */ },
+    init(el, config) { /* Mount, fetch from config.endpoint */ },
     destroy(el) { /* Cleanup */ }
 });
 ```
@@ -344,22 +156,7 @@ Chronicle.register('editor', {
 
 ## Comment Conventions
 
-### Every Package
-
-```go
-// Package auth handles user authentication, session management, and
-// password hashing for Chronicle.
-package auth
-```
-
-### Every Exported Type
-
-```go
-// Campaign represents a top-level worldbuilding container.
-type Campaign struct { ... }
-```
-
-### Non-Obvious Logic (WHY, not WHAT)
+Every package gets a doc comment (`// Package auth handles ...`). Every exported type gets a doc comment starting with its name. Non-obvious logic gets a short WHY, not a restatement of WHAT:
 
 ```go
 // Check ownership before cascade delete because MariaDB FK constraints
@@ -369,111 +166,39 @@ if campaign.CreatedBy != userID {
 }
 ```
 
-### Keep Comments Short, and Out of the Past
+May point at one stable place for more: an ADR (`ADR-058`), a test name, or an issue/PR (`#613`, or `owner/repo#12` across repos).
 
-A comment states the rule the code obeys and, when it isn't obvious, why, in a
-few lines. It may point at one stable place for more: an ADR (`ADR-058`), a test
-name, or an issue or PR (`#613`, or `owner/repo#12` across repos).
+Never: the story of how a bug was found, "before this fix"/"this used to", task or dispatch IDs (`C-…`), `cordinator/` paths, "this PR", dates as provenance, or `file:line` pointers (they drift). Those belong in the commit message and PR description. A comment describing code that no longer exists is a bug — fix it on sight.
 
-Never put in a comment: the story of how a bug was found, "before this fix",
-"this used to", task or dispatch IDs (`C-…`), `cordinator/` paths, "this PR",
-dates used as provenance, or `file:line` pointers (they drift on the next
-edit). Those belong in the commit message and the PR description. A comment
-that describes code which no longer exists is a bug: fix it when you see it.
+Avoid: restating the code (`// Set name to the request name`), unexplained commented-out code, and comments stating the obvious (`// Delete deletes a campaign`).
 
-### TODO Format
+**TODO format** names the tracking issue (open one first if none exists): `// TODO(#613): stop echoing untouched fields back on update`, or cross-repo `// TODO(keyxmakerx/Chronicle-Foundry-Module#95): ...`.
 
-Deferred work names the issue that tracks it; open one first if none exists.
-
-```go
-// TODO(#613): stop echoing untouched fields back on update
-// TODO(keyxmakerx/Chronicle-Foundry-Module#95): follow the calendar choice
-```
+## Schema, Migrations and Permissions
 
 ### Two-Tier Schema System (ADR-028)
 
-Chronicle uses a **plugin-isolated database schema architecture**:
-
-- **Core schema** (`db/migrations/`): Single baseline migration with all core tables.
-  Runs via golang-migrate on startup. Failure is fatal.
-- **Plugin schema** (`internal/plugins/<name>/migrations/`): Each built-in plugin
-  has its own numbered migration files **embedded in the binary** via Go's `embed.FS`
-  (ADR-030). Each plugin has an `embed.go` exporting `MigrationsFS`. Runs via
-  `RunPluginMigrations()` after core migrations. Failure disables that plugin; app
-  continues serving. `RegisteredPlugins()` lives in `cmd/server/main.go` (not in
-  the database package) to avoid import cycles.
-
-```sql
--- Core migration example: db/migrations/000001_baseline.up.sql
-CREATE TABLE IF NOT EXISTS campaigns ( ... );
-
--- Plugin migration example: internal/plugins/calendar/migrations/001_calendar_tables.up.sql
-CREATE TABLE IF NOT EXISTS calendars ( ... );
-```
+**Core** (`db/migrations/`): all core tables, runs via golang-migrate on startup; failure is fatal. **Plugin** (`internal/plugins/<name>/migrations/`): each built-in plugin's numbered migrations are **embedded in the binary** via `embed.FS` (ADR-030) in an `embed.go`, run via `RunPluginMigrations()` after core; failure disables that plugin, the app keeps serving. `RegisteredPlugins()` lives in `cmd/server/main.go`, not the database package, to avoid import cycles.
 
 ### Migration Safety Rules
 
-1. **ENUM values**: Before using a new ENUM value in an INSERT or UPDATE, the
-   same migration (or an earlier one) must ALTER TABLE to add that value. Never
-   assume ENUM values exist from a different, unapplied migration.
-2. **Seed data conflicts**: Check if seed data for a slug/key already exists from
-   an earlier migration. Use UPDATE or INSERT ON DUPLICATE KEY UPDATE, not INSERT.
-3. **Down migrations**: If the up migration UPDATEs an existing row, the down
-   migration should revert it to its original values, not DELETE it. Only DELETE
-   rows that were INSERTed by the same migration.
-4. **ENUM in down migrations**: If the up migration adds an ENUM value, the down
-   migration must revert all rows using that value BEFORE removing it from the ENUM.
-5. **Validation tests**: `internal/database/migrate_test.go` validates ENUM values
-   in migration SQL. Update the valid sets there when adding new ENUM values.
-6. **Plugin tables**: Plugin tables belong in `internal/plugins/<name>/migrations/`,
-   not in `db/migrations/`. Plugin schema failures degrade gracefully (ADR-028).
-   Migrations are embedded in the binary via `embed.FS` (ADR-030). When adding a
-   new plugin with migrations, create an `embed.go` in the plugin package and
-   register it in `registeredPlugins()` in `cmd/server/main.go`.
-7. **Migration layering**: Core migrations (`db/migrations/`) may reference ONLY
-   core schema. Plugin migrations (`internal/plugins/<slug>/migrations/`) own
-   their tables and any data backfills/heals that touch them. Core runs before
-   plugins, so a core migration that references a plugin-owned table (`api_keys`,
-   `maps`, `calendars`, etc.) crashes on a fresh DB. If a single data fix needs
-   to span both layers, split it: the core part stays in `db/migrations/`, the
-   plugin part moves to that plugin's `migrations/` directory.
-8. **Idempotent DDL (enforced)**: every `ADD COLUMN` / `CREATE TABLE` uses
-   `IF NOT EXISTS`; every `DROP COLUMN`/`DROP TABLE`/`DROP INDEX` uses `IF EXISTS`.
-   Bare DDL fails with "Error 1060: Duplicate column" (etc.) if a partially-applied
-   migration is ever re-run. `TestMigrations_IdempotentDDL` enforces this on new
-   migrations (historical offenders are grandfathered — they're immutable per #9).
-9. **Append-only / immutability**: NEVER delete, edit, or renumber a migration that
-   any live database may have applied. golang-migrate's `file://` source must contain
-   a file for EVERY version up to the DB's recorded version; removing one crash-loops
-   boot ("no migration found for version N" — the 000030 incident, ADR-044/045).
-   `tools/check-migration-immutability.sh` (a CI step) fails any PR that deletes or
-   edits an existing migration file.
-10. **Schema-only — data fixes are reconcilers, not migrations**: migrations are for
-    DDL. A one-time DATA correction (fixing/merging existing rows) belongs in an
-    IDEMPOTENT reconciler — an `EnsureX`/`MergeX` service method run from a boot
-    backfill, an addon-enable hook, or an owner-triggered `SetupProvider` (see
-    `app/setup_pc.go` + `entities.MergeDuplicatePlayerCharacterType`). A reconciler is
-    idempotent, handles cases that arise later, and surfaces ambiguity to a human; a
-    one-shot data migration does none of these (and is the kind most likely to be
-    "fixed" later by the edit/delete #9 forbids).
-11. **Boot runtime contract** (`database.MigrateWithBackup`, ADR-045): the pre-migration
-    backup runs ONLY when a migration is pending; a DB AHEAD of the build (downgrade /
-    rollback) logs a warning and boots anyway (migrations are additive); a DIRTY DB
-    fails fast with restore guidance; `fatalBoot` backs off (`BOOT_FAIL_BACKOFF`, 45s)
-    so unrecoverable boots don't hot-loop. Keep `ExpectedCoreMigrationVersion` (in
-    `migrate_state.go`) equal to the highest migration — `TestExpectedCoreMigrationVersion_MatchesMax`
-    enforces it.
+1. **ENUM values**: add a new ENUM value via `ALTER TABLE` in the same or an earlier migration before using it in an INSERT/UPDATE — never assume it exists from a different, unapplied migration.
+2. **Seed data conflicts**: check whether seed data for a slug/key already exists; use UPDATE or `INSERT ... ON DUPLICATE KEY UPDATE`, not a bare INSERT.
+3. **Down migrations**: if the up migration UPDATEs a row, the down migration reverts it to its original values, not DELETE; only DELETE rows the same migration INSERTed.
+4. **ENUM in down migrations**: revert all rows using an added ENUM value before removing that value from the ENUM.
+5. `internal/database/migrate_test.go` validates ENUM values in migration SQL — update its valid sets when adding new ones.
+6. **Plugin tables**: belong in `internal/plugins/<name>/migrations/`, not `db/migrations/`; failures degrade gracefully (ADR-028). A new plugin with migrations needs an `embed.go` and a registration in `registeredPlugins()` in `cmd/server/main.go`.
+7. **Migration layering**: core migrations reference ONLY core schema; plugin migrations own their tables and any backfills touching them. Core runs before plugins, so a core migration referencing a plugin-owned table (`api_keys`, `maps`, `calendars`, etc.) crashes on a fresh DB — split a cross-layer fix: core part in `db/migrations/`, plugin part in that plugin's `migrations/`.
+8. **Idempotent DDL (enforced)**: `ADD COLUMN`/`CREATE TABLE` use `IF NOT EXISTS`; `DROP COLUMN`/`DROP TABLE`/`DROP INDEX` use `IF EXISTS` — bare DDL fails if a partially-applied migration re-runs. `TestMigrations_IdempotentDDL` enforces this on new migrations (historical files are grandfathered, per #9).
+9. **Append-only / immutability**: NEVER delete, edit, or renumber a migration any live database may have applied — golang-migrate needs a file for every version up to the DB's recorded one; removing one crash-loops boot (ADR-044/045). `tools/check-migration-immutability.sh` (CI) fails a PR that deletes or edits an existing migration file.
+10. **Schema-only**: a one-time DATA correction belongs in an IDEMPOTENT reconciler — an `EnsureX`/`MergeX` service method run from a boot backfill, an addon-enable hook, or an owner-triggered `SetupProvider` (see `app/setup_pc.go` + `entities.MergeDuplicatePlayerCharacterType`) — never a migration.
+11. **Boot runtime contract** (`database.MigrateWithBackup`, ADR-045): the pre-migration backup runs only when a migration is pending; a DB AHEAD of the build logs a warning and boots anyway; a DIRTY DB fails fast with restore guidance; `fatalBoot` backs off (`BOOT_FAIL_BACKOFF`, 45s). Keep `ExpectedCoreMigrationVersion` (`migrate_state.go`) equal to the highest migration — `TestExpectedCoreMigrationVersion_MatchesMax` enforces it.
 
 ### Permission Model
 
-Chronicle uses a hierarchical role system. The `internal/permissions` package
-provides shared constants (`RoleOwner`, `RoleScribe`, `RolePlayer`) and
-helper functions (`CanSeeDmOnly`, `CanSetDmOnly`) for services/repos that
-cannot import `campaigns` due to circular deps.
+`internal/permissions` provides shared role constants (`RoleOwner`, `RoleScribe`, `RolePlayer`) and helpers (`CanSeeDmOnly`, `CanSetDmOnly`) for services/repos that can't import `campaigns` (circular deps).
 
 **Role hierarchy:** Admin (site) > Owner (campaign) > Scribe > Player > Public
-
-**Permission matrix:**
 
 | Resource | View | Create | Edit | Delete | Toggle dm_only |
 |----------|------|--------|------|--------|----------------|
@@ -500,445 +225,168 @@ cannot import `campaigns` due to circular deps.
 \* Player sees content unless dm_only or custom permissions restrict it.
 \+ Notes: own notes only; shared notes visible to all campaign members.
 
-**dm_only rules:**
-- Only Owners can create or toggle dm_only on any resource
-- Only Owners can see dm_only content (default; Phase 2 adds per-campaign config)
-- Handlers silently strip dm_only from non-Owner requests (not a 403)
-- Use `permissions.CanSeeDmOnly(role)` / `permissions.CanSetDmOnly(role)` for checks
-
-### Anti-Patterns (AVOID)
-
-```go
-// BAD: Restating the code
-// Set name to the request name
-c.Name = req.Name
-
-// BAD: Commented-out code without explanation
-// c.Status = "draft"
-
-// BAD: Obvious comment
-// Delete deletes a campaign
-func (s *service) Delete(...) error
-```
+**dm_only rules:** only Owners can create or toggle dm_only on any resource; only Owners can see dm_only content (default; per-campaign config is a later phase). Handlers silently strip dm_only from non-Owner requests (not a 403). Use `permissions.CanSeeDmOnly(role)` / `permissions.CanSetDmOnly(role)`.
 
 ## Formatting — do NOT `gofmt -w` over globs
 
-This repo is **not plain-`gofmt`-clean** (many committed files predate / differ
-from the local `gofmt` version's alignment). Running `gofmt -w` over a package
-or `*.go` glob reformats ~dozens of unrelated files and pollutes the diff (and
-risks merge conflicts). **Edit in place**; the Edit tool preserves surrounding
-formatting, and `make`/`templ generate` handle code generation. If you must
-format, scope it to the *exact* files you authored. (A glob `gofmt -w` once
-churned ~24 unrelated files.)
+This repo is **not plain-`gofmt`-clean** (many committed files predate or differ from the local `gofmt` version's alignment), so `gofmt -w` over a package or `*.go` glob reformats unrelated files and pollutes the diff. **Edit in place** instead — Edit preserves surrounding formatting, and `make`/`templ generate` handle codegen. If you must format, scope it to the exact files you authored.
 
 ## CI tenet-enforcement guards
 
-Each guard below runs in `.github/workflows/ci.yml` and enforces one of the
-binding tenets (T-B1 security, T-B2 plugin isolation, T-O2/T-O3 verification)
-from `cordinator/decisions/2026-05-21-core-tenets.md`.
+Each guard runs in `.github/workflows/ci.yml`, enforcing a binding tenet (T-B1 security, T-B2 plugin isolation, T-O2/T-O3 verification) from `cordinator/decisions/2026-05-21-core-tenets.md`.
 
 | Guard | File | Mode | Enforces |
 |---|---|---|---|
-| Plugin isolation grep | `tools/check-plugin-isolation.sh` | **diff-scoped FAIL** | T-B2: no new `foundry-vtt` / `foundry-module` / `foundry_vtt` literals outside `internal/plugins/foundry_vtt/*` |
-| Motion discipline | `tools/check-v2-motion-discipline.sh` | **diff-scoped FAIL** | No new `transition: all` / `transition-all` in calendar / timeline / ai_workspace / campaigns sources. Opt out per line with `/* OK exempt: … */`. |
-| Wire-contract conformance | `internal/wire/wire_contract_test.go` + `internal/wire/routes_snapshot.txt` | **FAIL** (snapshot test) | T-O2: every Echo route registration is in the curated snapshot, so a route can't appear or vanish unreviewed. |
-| Foundry public rate-limit pin | `internal/wire/foundry_public_ratelimit_test.go` | **FAIL** | T-B1: the Foundry public manifest endpoint MUST be rate-limited. Two AST assertions pin the wiring (`g.Use(rateLimit)` in `foundry_vtt.RegisterPublicRoutes`) and the call site (`middleware.RateLimit(...)` argument in `app.RegisterRoutes`). |
-| Sanitize-on-write invariant | `internal/sanitize/invariant_test.go` + `internal/sanitize/sanitize_invariant_snapshot.txt` | **FAIL** (snapshot + invariant) | T-B1: every `internal/plugins/*/service.go` (+ widgets) that declares HTML-typed inputs MUST call `sanitize.HTML` somewhere in the file. The snapshot pins the per-file inventory of HTML signals + sanitize-call counts; the invariant test fails outright if any file declares HTML inputs with zero sanitize calls. |
-| Decision-citations | `tools/check-decision-citations.sh` | **WARN** (always exit 0) | T-O3: every `cordinator/decisions/*.md` is referenced from at least one piece of code, PR, or other decision |
+| Plugin isolation grep | `tools/check-plugin-isolation.sh` | diff-scoped FAIL | T-B2: no new `foundry-vtt`/`foundry-module`/`foundry_vtt` literals outside `internal/plugins/foundry_vtt/*` |
+| Motion discipline | `tools/check-v2-motion-discipline.sh` | diff-scoped FAIL | No new `transition: all`/`transition-all` in calendar/timeline/ai_workspace/campaigns sources; opt out per line with `/* OK exempt: … */` |
+| Wire-contract conformance | `internal/wire/wire_contract_test.go` + `routes_snapshot.txt` | FAIL (snapshot) | T-O2: every Echo route registration is in the curated snapshot |
+| Foundry public rate-limit pin | `internal/wire/foundry_public_ratelimit_test.go` | FAIL | T-B1: two AST assertions pin the Foundry public manifest rate-limit wiring (`g.Use(rateLimit)` in `foundry_vtt.RegisterPublicRoutes`) and call site (`middleware.RateLimit(...)` in `app.RegisterRoutes`) |
+| Sanitize-on-write invariant | `internal/sanitize/invariant_test.go` + snapshot | FAIL (snapshot + invariant) | T-B1: every `internal/plugins/*/service.go` (+ widgets) declaring HTML-typed inputs must call `sanitize.HTML` |
+| Decision-citations | `tools/check-decision-citations.sh` | WARN (exit 0) | T-O3: every `cordinator/decisions/*.md` is referenced by code, a PR, or another decision |
 
 ### Pre-merge rules that no guard checks
 
-Each of these came from a production incident. Check them by hand in review.
+Check these by hand: a PR adding an `hx-get` fragment endpoint lists every consumer (each templ file or fetch call embedding it), and one deleting an endpoint shows every consumer moved elsewhere; a PR changing how a URL is served checks that on-disk artifacts (extracted zips, cached files, generated manifests) carry the new URL too, not just runtime rewriting; click handlers inside HTMX fragments use the inline-IIFE `onclick` pattern (Go-side builders like `foundry_vtt/onclick_handlers.go`), never `templ script` helpers or delegated `document.addEventListener`, since a templ script tag isn't reliably run before a swapped-in button can be clicked (`onclick_handlers_test.go` enforces this for `foundry_vtt` only); keep `foundry_vtt/errors.go`, its `.ai.md` catalog table, and `error-catalog.json` in step (`foundry_vtt/errors_test.go`).
 
-1. **Fragment consumer trace.** A PR that adds an `hx-get` fragment endpoint
-   lists every consumer (each templ file or fetch call that embeds it). A PR
-   that deletes one shows every consumer was moved to something else. Once, a
-   fragment endpoint was replaced while `campaigns/settings.templ` still
-   pointed at the old URL, and owners couldn't load their settings page.
-2. **On-disk artifact trace.** A PR that changes how a URL is served checks that
-   files already on disk (extracted zips, cached files, generated manifests)
-   carry the new URL too. Rewriting the Foundry manifest at serve time wasn't
-   enough, because Foundry reads the installed `module.json` from disk, so
-   update checks kept going back to GitHub.
-3. **Click handlers inside HTMX fragments** use the inline-IIFE `onclick`
-   pattern (Go-side builders like `foundry_vtt/onclick_handlers.go`), never
-   `templ script` helpers or delegated `document.addEventListener`. A templ
-   script is emitted as a sibling `<script>` tag, and browsers don't reliably
-   run swapped-in scripts before the button can be clicked: production threw
-   `__templ_X is not defined` across four PRs. `onclick_handlers_test.go`
-   enforces this for `foundry_vtt` only.
+### Extending the guards
 
-(The fourth rule from the same incidents, keeping `foundry_vtt/errors.go`, its
-`.ai.md` catalog table and `error-catalog.json` in step, is enforced by
-`foundry_vtt/errors_test.go`.)
-
-### Extending the wire-contract snapshot
-
-When a PR intentionally adds, removes, or changes Echo routes:
-
-```bash
-UPDATE_ROUTES_SNAPSHOT=1 go test ./internal/wire/...
-```
-
-Commit the regenerated `internal/wire/routes_snapshot.txt` in the same PR.
-The PR description should explain what motivated the route change, especially
-when it touches one of the four auth surfaces below.
-
-### Extending the plugin-isolation guard
-
-Today's guard targets `foundry-vtt` strings only; other plugin names are not
-yet checked. The fragment-join token pattern (same as
-`tools/check-no-instance-hostname.sh`) lets the script scan its own
-directory tree without false-positiving on itself.
-
-### Wire-contract test limitations
-
-The snapshot captures `(method, path, file)` tuples via static AST
-extraction:
-
-1. Group prefix not resolved — `e.Group("/admin")` rename doesn't trigger drift.
-2. Auth surface is not classified — the snapshot carries `(method, path, file)`,
-   not `(method, path, auth)`.
-3. Programmatic registration (loops, builders) not captured.
-4. Middleware chain not captured per-route in general — silent removal of
-   middleware from an existing route isn't caught, except where a focused AST
-   assertion pins one invariant by hand (`internal/wire/foundry_public_ratelimit_test.go`
-   for the Foundry public manifest rate limit, M-3). Open work for full
-   per-route middleware capture: #697.
-
-### Extending the sanitize-invariant snapshot
-
-When a PR intentionally adds a new plugin's `service.go`, or adds/removes HTML-typed inputs to an existing plugin:
-
-```bash
-UPDATE_SANITIZE_SNAPSHOT=1 go test ./internal/sanitize/...
-```
-
-Commit the regenerated `internal/sanitize/sanitize_invariant_snapshot.txt` in the same PR. The PR description must cite the audit if the change introduces a new sanitize surface.
-
-### Adding a focused middleware-pin test
-
-When a security finding requires that a specific route's middleware never
-silently disappear (e.g. rate-limit on a public endpoint, auth on an
-admin-only route), prefer a focused AST assertion over a full type-resolved
-walk. The Foundry public rate-limit pin
-(`internal/wire/foundry_public_ratelimit_test.go`) is the reference
-implementation; copy its shape:
-
-1. Locate the function declaration that wires the middleware
-2. AST-walk its body asserting the `*.Use(...)` (or per-route equivalent)
-   call exists
-3. Locate the call site that supplies the middleware argument
-4. AST-walk asserting the argument is a non-nil call expression containing
-   the expected middleware name
-
-Two small assertions, no new dependencies, pin the invariant end-to-end.
+- **Wire-contract snapshot:** on an intentional route add/remove/change, run `UPDATE_ROUTES_SNAPSHOT=1 go test ./internal/wire/...` and commit the regenerated `internal/wire/routes_snapshot.txt`, explaining the change (especially for the four auth surfaces below). Limitations: the snapshot captures `(method, path, file)` via static AST extraction — it doesn't resolve group prefixes (an `e.Group("/admin")` rename), classify the auth surface, capture programmatic registration (loops/builders), or catch per-route middleware removal in general (#697 is the open work), except where a focused AST assertion pins one invariant by hand, as `internal/wire/foundry_public_ratelimit_test.go` does for the Foundry rate limit — copy its shape for a new one: locate the function wiring the middleware and assert its `*.Use(...)` call, then the call site supplying the argument and assert it names the middleware.
+- **Plugin-isolation guard:** targets `foundry-vtt` strings only today; other plugin names aren't checked. Uses the fragment-join token pattern (`tools/check-no-instance-hostname.sh`) to scan its own tree without false-positiving on itself.
+- **Sanitize-invariant snapshot:** on a new plugin's `service.go`, or added/removed HTML-typed inputs, run `UPDATE_SANITIZE_SNAPSHOT=1 go test ./internal/sanitize/...` and commit the regenerated snapshot; cite the audit in the PR if it's a new sanitize surface.
 
 ## Cross-plugin import discipline
 
-### For humans
-
-Plugins are physically isolated under `internal/plugins/<slug>/`. Cross-plugin
-communication is **always** mediated by an exported Go interface (a service or a
-middleware) defined on the providing plugin. Importing another plugin's
-repository, store, internal struct, or `_test.go` helpers is a layering
-violation.
-
-The shape that works:
+Plugins are physically isolated under `internal/plugins/<slug>/`. Cross-plugin communication is **always** mediated by an exported Go interface (a service or middleware) defined on the providing plugin (CLAUDE.md rule 8). Importing another plugin's repository, store, internal struct, or `_test.go` helpers is a layering violation.
 
 ```go
-// In plugin-A's package: define the interface YOU need from plugin-B.
+// In plugin-A: define the interface you need from plugin-B; plugin-B implements
+// it and exposes it via NewService(...) campaigns.CampaignService; plugin-A's
+// wiring accepts the interface, not the concrete type.
 type CampaignService interface {
     Get(ctx context.Context, id string) (*Campaign, error)
 }
-
-// In plugin-B: implement it and expose via NewService(...) campaigns.CampaignService.
-
-// In plugin-A's wiring: accept the interface, not the concrete type.
-type Handler struct {
-    campaignSvc campaigns.CampaignService
-}
 ```
 
-This pattern is already CLAUDE.md rule 8: *"Plugins talk to each other via
-service interfaces, never direct repo access."* This section formalizes it as
-the architectural-enforcement convention for Pillar 2 (`decisions/2026-05-21-four-pillars.md`).
+- Importing a concrete type from another plugin is a violation; the imported plugin must expose an interface, or a middleware constructor returning `echo.MiddlewareFunc`.
+- `internal/app/routes.go` is the ONLY package that imports every plugin's package; new plugins register there.
+- `foundry_vtt` is imported by `internal/websocket/{auth,client,hub}.go` only for the `foundry_vtt.ModuleSource` const — a thin const-usage import, not behavioral coupling, so it's fine.
 
-### For AI sessions
-
-Every cross-plugin `import` in `internal/` follows the legit-service /
-legit-middleware pattern above. `internal/app/routes.go` is the registrar —
-the one place where imports of every plugin's package are expected and
-correct.
-
-**Implications:**
-
-1. Adding a new cross-plugin import requires the imported plugin to expose an interface (or a middleware constructor returning `echo.MiddlewareFunc`). Importing a concrete type from another plugin is a violation.
-2. `internal/app/routes.go` is the ONLY package that imports every plugin's package. New plugins register here.
-3. `foundry_vtt` is imported by `internal/websocket/{auth,client,hub}.go` for `foundry_vtt.ModuleSource`. This is a thin const-usage import, not a cross-plugin "talk to service" import — analogous to how `packages.PackageTypeFoundryModule` is referenced from plugins that need to dispatch on package type. The "service-interface-only" rule is about behavioral coupling (calling methods); const sharing is acceptable.
-
-**Regression-prevention mechanisms:**
-
-| Mechanism | Catches |
-|---|---|
-| `tools/check-plugin-isolation.sh` (CI, diff-scoped FAIL) | New `foundry-vtt` / `foundry-module` magic-string literals outside `internal/plugins/foundry_vtt/`. Today the check targets `foundry_vtt` only; other plugin names are not yet checked. |
-| Wire-contract conformance test (`internal/wire/wire_contract_test.go`) | New routes outside the curated snapshot. |
-| Code review | New `import "github.com/keyxmakerx/chronicle/internal/plugins/<X>/<subpkg>"` paths — anything beyond `internal/plugins/<X>` itself (i.e. importing `internal/plugins/<X>/repository`) is the canonical "you bypassed the interface" smell. |
+**Regression-prevention:** `tools/check-plugin-isolation.sh` (CI, diff-scoped FAIL) catches new `foundry-vtt`/`foundry-module` magic-string literals outside `internal/plugins/foundry_vtt/` (targets that plugin only today); the wire-contract conformance test catches new routes outside the curated snapshot; code review catches `import ".../internal/plugins/<X>/<subpkg>"` paths beyond `internal/plugins/<X>` itself (e.g. `.../repository`), the canonical "bypassed the interface" smell.
 
 ## Security
 
-### For humans
-
-This section is the standing reference every PR that touches an auth surface, a sanitization site, a signed URL, or a SQL identifier interpolation should read FIRST.
-
-Per `cordinator/decisions/2026-05-21-core-tenets.md §T-B1`, security is the highest-priority tenet — every PR considers security first. The mechanisms below are the operational consequences of that tenet.
-
-### For AI sessions
-
-When a PR touches any of the surfaces in this section, the PR description MUST include a Security-implication line per the audit's discipline. If the surface change is a regression risk, the corresponding CI guard (listed throughout this section) catches it; the guard is the load-bearing mechanism.
+Per `cordinator/decisions/2026-05-21-core-tenets.md §T-B1`, security is the highest-priority tenet. A PR touching an auth surface, sanitization site, signed URL, or SQL identifier interpolation states the security implication in its description; the CI guards below are load-bearing where one exists.
 
 ### "The route is authorized" is not "the object is authorized"
 
-Campaign middleware proves the caller belongs to the campaign in the URL. It
-proves nothing about the object a handler then loads **by its own id**. Four of
-the five fixes in one security sweep were this same mistake in four places: a
-relation, a note, a calendar and an entity each fetched by id with no ownership
-or visibility check below the route. Two were cross-user reads of private data,
-and one was a cross-*campaign* write through an enumerable integer id.
-
-When a handler or service addresses an object by id:
-
-1. Resolve the object.
-2. Answer 404 if its campaign is not the campaign in the route.
-3. Run the plugin's canonical visibility gate (see the next section).
-4. Only then look in any cache. A cache hit must never skip the gate.
+Campaign middleware proves the caller belongs to the campaign in the URL. It proves nothing about an object a handler then loads **by its own id**. When addressing an object by id: resolve it, 404 if its campaign isn't the route's campaign, run the plugin's canonical visibility gate (next section), and only then consult a cache — a cache hit must never skip the gate.
 
 ### Visibility filters take a `permissions.Viewer`, never a bare `(role, userID)` (ADR-049)
 
-**An empty user id means ANONYMOUS. It has never meant "trusted", and it must
-never be used as a lookup key.**
+**An empty user id means ANONYMOUS.** It has never meant "trusted", and must never be used as a lookup key.
 
-The calendar and timeline filters used to short-circuit on
-`CanSeeDmOnly(role) || userID == ""`, documenting the empty string as "the
-system context". A logged-out visitor to a **public** campaign carries exactly
-that value, so anonymous traffic took the most privileged branch and was served
-`dm_only` calendars and per-user-restricted events.
-
-When you write a visibility filter:
-
-- Take a `permissions.Viewer`. Bypass only on `v.SkipsPerUserRules()`
-  (`system || CanSeeDmOnly(role)`). Never test the user id yourself.
-- Build it with `permissions.RequestViewer(role, userID)` at the handler/service
-  boundary. It cannot produce a trusted viewer — the `system` bit is unexported.
-- If a caller genuinely IS trusted (an export walking its own rows, a picker
-  already authorized at its route), say so with `permissions.SystemViewer(role)`
-  **at that call site**, with a comment justifying the trust.
-- Never synthesise an identity for an anonymous request — no `"anonymous"` user,
-  no session-derived pseudo-id, no per-IP key. A shared anonymous identity is a
-  shared write target.
+- Take a `permissions.Viewer`; bypass only on `v.SkipsPerUserRules()` (`system || CanSeeDmOnly(role)`). Never test the user id yourself.
+- Build it with `permissions.RequestViewer(role, userID)` at the handler/service boundary — it cannot produce a trusted viewer (`system` is unexported).
+- A genuinely trusted caller (an export walking its own rows, an already-authorized picker) uses `permissions.SystemViewer(role)` at that call site, with a comment justifying the trust.
+- Never synthesise an identity for an anonymous request (no `"anonymous"` user, no per-IP key) — a shared anonymous identity is a shared write target.
 
 ### Auth surfaces — four canonical shapes
 
-Chronicle exposes **four distinct auth surfaces**. Conflating them is the
-risk pattern that motivated the wire-contract conformance test.
+Conflating these is the risk this table and the wire-contract test guard against.
 
 | Surface | Mounting | Middleware | Consumers |
 |---|---|---|---|
-| **Session-cookie (web UI)** | `internal/app/routes.go` (campaigns, entities, maps, and other plugin UI routes) | `auth.RequireAuth(authSvc)` + `campaigns.RequireCampaignAccess(campaignSvc)` | Browser users with `chronicle_session` cookie |
-| **Per-campaign-token (legacy public API)** | `internal/plugins/foundry_vtt/routes.go::RegisterPublicRoutes` | Per-campaign signed manifest token, verified via `internal/plugins/foundry_vtt/token.go` | Foundry module manifest + download fetch |
-| **Session-OR-Bearer (syncapi JSON group)** | `internal/plugins/syncapi/routes.go::RegisterAPIRoutes` `v1` group | `syncapi.RequireAuthOrAPIKey` + `RateLimit` + `RequireJSONContentType` — state-changing methods rejected with 415 unless `Content-Type: application/json` | Foundry sync REST API + in-app browser widgets |
-| **Session-OR-Bearer (syncapi multipart sub-group)** | `internal/plugins/syncapi/routes.go::RegisterAPIRoutes` `v1Multipart` group | `RequireAuthOrAPIKey` + `RateLimit` (SKIPS `RequireJSONContentType`) | `POST /api/v1/campaigns/:id/media` (`UploadMedia`) — the only multipart endpoint under `/api/v1/*`. Per D-C3.1 sub-group-skip pattern |
-| **Admin-session (site admin UI)** | `internal/app/routes.go` (admin group) | `auth.RequireAuth` + `auth.RequireSiteAdmin` + optional `auth.RequireReauth` for sensitive actions | Site admin browser users |
+| **Session-cookie (web UI)** | `internal/app/routes.go` (campaigns, entities, maps, plugin UI routes) | `auth.RequireAuth(authSvc)` + `campaigns.RequireCampaignAccess(campaignSvc)` | Browser users, `chronicle_session` cookie |
+| **Per-campaign-token (legacy public API)** | `foundry_vtt/routes.go::RegisterPublicRoutes` | Per-campaign signed manifest token (`foundry_vtt/token.go`) | Foundry module manifest + download fetch |
+| **Session-OR-Bearer (syncapi JSON)** | `syncapi/routes.go::RegisterAPIRoutes` `v1` group | `RequireAuthOrAPIKey` + `RateLimit` + `RequireJSONContentType` (state-changing methods get 415 without `Content-Type: application/json`) | Foundry sync REST API + in-app widgets |
+| **Session-OR-Bearer (syncapi multipart)** | same file, `v1Multipart` group | `RequireAuthOrAPIKey` + `RateLimit` (skips `RequireJSONContentType`) | `POST /api/v1/campaigns/:id/media`, the only multipart endpoint under `/api/v1/*` (D-C3.1 sub-group-skip pattern) |
+| **Admin-session (site admin UI)** | `internal/app/routes.go` (admin group) | `auth.RequireAuth` + `auth.RequireSiteAdmin` + optional `auth.RequireReauth` | Site admin browser users |
 
-**Regression-prevention:** the wire-contract conformance test (`internal/wire/wire_contract_test.go` + `routes_snapshot.txt`) pins every Echo route registration. Adding a new route forces a snapshot regen + PR-description citation. It captures `(method, path, file)`; per-route middleware capture is not there yet (see "Wire-contract test limitations" above).
+**Regression-prevention:** the wire-contract conformance test pins every Echo route registration, but only `(method, path, file)` — not per-route middleware (see "Extending the guards" above).
 
 ### CSRF
 
-Double-submit cookie pattern via `internal/middleware/csrf.go`. On HTTPS the cookie uses the `__Host-` prefix for hardening. Applied to every session-cookie-authed write endpoint; Bearer-authed endpoints (syncapi) skip CSRF because cross-origin Bearer callers don't carry the cookie.
+Double-submit cookie via `internal/middleware/csrf.go` (`__Host-` prefix on HTTPS), applied to every session-cookie-authed write endpoint. Bearer-authed endpoints (syncapi) skip it since cross-origin Bearer callers don't carry the cookie.
 
-CSP allows `'unsafe-inline'` + `'unsafe-eval'` — the Alpine.js trade-off — mitigated by the server-side `sanitize.HTML` bluemonday wrapper on every user-controlled HTML field (see "Sanitization invariant" below).
-
+CSP allows `'unsafe-inline'` + `'unsafe-eval'` (the Alpine.js trade-off), mitigated by `sanitize.HTML` on every user-controlled HTML field (see "Sanitization invariant" below).
 
 ### Signed URLs — HMAC-SHA256 with `crypto/subtle`
 
-Two signed-URL families:
+Two families:
 
-- **`/media/...` (media plugin)** — `internal/plugins/media/handler.go` mints
-  and verifies signed URLs for protected media. Per ADR-058 decision 6, the
-  signature is an HMAC-SHA256 over `fileID:viewer:expires`, not just
-  `fileID:expires` — the viewer identity is bound in, so a copied link is
-  inert for anyone else. `currentViewerIdentity` resolves the presented
-  viewer from the session cookie (`ViewerSession(userID)`) or
-  `ViewerAnonymous` when there is none; `Verify` decides whether an
-  anonymous presenter may still satisfy a link minted for `ViewerAPIKey`
-  (the cross-origin, cookie-less Foundry `<img>` case).
-- **`/foundry-vtt/...` (foundry_vtt plugin)** — `internal/plugins/foundry_vtt/token.go` mints per-campaign signed manifest URLs. `tokenDomain = "foundry-vtt"` const scopes the HMAC so a media-signed URL can't be replayed as a manifest URL (different domain prefix).
+- **`/media/...`** (`internal/plugins/media/handler.go`) — per ADR-058 decision 6, the signature is HMAC-SHA256 over `fileID:viewer:expires`, not just `fileID:expires`, so a copied link is inert for anyone else. `currentViewerIdentity` resolves the viewer from the session cookie or `ViewerAnonymous`; `Verify` decides whether an anonymous presenter may still satisfy a link minted for `ViewerAPIKey` (cross-origin, cookie-less Foundry `<img>`).
+- **`/foundry-vtt/...`** (`internal/plugins/foundry_vtt/token.go`) — per-campaign signed manifest URLs; `tokenDomain = "foundry-vtt"` scopes the HMAC so a media-signed URL can't replay as a manifest URL.
 
-Both use `hmac.Equal` (constant-time comparison via `crypto/subtle`) — never `==` or `bytes.Equal`. Verification includes expiry checks; replayed/expired URLs reject with 403.
-
-A picture is readable if at least one page using it is visible to the viewer
-(ADR-058 decision 1); a file no page references falls back to campaign
-membership (decision 3). See ADR-058 for the full rule and its rationale.
+Both use `hmac.Equal` (constant-time), never `==`/`bytes.Equal`; verification checks expiry, and replayed/expired URLs get 403. A picture is readable if at least one page using it is visible to the viewer (ADR-058 decision 1); an unreferenced file falls back to campaign membership (decision 3).
 
 ### Sanitization invariant — bluemonday UGCPolicy on every HTML write
 
-Every plugin's `Service.Create*` / `Service.Update*` method that accepts an HTML-typed field calls `sanitize.HTML(...)` (defined in `internal/sanitize/sanitize.go`) before persisting:
+Every plugin's `Service.Create*`/`Update*` accepting an HTML-typed field calls `sanitize.HTML(...)` (`internal/sanitize/sanitize.go`) before persisting: `internal/plugins/{entities,sessions,timeline,campaigns}/service.go`, `internal/widgets/{notes,posts,entity_notes}/service.go`. `internal/sanitize/invariant_test.go` + `sanitize_invariant_snapshot.txt` pin this: any `service.go` declaring HTML-typed inputs needs ≥1 `sanitize.HTML` call (regenerate via `UPDATE_SANITIZE_SNAPSHOT=1 go test ./internal/sanitize/...`).
 
-- `internal/plugins/{entities,sessions,timeline,campaigns}/service.go`
-- `internal/widgets/{notes,posts,entity_notes}/service.go`
-
-**Regression-prevention:** `internal/sanitize/invariant_test.go` + `sanitize_invariant_snapshot.txt` pin a file-level invariant — any `service.go` (+ its sibling `model.go`) that declares HTML-typed inputs MUST have at least one `sanitize.HTML` call. The snapshot inventories every plugin/widget `service.go` file; regenerate via `UPDATE_SANITIZE_SNAPSHOT=1 go test ./internal/sanitize/...`.
-
-**Egress side:** the Foundry-bound `/api/v1/*` GET handlers that emit user HTML — `GetEntity`, `ListEntities`, `GetNote`, `ListNotes` — re-sanitize through helpers in `internal/plugins/syncapi/egress_sanitize.go` (`sanitizeEntityHTMLForEgress`, `sanitizeNotesHTMLForEgress`, etc.) before `c.JSON`. `sanitize.HTMLPtr(*string) *string` is the nullable-pointer companion to `sanitize.HTML`. The backup/restore round-trip is intentionally lossless (no re-sanitization on export); the carve-out is preserved by NOT touching `internal/app/export_adapters.go` or `internal/plugins/campaigns/export_handler.go`. An AST-based structural pin (`TestEgressSanitize_HandlersInvokeHelpers`) asserts every named handler invokes its egress helper; dropping the call from a future refactor fails the test with a pinpointed subtest name. `GetEvent`/`ListEvents` (calendar) are placeholders returning `503 calendar_rebuilding` while calendar is rebuilt (V5, #741); the same test pins that they stay placeholders and must regain their egress sanitizer in the same change that restores their real bodies.
+**Egress:** the Foundry-bound `/api/v1/*` GET handlers emitting user HTML (`GetEntity`, `ListEntities`, `GetNote`, `ListNotes`) re-sanitize via `internal/plugins/syncapi/egress_sanitize.go` helpers before `c.JSON` (`sanitize.HTMLPtr` is the nullable companion); `TestEgressSanitize_HandlersInvokeHelpers` pins the wiring. Backup/restore export stays unsanitized (lossless) — don't touch `internal/app/export_adapters.go` or `internal/plugins/campaigns/export_handler.go`. Calendar's `GetEvent`/`ListEvents` 503-placeholder until V5 (#741) and must regain an egress sanitizer with their real bodies.
 
 ### `SafeIdent` convention — DDL identifier interpolation
 
-Every SQL DDL statement that interpolates a table/column name into the SQL string MUST pass the identifier through `internal/database/safeident.go::SafeIdent`. Returns the identifier backtick-quoted, or an error if it doesn't match the conservative regex `^[a-zA-Z_][a-zA-Z0-9_]*$`.
+Every SQL DDL statement interpolating a table/column name MUST pass it through `internal/database/safeident.go::SafeIdent` (backtick-quotes it, or errors unless it matches `^[a-zA-Z_][a-zA-Z0-9_]*$`).
 
 ```go
 quoted, err := database.SafeIdent(tableName)
-if err != nil { return err }
-_, err = db.ExecContext(ctx, "DROP TABLE IF EXISTS "+quoted)
 ```
 
-Today's only live caller is `internal/extensions/migration_runner.go::DropExtensionTables`. Future callers that need DDL identifier interpolation MUST use this helper rather than raw concat — even when the input is "trusted" (e.g. from `SHOW TABLES`). The helper's job is to make the safety mechanical rather than convention-only.
+Only live caller today: `internal/extensions/migration_runner.go::DropExtensionTables`. Future DDL identifier interpolation MUST use this helper, even for "trusted" input (e.g. from `SHOW TABLES`).
 
-### Historical footguns — the four medium findings
+Debug logs must never emit a raw email (log access becomes an enumeration oracle) — hash via `internal/plugins/auth/loghash.go::hashEmail()` (SHA-256 hex prefix), pinned by `loghash_test.go`.
 
-Documented for future contributors who might re-introduce these patterns. Each finding's mitigation is now load-bearing in CI or in convention; the historical context explains WHY the mechanism exists.
+`internal/plugins/foundry_vtt/descriptor_fallback_test.go` pins the fallback `defaultDescriptor()` field-by-field against `testdata/chronicle-package.json`; keep both in step.
 
-| Finding | Original gap | Mitigation | PR |
-|---|---|---|---|
-| **M-1** | Password-reset Debug logs emitted raw email as `slog.String("email", email)` — email enumeration via log access | `internal/plugins/auth/loghash.go::hashEmail()` — SHA-256 hex prefix; regression-pinned by `loghash_test.go` |
-| **M-2** | `DropExtensionTables` interpolated `table` name into `DROP TABLE` via raw concat | `internal/database/safeident.go::SafeIdent` — regex-validating identifier helper; convention enforced going forward |
-| **M-3** | Foundry public manifest endpoint's rate-limit middleware was optional in registration signature; silent removal possible | `internal/wire/foundry_public_ratelimit_test.go` — two focused AST assertions pin the wiring + the call site |
-| **M-4** | Sanitization on ingress but not on Foundry-bound egress | `internal/plugins/syncapi/egress_sanitize.go` — per-model helpers wrap `EntryHTML` / `PlayerNotesHTML` on the entity and note `/api/v1/*` GET handlers (entity x2, note x2). `sanitize.HTMLPtr` is the nullable companion. AST structural pin (`TestEgressSanitize_HandlersInvokeHelpers`) catches handler→helper wiring drift. The backup/restore round-trip stays intentionally lossless (no re-sanitization on export) — do not add sanitize calls to `internal/app/export_adapters.go` or `internal/plugins/campaigns/export_handler.go`. The calendar event GET handlers (`GetEvent`, `ListEvents`) currently return `503 calendar_rebuilding` and emit no data, so they have no egress-sanitize helper today |
+Open work: full middleware-chain capture for every route (#697), method-level sanitize invariant with flow analysis (#696).
 
-The Foundry `/api/v1/*` group enforces `Content-Type: application/json` on
-state-changing methods via `syncapi.RequireJSONContentType()`, except the
-`v1Multipart` sub-group (`POST /api/v1/campaigns/:id/media`), which keeps
-auth and rate-limiting but skips that check so multipart uploads work (see
-the Auth surfaces table above).
-
-`internal/plugins/foundry_vtt/descriptor_fallback_test.go` pins the fallback
-`defaultDescriptor()` field-by-field against the canonical
-`testdata/chronicle-package.json`; keep the two in step when either changes.
-
-Open work: full middleware-chain capture for every route (#697), method-level
-sanitize invariant with flow analysis (#696).
-
-### Reading order for a security-touching PR
-
-1. This section (`.ai/conventions.md` §Security) — start here
-2. `cordinator/decisions/2026-05-21-core-tenets.md §T-B1` — the binding tenet
-3. The plugin's `.ai.md` for plugin-specific footguns
-4. The relevant CI guard's source (`tools/check-plugin-isolation.sh`, `internal/wire/wire_contract_test.go`, `internal/sanitize/invariant_test.go`, etc.) to understand what the guard catches
+**Reading order for a security-touching PR:** this section → `cordinator/decisions/2026-05-21-core-tenets.md §T-B1` → the plugin's `.ai.md` → the relevant CI guard's source.
 
 ## Production safety system
 
-Chronicle's `cmd/server/main.go` runs three startup layers before serving traffic. Touch any DB-adjacent surface and you intersect this system.
+`cmd/server/main.go` runs three startup layers before serving traffic. Touch any DB-adjacent surface and you intersect this system.
 
 | Layer | Purpose |
 |---|---|
-| `database.PreMigrationBackup(cfg)` | `mysqldump` + gzip before any migration applies. Silently skips when `mysqldump` is absent; `BACKUP_REQUIRED=1` flips that to fail-loud per `docs/deployment.md` |
+| `database.PreMigrationBackup(cfg)` | `mysqldump` + gzip before any migration applies; silently skips when `mysqldump` is absent (`BACKUP_REQUIRED=1` flips that to fail-loud, per `docs/deployment.md`) |
 | `database.RunMigrations(db, cfg)` | golang-migrate, auto-Up, dirty-state retry |
-| `database.RunStartupHealthChecks(db, cfg)` | Multi-layer fail-fast validation (`os.Exit(1)` on any failure): migration version, critical-column inventory, DB connectivity, security audit (weak passwords / HTTP `BaseURL` / overprivileged grants / world-writable `schema_migrations`), and per-plugin smoke tests (e.g. `campaigns.ScanSmokeTest` issues a real `SELECT + Scan` to validate the column list matches the `Campaign` struct) |
+| `database.RunStartupHealthChecks(db, cfg)` | Fail-fast validation (`os.Exit(1)` on failure): migration version, critical-column inventory, DB connectivity, security audit (weak passwords, HTTP `BaseURL`, overprivileged grants, world-writable `schema_migrations`), and per-plugin smoke tests (e.g. `campaigns.ScanSmokeTest` runs a real `SELECT + Scan` to validate the column list matches the `Campaign` struct) |
 
 See `internal/database/.ai.md §Startup Health Check System` for the full breakdown and how to extend a smoke test.
 
 ### When a PR needs boot verification
 
-Boot verification (a real `make docker-up && go run ./cmd/server`, checking
-for `smoketest passed` on each plugin the change touches) is required when a
-PR touches any of:
+Boot verification (a real `make docker-up && go run ./cmd/server`, checking for `smoketest passed` on each plugin touched) is required when a PR touches: plugin `*.go` files containing `SELECT`+`Scan` patterns, plugin `repository.go` files, routes affecting the wire snapshot, migration files, the `HealthCheckConfig.CriticalColumns` map, `cmd/server/main.go` startup wiring, a refactor removing code an existing smoke test references, or a refactor removing handler setters/adapters wired at app startup.
 
-- Plugin `*.go` files containing `SELECT` + `Scan` patterns
-- Plugin `repository.go` files
-- Routes that affect the wire snapshot
-- Migration files
-- `HealthCheckConfig.CriticalColumns` map
-- `cmd/server/main.go` startup wiring
-- A refactor that removes code referenced by an existing smoke test
-- A refactor that removes handler setters/adapters wired at app startup
-
-It is typically not needed for templ-only changes, handler logic without DB
-scan patterns, pure documentation, or test files.
+Typically not needed for templ-only changes, handler logic without DB scan patterns, pure documentation, or test files.
 
 ### Substitute pattern (docker-unavailable sandboxes)
 
-Cloud / AI dev sandboxes often lack a Docker daemon. When `make docker-up`
-isn't an option, run these static substitutes instead and say so in the PR
-description:
+When `make docker-up` isn't available (common in cloud/AI sandboxes), run these static substitutes and say so in the PR description: grep `cmd/server/main.go` for `RunStartupHealthChecks` + the touched smoke tests (wiring intact); grep `cmd/server/*.go` for every removed/renamed symbol, expecting zero hits (no symbol leakage); `go build ./cmd/server/` succeeds (clean binary); `go run ./cmd/server` emits `starting Chronicle` and enters the MariaDB retry loop, proving static init completes without panic (reaches DB layer).
 
-1. **Wiring intact** — grep `cmd/server/main.go` for `RunStartupHealthChecks` + the smoke tests the change touches
-2. **No symbol leakage** — grep `cmd/server/*.go` for every removed/renamed symbol; expect zero hits
-3. **Clean binary** — `go build ./cmd/server/` succeeds
-4. **Reaches DB layer** — `go run ./cmd/server` emits the `starting Chronicle` log line and enters the MariaDB retry loop (proves static init completes without panic)
-
-The real check then transfers to the operator as a pre-merge gate:
-`make docker-up && go run ./cmd/server 2>&1 | head -50` — look for
-`smoketest passed` on each plugin smoke test the change touches.
+The real check transfers to the operator as a pre-merge gate: `make docker-up && go run ./cmd/server 2>&1 | head -50`, looking for `smoketest passed` on each touched plugin.
 
 ## CSS sub-layer naming — hyphen-vs-underscore
 
-Plugin CSS sub-layers under `@layer plugins` use **hyphens** matching the public plugin slug, NOT the Go package name's underscore. From `static/css/input.css`:
-
-```css
-@layer plugins { @layer foundry-vtt, calendar, maps, packages, settings }
-```
-
-Go: `internal/plugins/foundry_vtt/` (underscore — Go's package-naming convention disallows hyphens). CSS layer: `@layer plugins.foundry-vtt { ... }` (hyphen — matches the user-visible slug and Tailwind class conventions). The two naming systems intentionally diverge: Go's underscore satisfies its identifier rules; the CSS sub-layer matches every other public surface (URL paths, magic strings, the registry slug).
-
-If you add a new plugin with hyphen-containing slug, register its sub-layer with the hyphen form and keep the Go package's underscore form local to the Go source.
+Plugin CSS sub-layers under `@layer plugins` use **hyphens** matching the public plugin slug, e.g. `@layer plugins { @layer foundry-vtt, calendar, maps, packages, settings }` — not the Go package's underscore (`internal/plugins/foundry_vtt/`, since Go disallows hyphens in identifiers). Register a new plugin's sub-layer with its hyphen slug; keep the Go package underscored.
 
 ## Tailwind JIT safelist for runtime-injected classes
 
-Tailwind's JIT compiler only emits classes it finds in source files. Classes added at runtime by JS or by HTMX itself (e.g. `.htmx-added` — applied by HTMX during the settle phase to newly-inserted nodes) won't be in the compiled CSS unless they're explicitly referenced. Chronicle uses two mechanisms:
-
-- **Inline `@layer` rule** — when the class only needs base styling (e.g. `.htmx-added { opacity: 0 }` for the cross-fade-in via `@starting-style`), define it directly in `static/css/input.css` so the bytes ship regardless of JIT.
-- **Safelist** — when a Tailwind-utility class is needed at runtime, add it to the safelist in `tailwind.config.js`.
-
-Always prefer the inline `@layer` for HTMX/Alpine-injected classes since the JIT can't see them. Reference: the `.htmx-added` + `@starting-style` pattern at `static/css/input.css:2275-2285`.
+Tailwind's JIT only emits classes found in source files, so classes added at runtime by JS or HTMX (e.g. `.htmx-added`, applied during the settle phase) won't be in the compiled CSS unless referenced: define base styling directly in `static/css/input.css` under an inline `@layer` rule (see the `.htmx-added` + `@starting-style` block there), or add a runtime Tailwind-utility class to the safelist in `tailwind.config.js`. Prefer the inline `@layer` for HTMX/Alpine-injected classes, since the JIT can't see them.
 
 ## Plugin registration + per-plugin static assets
 
-Per `cordinator/decisions/2026-05-23-plugin-registration.md`: plugins self-describe via a `PluginRegistration` value (slug, optional `embed.FS` for migrations, optional `embed.FS` for static assets, optional smoke test). The registry lives at `internal/app/plugins.go`; entries are populated by each plugin's `registration.go`.
+Per `cordinator/decisions/2026-05-23-plugin-registration.md`, plugins self-describe via a `PluginRegistration` value (slug, optional `embed.FS` for migrations, optional `embed.FS` for static assets, optional smoke test); the registry is `internal/app/plugins.go`, populated by each plugin's `registration.go`.
 
-Per `cordinator/decisions/2026-05-25-plugin-static-assets.md`: each plugin's static assets (JS / CSS shipped under `static/`) embed via Go's `embed.FS` and mount through the registry — no more app-level static-route enumeration. Not every plugin has migrated to this yet; check a given plugin's `registration.go` for whether it registers a `StaticFS`.
+Per `cordinator/decisions/2026-05-25-plugin-static-assets.md`, each plugin's static assets (JS/CSS under `static/`) embed via `embed.FS` and mount through the registry — no app-level static-route enumeration. Not every plugin has migrated; check a plugin's `registration.go` for a `StaticFS` entry.
 
 ## Static asset URLs go through `layouts.AssetURL`
 
-**Never write a bare `src="/static/…"` or `href="/static/…"` in a templ file.**
-A contract test (`TestTemplatesUseAssetURL` in
-`internal/templates/layouts/assets_test.go`) walks every `.templ` in the repo and
-fails on one.
+**Never write a bare `src="/static/…"` in a templ file** — `TestTemplatesUseAssetURL` (`internal/templates/layouts/assets_test.go`) walks every `.templ` and fails on one.
 
 ```templ
-// WRONG — the browser may hold a build-old copy for hours.
-<script src="/static/js/boot.js" defer></script>
-
-// RIGHT — ?v=<content digest>, so a deploy busts the cache.
 <script src={ layouts.AssetURL("/static/js/boot.js") } defer></script>
 ```
 
-(Inside package `layouts` itself, call `AssetURL(...)` unqualified.)
-
-**Why it's load-bearing and not cosmetic.** Echo's `e.Static` serves through
-`http.ServeContent`, which emits `Last-Modified` but NO `Cache-Control`, so
-browsers fall back to heuristic freshness. Fresh HTML then pairs with a stale
-stylesheet — and a deploy that introduces a NEW Tailwind utility half-lands:
-the markup names a class the cached CSS has never heard of, and the affected
-elements silently take their unstyled (usually `hidden`) branch. This has
-been reproduced, not theorized: post-deploy HTML against a pre-deploy
-`app.css` served a new utility-styled element completely unstyled, with
-every DOM test still green.
-
-`middleware.StaticCache` (registered globally in `app.New`) is the other half:
-`immutable, max-age=1y` for `?v=`-carrying requests, `max-age=0,
-must-revalidate` otherwise. That second arm is deliberate — a missed conversion
-degrades to "revalidated on every use", never to "silently stale".
-
-Plugin assets served from an `embed.FS` are content-hashed too, provided the FS
-is registered with `layouts.RegisterAssetFS` (done automatically for every
-`PluginRegistration.StaticFS` in `app.mountPluginStatic`). Anything
-unresolvable falls back to a per-build token, which still busts on deploy.
+`?v=<content digest>` busts the cache on deploy (inside package `layouts` itself, call `AssetURL(...)` unqualified). This matters because Echo's `e.Static` emits `Last-Modified` but no `Cache-Control`, so browsers use heuristic freshness — a deploy adding a Tailwind utility can half-land: HTML names a class the cached CSS never heard of, and the element silently takes its unstyled (usually `hidden`) branch. `middleware.StaticCache` (global, `app.New`) sets `immutable, max-age=1y` for `?v=`-carrying requests and `max-age=0, must-revalidate` otherwise, so a missed conversion degrades to "revalidated every use", never "silently stale". Plugin `embed.FS` assets are content-hashed too once registered with `layouts.RegisterAssetFS` (automatic for every `PluginRegistration.StaticFS`); anything unresolvable falls back to a per-build token, which still busts on deploy.
