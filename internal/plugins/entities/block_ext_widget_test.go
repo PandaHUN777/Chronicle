@@ -20,7 +20,7 @@ func TestBlockExtWidget_EmitsDeclaredConfigAsDataAttrs(t *testing.T) {
 		Type: "ext_widget",
 		Config: map[string]any{
 			"widget_slug": "bestiary-browser",
-			"source":      "bestiary",
+			"source":      "creatures",
 		},
 	}
 
@@ -32,7 +32,7 @@ func TestBlockExtWidget_EmitsDeclaredConfigAsDataAttrs(t *testing.T) {
 
 	for _, want := range []string{
 		`data-widget="bestiary-browser"`,
-		`data-source="bestiary"`,
+		`data-source="creatures"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("rendered HTML missing %q:\n%s", want, got)
