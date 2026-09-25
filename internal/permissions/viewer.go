@@ -58,3 +58,15 @@ func (v Viewer) IsAnonymous() bool { return !v.system && v.userID == "" }
 func (v Viewer) SkipsPerUserRules() bool {
 	return v.system || CanSeeDmOnly(v.role)
 }
+
+// DeniesAnonymous reports whether a non-empty deny list must also exclude an
+// anonymous (empty) userID (ADR-049 amendment): a logged-out visitor cannot
+// be proven not to be the specific player the list names, so a deny list
+// that isn't provably clear of them denies them too. Every per-user
+// visibility predicate that reads a DeniedUsers/denied_users list — map
+// markers and drawings (Go and SQL), the WebSocket hub's audience gate, and
+// timeline's canUserView — calls this before testing membership, so the
+// rule lives in one place instead of four.
+func DeniesAnonymous(deniedUsers []string, userID string) bool {
+	return userID == "" && len(deniedUsers) > 0
+}

@@ -57,6 +57,19 @@ func TestMapAudiencePredicateParity(t *testing.T) {
 			why:    "default-ALLOW while allowed_users is empty",
 		},
 		{
+			name:   "deny-only, anonymous viewer",
+			denied: []string{bob},
+			viewer: "",
+			want:   false,
+			why:    "ADR-049: a non-empty deny list can't prove an anonymous visitor isn't the denied player",
+		},
+		{
+			name:   "no deny list at all, anonymous viewer",
+			viewer: "",
+			want:   true,
+			why:    "an absent deny list has nothing to exclude anonymous from",
+		},
+		{
 			name:    "allowlist, viewer on it",
 			allowed: []string{alice, bob},
 			viewer:  alice,

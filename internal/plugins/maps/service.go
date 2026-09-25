@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
+	"log/slog"
 	"regexp"
 	"time"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 	"github.com/keyxmakerx/chronicle/internal/concurrency"
+	"github.com/keyxmakerx/chronicle/internal/permissions"
 )
 
 // iconPattern validates FontAwesome icon class names to prevent XSS injection
@@ -48,10 +50,24 @@ type MapService interface {
 	GetMarker(ctx context.Context, id string) (*Marker, error)
 	UpdateMarker(ctx context.Context, id string, input UpdateMarkerInput) error
 	DeleteMarker(ctx context.Context, id string, expectedUpdatedAt *time.Time) error
-	ListMarkers(ctx context.Context, mapID string, role int, userID string) ([]Marker, error)
+	// ListMarkers takes campaignID so non-owner results can be narrowed by
+	// EntityVisibilityGate: the marker's own visibility is repo-filtered, but
+	// a linked entity's visibility is a separate check the caller must supply.
+	ListMarkers(ctx context.Context, campaignID, mapID string, role int, userID string) ([]Marker, error)
 
 	// Wiring.
 	SetEventPublisher(pub MapEventPublisher)
+}
+
+// EntityVisibilityGate resolves which of a set of entity IDs a viewer (role +
+// userID) may see, applying the entities plugin's own canonical visibility
+// policy (default is_private, custom per-subject grants, tag grants). Wraps
+// entities.EntityService.FilterViewableEntityIDs — the same seam armory,
+// media, npcs, sessions and the relations widget use — so a marker naming a
+// dm_only/private entity never leaks that entity's name/icon to a viewer who
+// could not otherwise see it.
+type EntityVisibilityGate interface {
+	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
 
 // mapService is the default MapService implementation.
@@ -59,6 +75,7 @@ type mapService struct {
 	repo           MapRepository
 	events         MapEventPublisher
 	bindingCleaner BindingCleaner
+	entityGate     EntityVisibilityGate
 }
 
 // BindingCleaner sweeps a deleted instance's widget bindings. Implemented by
@@ -77,6 +94,14 @@ func NewMapService(repo MapRepository) MapService {
 // startup). Reached via a type assertion in routes.go so the MapService
 // interface stays unchanged.
 func (s *mapService) SetBindingCleaner(c BindingCleaner) { s.bindingCleaner = c }
+
+// SetEntityVisibilityGate injects the entity-visibility check used by
+// ListMarkers (wired post-construction, like SetBindingCleaner, since
+// entityService and mapsService are constructed in each other's dependency
+// order in routes.go). Nil is a valid — if unwired — value: ListMarkers
+// fails closed and blanks every entity-linked marker's name/icon rather than
+// risk showing one nothing verified as viewable.
+func (s *mapService) SetEntityVisibilityGate(g EntityVisibilityGate) { s.entityGate = g }
 
 // SetEventPublisher sets the event publisher for real-time marker sync.
 func (s *mapService) SetEventPublisher(pub MapEventPublisher) {
@@ -345,11 +370,66 @@ func (s *mapService) DeleteMarker(ctx context.Context, id string, expectedUpdate
 	return nil
 }
 
-// ListMarkers returns all markers for a map, filtered by role and user.
-func (s *mapService) ListMarkers(ctx context.Context, mapID string, role int, userID string) ([]Marker, error) {
+// ListMarkers returns all markers for a map, filtered by role and user. The
+// repo already drops markers the viewer's own visibility/visibility_rules
+// exclude; this layer additionally blanks EntityName/EntityIcon on any
+// remaining marker whose linked entity the viewer isn't separately permitted
+// to see, so an 'everyone' marker can never name a private entity.
+func (s *mapService) ListMarkers(ctx context.Context, campaignID, mapID string, role int, userID string) ([]Marker, error) {
 	markers, err := s.repo.ListMarkers(ctx, mapID, role, userID)
 	if err != nil {
 		return nil, fmt.Errorf("list markers: %w", err)
+	}
+
+	// Owners already see every marker unfiltered at the repo layer; the
+	// entity link they see is the entity link that exists, same as the DM
+	// view everywhere else in the app.
+	if permissions.CanSeeDmOnly(role) {
+		return markers, nil
+	}
+
+	entityIDs := make([]string, 0, len(markers))
+	seen := make(map[string]bool, len(markers))
+	for _, mk := range markers {
+		if mk.EntityID == nil || *mk.EntityID == "" || seen[*mk.EntityID] {
+			continue
+		}
+		seen[*mk.EntityID] = true
+		entityIDs = append(entityIDs, *mk.EntityID)
+	}
+	if len(entityIDs) == 0 {
+		return markers, nil
+	}
+
+	var viewable map[string]bool
+	if s.entityGate == nil {
+		// Misconfiguration, not a policy outcome: fail closed exactly like
+		// media's checkMediaAccess does when its own gate is unwired.
+		slog.Error("maps: entity visibility gate not configured; blanking all linked entity names",
+			slog.String("campaign_id", campaignID), slog.String("map_id", mapID))
+		viewable = map[string]bool{}
+	} else {
+		viewable, err = s.entityGate.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, userID)
+		if err != nil {
+			return nil, fmt.Errorf("filter viewable marker entities: %w", err)
+		}
+	}
+
+	for i := range markers {
+		mk := &markers[i]
+		if mk.EntityID == nil || *mk.EntityID == "" {
+			continue
+		}
+		if !viewable[*mk.EntityID] {
+			// Blank the ID too, not just the name/icon: every consumer of
+			// this struct (page HTML, the web JSON APIs, the sync API)
+			// serializes EntityID verbatim, and a bare ID still tells the
+			// viewer a specific hidden entity exists — the existence leak
+			// ADR-055 rule 3 forbids, not just the name leak.
+			mk.EntityID = nil
+			mk.EntityName = ""
+			mk.EntityIcon = ""
+		}
 	}
 	return markers, nil
 }

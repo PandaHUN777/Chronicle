@@ -199,13 +199,20 @@ func (h *Hub) Run() {
 // same as the HTTP list path.
 //
 // Mirrors maps.VisibilityRules' SQL predicate (ListMarkers, ListDrawings): an
-// explicit deny always excludes; a non-empty AllowedUsers is a strict
-// allowlist; an empty (or absent) rule set means "everyone". Deliberately
-// duplicated rather than imported from maps, since this package is generic
-// transport infrastructure. Exported so the duplication can be pinned:
-// internal/app/map_audience_parity_test.go runs one table of cases through
-// this and through maps.VisibilityRules.Allows, asserting they agree.
+// explicit deny always excludes (and, per permissions.DeniesAnonymous /
+// ADR-049, so does a non-empty deny list against an anonymous userID); a
+// non-empty AllowedUsers is a strict allowlist; an empty (or absent) rule set
+// means "everyone". List-membership logic is deliberately duplicated rather
+// than imported from maps, since this package is generic transport
+// infrastructure — but the anonymous-deny rule is shared via
+// permissions.DeniesAnonymous so the two can't drift apart on that point.
+// Exported so the duplication can be pinned: internal/app/map_audience_parity_test.go
+// runs one table of cases through this and through maps.VisibilityRules.Allows,
+// asserting they agree.
 func (m *Message) AudienceAllows(userID string) bool {
+	if permissions.DeniesAnonymous(m.DeniedUsers, userID) {
+		return false
+	}
 	for _, id := range m.DeniedUsers {
 		if id == userID {
 			return false

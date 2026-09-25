@@ -38,6 +38,7 @@ func (f *fakeAuthService) ValidateSession(ctx context.Context, token string) (*a
 type fakeCampaignService struct {
 	campaigns.CampaignService
 	getMemberFn func(ctx context.Context, campaignID, userID string) (*campaigns.CampaignMember, error)
+	getByIDFn   func(ctx context.Context, id string) (*campaigns.Campaign, error)
 }
 
 func (f *fakeCampaignService) GetMember(ctx context.Context, campaignID, userID string) (*campaigns.CampaignMember, error) {
@@ -45,6 +46,13 @@ func (f *fakeCampaignService) GetMember(ctx context.Context, campaignID, userID 
 		return nil, stderrors.New("no membership")
 	}
 	return f.getMemberFn(ctx, campaignID, userID)
+}
+
+func (f *fakeCampaignService) GetByID(ctx context.Context, id string) (*campaigns.Campaign, error) {
+	if f.getByIDFn == nil {
+		return nil, stderrors.New("no campaign")
+	}
+	return f.getByIDFn(ctx, id)
 }
 
 // --- Fixtures ---

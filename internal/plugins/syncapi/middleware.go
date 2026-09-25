@@ -304,9 +304,16 @@ func RequirePermission(perm APIKeyPermission) echo.MiddlewareFunc {
 }
 
 // RequireCampaignMatch returns middleware that verifies the API key's campaign
-// matches the :id parameter in the URL. Prevents using a key scoped to one
-// campaign to access another.
-func RequireCampaignMatch() echo.MiddlewareFunc {
+// matches the :id parameter in the URL, and blocks state-changing methods
+// (POST/PUT/PATCH/DELETE) against an archived campaign. Bearer-key requests
+// never pass through campaigns.RequireCampaignAccess (they carry no session,
+// so that web middleware never runs), so this is the sync API's one
+// group-level place to enforce the same "archived is read-only" rule the web
+// app enforces by default — every route mounted on the /api/v1/campaigns/:id
+// group (including the parallel v1Multipart media-upload group, which also
+// calls this) inherits it. Prevents using a key scoped to one campaign to
+// access another.
+func RequireCampaignMatch(campaignSvc campaigns.CampaignService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			key := GetAPIKey(c)
@@ -317,6 +324,18 @@ func RequireCampaignMatch() echo.MiddlewareFunc {
 			if campaignID != key.CampaignID {
 				return apperror.NewForbidden("api key not authorized for this campaign")
 			}
+
+			switch c.Request().Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				campaign, err := campaignSvc.GetByID(c.Request().Context(), campaignID)
+				if err != nil {
+					return err
+				}
+				if campaign.IsArchived() {
+					return apperror.NewForbidden("campaign is archived and read-only")
+				}
+			}
+
 			return next(c)
 		}
 	}
@@ -561,6 +580,69 @@ func RequireSyncAPIAddon(addonChecker AddonChecker) echo.MiddlewareFunc {
 			}
 			return next(c)
 		}
+	}
+}
+
+// RequireKeyOwnerStillOwner enforces that a stored Bearer key never outlives
+// its creator's Owner access: once the creator (key.UserID) is no longer an
+// Owner of the key's campaign — demoted or removed — every request on this
+// key is refused with a clear, structured error instead of continuing at
+// Owner-level access indefinitely.
+//
+// Skips synthetic session identities (ID == synthKeySessionID): those
+// already resolve against the caller's LIVE membership role on every
+// request via RequireAuthOrAPIKey, so there is nothing to decouple.
+//
+// Mounted right after RequireAuthOrAPIKey, ahead of the sync-api addon gate
+// and the rate limiter — the same placement reasoning as RequireSyncAPIAddon:
+// a dead key should not spend rate-limit budget being refused, and "this
+// key's creator lost access" is the more fundamental reason to report first.
+func RequireKeyOwnerStillOwner(campaignSvc campaigns.CampaignService, syncSvc SyncAPIService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			key := GetAPIKey(c)
+			if key == nil {
+				return apperror.NewUnauthorized("api key required")
+			}
+			if key.ID == synthKeySessionID {
+				return next(c)
+			}
+
+			member, err := campaignSvc.GetMember(c.Request().Context(), key.CampaignID, key.UserID)
+			if err == nil && member.Role >= campaigns.RoleOwner {
+				return next(c)
+			}
+
+			reason := "owner_demoted"
+			if err != nil {
+				reason = "owner_removed"
+			}
+			if shouldEmitDegradeSignal(key.ID) {
+				keyID, campaignID := key.ID, key.CampaignID
+				_ = syncSvc.LogSecurityEvent(c.Request().Context(), &SecurityEvent{
+					EventType:  EventKeyOwnerDegraded,
+					APIKeyID:   &keyID,
+					CampaignID: &campaignID,
+					IPAddress:  c.RealIP(),
+					UserAgent:  strPtr(c.Request().UserAgent()),
+					Details:    map[string]any{"reason": reason, "key_user_id": key.UserID},
+				})
+			}
+			return keyOwnerLostAccessError()
+		}
+	}
+}
+
+// keyOwnerLostAccessError is the single response shape for "this key's
+// creator is no longer a campaign Owner". Shared by the REST middleware
+// above and the WebSocket refusal (service.go AuthenticateKeyForWS) so a
+// client sees one condition, not two — same pattern as syncAPIDisabledError.
+func keyOwnerLostAccessError() *apperror.AppError {
+	return &apperror.AppError{
+		Code: http.StatusForbidden,
+		Type: "key_owner_lost_access",
+		Message: "this API key's creator is no longer a campaign owner; " +
+			"a current campaign owner must issue a new key",
 	}
 }
 

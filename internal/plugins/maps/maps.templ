@@ -530,7 +530,9 @@ templ MapEditorBody(cc *campaigns.CampaignContext, data MapViewData, mapContaine
 				document.getElementById('mk-icon').value = mk.icon || 'fa-map-pin';
 				document.getElementById('mk-color').value = mk.color || '#3b82f6';
 				document.getElementById('mk-visibility').value = mk.visibility || 'everyone';
-				document.getElementById('mk-entity-id').value = mk.entity_id || '';
+				var entityInput = document.getElementById('mk-entity-id');
+				entityInput.value = mk.entity_id || '';
+				entityInput.dataset.original = entityInput.value;
 
 				document.getElementById('mk-modal-title').textContent = 'Edit Marker';
 				document.getElementById('mk-submit-icon').className = 'fa-solid fa-check mr-1';
@@ -570,16 +572,23 @@ templ MapEditorBody(cc *campaigns.CampaignContext, data MapViewData, mapContaine
 					visibility: fd.get('visibility') || 'everyone',
 				};
 				// Send an explicit null when the operator EMPTIED a field.
-				// Under the sweep-R4 contract null clears and absent
+				// Under the partial-update contract null clears and absent
 				// preserves, so omitting an emptied description or entity
 				// link would silently bring the old value back. Everything
 				// the form does not own — pin_category, visibility_rules and
 				// the Foundry pairing key foundry_id — stays absent, which
 				// now preserves it instead of erasing it.
 				body.description = fd.get('description') || null;
-				body.entity_id = fd.get('entity_id') || null;
 
 				var markerID = fd.get('marker_id');
+				// An edit sends the entity link only when it changed: a link
+				// to a page this viewer can't see arrives blank, and echoing
+				// that blank back as null would unlink it.
+				var entityVal = fd.get('entity_id') || '';
+				var entityOriginal = document.getElementById('mk-entity-id').dataset.original || '';
+				if (!markerID || entityVal !== entityOriginal) {
+					body.entity_id = entityVal || null;
+				}
 				var url, method;
 				if (markerID) {
 					url = '/campaigns/' + campaignID + '/maps/' + mapID + '/markers/' + markerID;

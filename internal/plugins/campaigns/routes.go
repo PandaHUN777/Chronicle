@@ -36,10 +36,21 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	// Sidebar drill-down for public visitors (clicking categories in sidebar).
 	pub.GET("/sidebar/drill/:slug", h.SidebarDrill, RequireViewAccess())
 
-	// Authenticated campaign-scoped routes require membership.
+	// Authenticated campaign-scoped routes require membership. Archived is
+	// read-only by default here (RequireCampaignAccess blocks POST/PUT/
+	// PATCH/DELETE) — cgArchived below is the short, explicit exception list.
 	cg := e.Group("/campaigns/:id",
 		auth.RequireAuth(authSvc),
 		RequireCampaignAccess(svc),
+	)
+
+	// Writes that must keep working on an archived campaign, so an owner is
+	// never locked out of undoing the archive, removing the campaign or
+	// switching the display mode. Everything else waits for unarchive first.
+	// TestArchivedExceptionList pins this list.
+	cgArchived := e.Group("/campaigns/:id",
+		auth.RequireAuth(authSvc),
+		RequireCampaignAccessEvenIfArchived(svc),
 	)
 
 	// All members.
@@ -51,7 +62,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	// Owner-only routes.
 	cg.GET("/edit", h.EditForm, RequireRole(RoleOwner))
 	cg.PUT("", h.Update, RequireRole(RoleOwner))
-	cg.DELETE("", h.Delete, RequireRole(RoleOwner))
+	// Deleting must still work once archived — an owner cleaning out old
+	// campaigns shouldn't have to unarchive one first.
+	cgArchived.DELETE("", h.Delete, RequireRole(RoleOwner))
 	cg.GET("/settings", h.Settings, RequireRole(RoleOwner))
 	// /ai-export/generate is registered by ai_workspace.RegisterOwnerRoutes
 	// against this same campaign group.
@@ -106,8 +119,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	cg.GET("/dm-grants", h.GetDmGrantsAPI, RequireRole(RoleOwner))
 	cg.PUT("/dm-grants", h.UpdateDmGrantsAPI, RequireRole(RoleOwner))
 
-	// "View as player" display toggle (Owner only).
-	cg.POST("/toggle-view-mode", h.ToggleViewAsPlayer, RequireRole(RoleOwner))
+	// "View as player" display toggle (Owner only). It only flips a display
+	// cookie, so it stays usable on an archived campaign.
+	cgArchived.POST("/toggle-view-mode", h.ToggleViewAsPlayer, RequireRole(RoleOwner))
 
 	// Member management (Owner only).
 	cg.POST("/members", h.AddMember, RequireRole(RoleOwner))
@@ -120,9 +134,11 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	cg.POST("/transfer", h.Transfer, RequireRole(RoleOwner))
 	cg.POST("/cancel-transfer", h.CancelTransfer, RequireRole(RoleOwner))
 
-	// Archive (Owner only). Unarchive is exempt from RejectIfArchived.
+	// Archive (Owner only). Archiving only makes sense on an active campaign,
+	// so it keeps the default gate; unarchiving is the only way out of
+	// read-only, so it must work on an archived campaign.
 	cg.POST("/archive", h.ArchiveCampaign, RequireRole(RoleOwner))
-	cg.POST("/unarchive", h.UnarchiveCampaign, RequireRole(RoleOwner))
+	cgArchived.POST("/unarchive", h.UnarchiveCampaign, RequireRole(RoleOwner))
 
 	// Game system (Owner only).
 	cg.PUT("/system", h.UpdateSystemID, RequireRole(RoleOwner))

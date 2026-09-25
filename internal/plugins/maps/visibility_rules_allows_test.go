@@ -31,6 +31,18 @@ func TestVisibilityRulesAllows(t *testing.T) {
 			want:   true,
 		},
 		{
+			name:   "deny-only mode: anonymous (empty userID) is excluded too (ADR-049)",
+			rules:  &VisibilityRules{DeniedUsers: []string{"user-denied"}},
+			userID: "",
+			want:   false,
+		},
+		{
+			name:   "no deny list at all: anonymous still defaults to INCLUDED",
+			rules:  &VisibilityRules{},
+			userID: "",
+			want:   true,
+		},
+		{
 			name:   "allow-list mode: a listed user is included",
 			rules:  &VisibilityRules{AllowedUsers: []string{"user-allowed"}},
 			userID: "user-allowed",

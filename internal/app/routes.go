@@ -899,17 +899,16 @@ func (a *mapEventPublisherAdapter) PublishTokenEvent(eventType string, campaignI
 }
 
 // PublishTokenPositionEvent broadcasts a token position update via WebSocket.
-// The fast-drag path doesn't carry the source token, so it can't apply the
-// token's visibility the way PublishTokenEvent does.
-// TODO(keyxmakerx/Cordinator#168): carry the token's visibility on this path.
-func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID string, x, y float64) {
+// Gated on isHidden exactly like PublishTokenEvent, so a GM-only token's live
+// drag position never reaches a non-GM client.
+func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID string, x, y float64, isHidden bool) {
 	if campaignID == "" {
 		return
 	}
-	a.bus.Publish(ws.NewMessage(ws.MsgTokenMoved, campaignID, tokenID, map[string]float64{
+	a.publishWithAudience(ws.MsgTokenMoved, campaignID, tokenID, map[string]float64{
 		"x": x,
 		"y": y,
-	}))
+	}, isHidden, nil)
 }
 
 // PublishLayerEvent broadcasts a map layer event via WebSocket. Layers
@@ -1407,6 +1406,34 @@ func (a *entityMapVerifierAdapter) MapExistsInCampaign(ctx context.Context, mapI
 		return false, nil
 	}
 	return m.CampaignID == campaignID, nil
+}
+
+// entityMediaVerifierAdapter wraps media.MediaService to implement
+// entities.MediaCampaignVerifier. Used by entityService.UpdateImage /
+// UpdateCoverImage to confirm a media file exists AND lives in the
+// entity's own campaign before writing it into an image field — the
+// same cross-campaign IDOR that entityMapVerifierAdapter closes for
+// map_id.
+type entityMediaVerifierAdapter struct {
+	svc media.MediaService
+}
+
+// MediaExistsInCampaign returns true only when the media file exists AND
+// its CampaignID matches. Not-found is a clean false, not an error — the
+// caller only wants to know "is this a valid choice?".
+func (a *entityMediaVerifierAdapter) MediaExistsInCampaign(ctx context.Context, mediaID, campaignID string) (bool, error) {
+	f, err := a.svc.GetByID(ctx, mediaID)
+	if err != nil {
+		var ae *apperror.AppError
+		if errors.As(err, &ae) && ae.Code == http.StatusNotFound {
+			return false, nil
+		}
+		return false, err
+	}
+	if f == nil {
+		return false, nil
+	}
+	return f.CampaignID != nil && *f.CampaignID == campaignID, nil
 }
 
 // armoryBuyerAccessAdapter wraps entities.EntityService to implement
@@ -1974,6 +2001,10 @@ func (a *App) RegisterRoutes() {
 	pkgRepo := packages.NewPackageRepository(a.DB)
 	pkgGitHub := packages.NewGitHubClient()
 	pkgService := packages.NewPackageService(pkgRepo, pkgGitHub, a.Config.Upload.MediaPath, a.Config.BaseURL)
+	// Wire the pending-submission count into the admin dashboard. Without
+	// this, SetPendingCounter is never called and the dashboard's "Pending"
+	// stat reads 0 no matter how many submissions are actually queued.
+	adminHandler.SetPendingCounter(pkgService)
 	// Rescan system registry and re-register addons when a system package
 	// is installed or updated, so it appears in the campaign Settings >
 	// Game System dropdown immediately without requiring a server restart.
@@ -2272,6 +2303,12 @@ func (a *App) RegisterRoutes() {
 	// fails CLOSED if this line is ever dropped, which is the intended
 	// direction for a security control.
 	syncService.SetAddonGate(addonService)
+	// The key's creator must currently be a campaign Owner or the key stops
+	// working (REST via syncapi.RequireKeyOwnerStillOwner, WebSocket via
+	// AuthenticateKeyForWS). Both read membership through this checker; the
+	// WS path fails CLOSED if this line is ever dropped, same direction as
+	// the addon gate above.
+	syncService.SetMemberChecker(campaignService)
 	// One-time, idempotent startup backfill: enable sync-api for campaigns
 	// that already own API keys but have no recorded toggle state, so
 	// enforcing the toggle cannot cut off an integration that was working.
@@ -2399,6 +2436,15 @@ func (a *App) RegisterRoutes() {
 	// Services created unconditionally (sync API references drawingService).
 	mapsRepo := maps.NewMapRepository(a.DB)
 	mapsService := maps.NewMapService(mapsRepo)
+	// Reuses the same entityVisibilityFilterAdapter armory, media, npcs and
+	// sessions wire, so a marker naming a dm_only/private entity is narrowed
+	// by entities' one canonical visibility predicate. Type-asserted like
+	// SetBindingCleaner below so the MapService interface stays unchanged.
+	if g, ok := mapsService.(interface {
+		SetEntityVisibilityGate(maps.EntityVisibilityGate)
+	}); ok {
+		g.SetEntityVisibilityGate(&entityVisibilityFilterAdapter{svc: entityService})
+	}
 	mapsHandler := maps.NewHandler(mapsService)
 	drawingRepo := maps.NewDrawingRepository(a.DB)
 	drawingService := maps.NewDrawingService(drawingRepo)
@@ -2406,6 +2452,10 @@ func (a *App) RegisterRoutes() {
 	// entities, as a post-construction dependency (mapsService doesn't
 	// exist yet when entityService is constructed).
 	entityService.SetMapVerifier(&entityMapVerifierAdapter{svc: mapsService})
+	// Wire the media-existence + same-campaign check used by
+	// UpdateImage/UpdateCoverImage — mediaService already exists by this
+	// point (constructed earlier in this function).
+	entityService.SetMediaVerifier(&entityMediaVerifierAdapter{svc: mediaService})
 	if a.PluginHealth.IsHealthy("maps") {
 		maps.RegisterRoutes(e, mapsHandler, campaignService, authService, addonService)
 		drawingHandler := maps.NewDrawingHandler(mapsService, drawingService)

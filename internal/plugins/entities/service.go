@@ -161,6 +161,11 @@ type EntityService interface {
 	// AssignMap. Production startup wires an adapter over maps.MapsService.
 	SetMapVerifier(v MapCampaignVerifier)
 
+	// SetMediaVerifier wires the cross-campaign existence check used by
+	// UpdateImage/UpdateCoverImage. Production startup wires an adapter
+	// over media.MediaService.
+	SetMediaVerifier(v MediaCampaignVerifier)
+
 	// SetAddonChecker wires the per-campaign addon enablement check used to
 	// gate player-character sub-type creation. Production startup wires the
 	// addons service; when unset the gate fails open (used by tests).
@@ -257,6 +262,31 @@ func (noopMapVerifier) MapExistsInCampaign(context.Context, string, string) (boo
 	return false, nil
 }
 
+// MediaCampaignVerifier confirms a media file exists and belongs to a
+// given campaign. Implemented by an adapter over media.MediaService —
+// kept as a minimal interface here so the entities package doesn't
+// import the media plugin (same cycle-avoidance reasoning as
+// MapCampaignVerifier).
+//
+// Used by UpdateImage/UpdateCoverImage to enforce same-campaign
+// integrity before storing a media ID on the entity: without it, any
+// Scribe or Owner who learns a media UUID from another campaign could
+// bind it as their own entity's image, and the show page would then
+// mint a valid signed URL for a file they were never authorized to see.
+type MediaCampaignVerifier interface {
+	MediaExistsInCampaign(ctx context.Context, mediaID, campaignID string) (bool, error)
+}
+
+// noopMediaVerifier is the default — when no verifier is wired,
+// UpdateImage/UpdateCoverImage reject all non-empty media IDs to be
+// safe. Production startup wires a real verifier; tests can either
+// wire a stub or test the unset path.
+type noopMediaVerifier struct{}
+
+func (noopMediaVerifier) MediaExistsInCampaign(context.Context, string, string) (bool, error) {
+	return false, nil
+}
+
 // entityService implements EntityService.
 type entityService struct {
 	entities      EntityRepository
@@ -266,18 +296,20 @@ type entityService struct {
 	sidebarAdder  SidebarAutoAdder
 	blockRegistry *BlockRegistry
 	mapVerifier   MapCampaignVerifier
+	mediaVerifier MediaCampaignVerifier
 	addonChecker  AddonChecker
 }
 
 // NewEntityService creates a new entity service with the given dependencies.
 func NewEntityService(entities EntityRepository, types EntityTypeRepository, permissions EntityPermissionRepository) EntityService {
 	return &entityService{
-		entities:     entities,
-		types:        types,
-		permissions:  permissions,
-		events:       NoopEntityEventPublisher{},
-		sidebarAdder: NoopSidebarAutoAdder{},
-		mapVerifier:  noopMapVerifier{},
+		entities:      entities,
+		types:         types,
+		permissions:   permissions,
+		events:        NoopEntityEventPublisher{},
+		sidebarAdder:  NoopSidebarAutoAdder{},
+		mapVerifier:   noopMapVerifier{},
+		mediaVerifier: noopMediaVerifier{},
 	}
 }
 
@@ -289,6 +321,17 @@ func (s *entityService) SetMapVerifier(v MapCampaignVerifier) {
 		return
 	}
 	s.mapVerifier = v
+}
+
+// SetMediaVerifier wires the media-existence + same-campaign check used by
+// UpdateImage/UpdateCoverImage. Call from startup after the media service
+// is constructed.
+func (s *entityService) SetMediaVerifier(v MediaCampaignVerifier) {
+	if v == nil {
+		s.mediaVerifier = noopMediaVerifier{}
+		return
+	}
+	s.mediaVerifier = v
 }
 
 // SetAddonChecker wires the per-campaign addon enablement check. Call from
@@ -915,12 +958,19 @@ func (s *entityService) UpdateFieldOverrides(ctx context.Context, entityID strin
 }
 
 // UpdateImage sets or clears the entity's header image path.
-// Validates the path to prevent directory traversal attacks.
+// Validates the path to prevent directory traversal attacks, and — for a
+// non-empty value — that the media file belongs to the entity's own
+// campaign. Without that second check, path validation alone accepts any
+// well-formed media ID, including one from a campaign the caller can't
+// see; the show page would then sign a URL for it regardless.
 func (s *entityService) UpdateImage(ctx context.Context, entityID, imagePath string) error {
 	if imagePath != "" {
 		// Reject absolute paths and directory traversal attempts.
 		if strings.HasPrefix(imagePath, "/") || strings.Contains(imagePath, "..") {
 			return apperror.NewBadRequest("invalid image path")
+		}
+		if err := s.verifyMediaInCampaign(ctx, entityID, imagePath); err != nil {
+			return err
 		}
 	}
 	if err := s.entities.UpdateImage(ctx, entityID, imagePath); err != nil {
@@ -933,11 +983,16 @@ func (s *entityService) UpdateImage(ctx context.Context, entityID, imagePath str
 	return nil
 }
 
-// UpdateCoverImage updates the cover/banner image for an entity.
+// UpdateCoverImage updates the cover/banner image for an entity. Same
+// traversal and same-campaign checks as UpdateImage — the two fields are
+// an identical IDOR surface.
 func (s *entityService) UpdateCoverImage(ctx context.Context, entityID, coverImagePath string) error {
 	if coverImagePath != "" {
 		if strings.HasPrefix(coverImagePath, "/") || strings.Contains(coverImagePath, "..") {
 			return apperror.NewBadRequest("invalid cover image path")
+		}
+		if err := s.verifyMediaInCampaign(ctx, entityID, coverImagePath); err != nil {
+			return err
 		}
 	}
 	if err := s.entities.UpdateCoverImage(ctx, entityID, coverImagePath); err != nil {
@@ -947,6 +1002,27 @@ func (s *entityService) UpdateCoverImage(ctx context.Context, entityID, coverIma
 		slog.String("entity_id", entityID),
 		slog.String("cover_image_path", coverImagePath),
 	)
+	return nil
+}
+
+// verifyMediaInCampaign confirms mediaID both exists and belongs to
+// entityID's own campaign before it's allowed to be written into an image
+// field. Shared by UpdateImage/UpdateCoverImage so both fields enforce the
+// same cross-campaign boundary the same way.
+func (s *entityService) verifyMediaInCampaign(ctx context.Context, entityID, mediaID string) error {
+	entity, err := s.entities.FindByID(ctx, entityID)
+	if err != nil {
+		return err
+	}
+	exists, err := s.mediaVerifier.MediaExistsInCampaign(ctx, mediaID, entity.CampaignID)
+	if err != nil {
+		return apperror.NewInternal(fmt.Errorf("verifying media: %w", err))
+	}
+	if !exists {
+		// Same response for "doesn't exist" and "wrong campaign" — don't
+		// leak the existence of cross-campaign media.
+		return apperror.NewBadRequest("invalid image path")
+	}
 	return nil
 }
 

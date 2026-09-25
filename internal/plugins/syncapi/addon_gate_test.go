@@ -275,8 +275,10 @@ func TestSyncAPIAddon_FailsClosedOnCheckError(t *testing.T) {
 // --- WebSocket gate ---
 
 // wsGateService builds a service whose single stored key authenticates
-// rawKey, with the supplied gate attached (or none when gate is nil).
-func wsGateService(t *testing.T, gate SyncAPIAddonGate) (SyncAPIService, string) {
+// rawKey, with the supplied gate attached (or none when gate is nil). member
+// wires a MembershipChecker so AuthenticateKeyForWS's owner-still-owner check
+// can pass; nil leaves it unwired (fail-closed), matching the addon gate.
+func wsGateService(t *testing.T, gate SyncAPIAddonGate, member MembershipChecker) (SyncAPIService, string) {
 	t.Helper()
 	rawKey := "chron_wsgate0123456789012345678901234567890123456789012345678901"
 	hash, err := bcrypt.GenerateFromPassword([]byte(rawKey), bcrypt.DefaultCost)
@@ -298,7 +300,18 @@ func wsGateService(t *testing.T, gate SyncAPIAddonGate) (SyncAPIService, string)
 	if gate != nil {
 		svc.SetAddonGate(gate)
 	}
+	if member != nil {
+		svc.SetMemberChecker(member)
+	}
 	return svc, rawKey
+}
+
+// wsOwnerMember is a MembershipChecker that always reports the caller as an
+// Owner of "camp-ws" — the passing case for the owner-still-owner check.
+var wsOwnerMember = &fakeCampaignService{
+	getMemberFn: func(_ context.Context, campaignID, userID string) (*campaigns.CampaignMember, error) {
+		return &campaigns.CampaignMember{CampaignID: campaignID, UserID: userID, Role: campaigns.RoleOwner}, nil
+	},
 }
 
 // TestSyncAPIAddon_WebSocketRefusedWhenDisabled pins that the WS upgrade
@@ -308,7 +321,7 @@ func wsGateService(t *testing.T, gate SyncAPIAddonGate) (SyncAPIService, string)
 func TestSyncAPIAddon_WebSocketRefusedWhenDisabled(t *testing.T) {
 	gate := newFakeAddonGate()
 	gate.enabled["camp-ws"] = false
-	svc, rawKey := wsGateService(t, gate)
+	svc, rawKey := wsGateService(t, gate, wsOwnerMember)
 
 	_, _, _, err := svc.AuthenticateKeyForWS(context.Background(), rawKey)
 	if err == nil {
@@ -325,7 +338,7 @@ func TestSyncAPIAddon_WebSocketRefusedWhenDisabled(t *testing.T) {
 func TestSyncAPIAddon_WebSocketAllowedWhenEnabled(t *testing.T) {
 	gate := newFakeAddonGate()
 	gate.enabled["camp-ws"] = true
-	svc, rawKey := wsGateService(t, gate)
+	svc, rawKey := wsGateService(t, gate, wsOwnerMember)
 
 	campaignID, userID, role, err := svc.AuthenticateKeyForWS(context.Background(), rawKey)
 	if err != nil {
@@ -339,7 +352,7 @@ func TestSyncAPIAddon_WebSocketAllowedWhenEnabled(t *testing.T) {
 // TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired pins that an unwired gate
 // refuses rather than silently assuming permission.
 func TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired(t *testing.T) {
-	svc, rawKey := wsGateService(t, nil)
+	svc, rawKey := wsGateService(t, nil, wsOwnerMember)
 
 	if _, _, _, err := svc.AuthenticateKeyForWS(context.Background(), rawKey); err == nil {
 		t.Fatal("AuthenticateKeyForWS accepted a key with no addon gate wired")

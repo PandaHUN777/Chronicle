@@ -769,12 +769,147 @@ func TestListMarkers_Success(t *testing.T) {
 	}
 	svc := newTestMapService(repo)
 
-	markers, err := svc.ListMarkers(context.Background(), "map-1", 3, "owner-1")
+	markers, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 3, "owner-1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if len(markers) != 2 {
 		t.Errorf("expected 2 markers, got %d", len(markers))
+	}
+}
+
+// fakeEntityVisibilityGate is a stub EntityVisibilityGate for ListMarkers
+// tests: it reports exactly the entity IDs in `viewable` as visible and
+// records the arguments it was called with.
+type fakeEntityVisibilityGate struct {
+	viewable map[string]bool
+	err      error
+	called   bool
+	gotIDs   []string
+}
+
+func (g *fakeEntityVisibilityGate) FilterViewableEntityIDs(_ context.Context, _ string, entityIDs []string, _ int, _ string) (map[string]bool, error) {
+	g.called = true
+	g.gotIDs = entityIDs
+	if g.err != nil {
+		return nil, g.err
+	}
+	return g.viewable, nil
+}
+
+// TestListMarkers_BlanksEntityNameForUnviewableEntity pins ADR-055 rule 3
+// for maps: an 'everyone' marker linked to a dm_only/private entity must not
+// leak that entity's name/icon to a viewer who can't otherwise see it. The
+// marker's own visibility is already repo-filtered; this is the separate
+// linked-entity check.
+func TestListMarkers_BlanksEntityNameForUnviewableEntity(t *testing.T) {
+	repo := &mockMapRepo{
+		listMarkersFn: func(_ context.Context, _ string, _ int) ([]Marker, error) {
+			return []Marker{
+				{ID: "mk-1", Name: "Pin 1", EntityID: strPtrMK("ent-secret"), EntityName: "Secret NPC", EntityIcon: "fa-user"},
+			}, nil
+		},
+	}
+	gate := &fakeEntityVisibilityGate{viewable: map[string]bool{}} // entity not viewable
+	svc := newTestMapService(repo)
+	svc.(*mapService).entityGate = gate
+
+	markers, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 1 /* RolePlayer */, "player-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !gate.called {
+		t.Fatal("expected the entity visibility gate to be consulted")
+	}
+	if len(markers) != 1 {
+		t.Fatalf("expected 1 marker, got %d", len(markers))
+	}
+	if markers[0].EntityName != "" || markers[0].EntityIcon != "" {
+		t.Errorf("expected EntityName/EntityIcon blanked for an unviewable entity, got name=%q icon=%q",
+			markers[0].EntityName, markers[0].EntityIcon)
+	}
+	// The ID must be blanked too, not just the display fields: every
+	// consumer of this struct (page HTML, both web JSON APIs, the sync API)
+	// serializes EntityID verbatim, so a bare ID still tells the viewer a
+	// specific hidden entity exists (ADR-055 rule 3).
+	if markers[0].EntityID != nil {
+		t.Errorf("expected EntityID blanked for an unviewable entity, got %q", *markers[0].EntityID)
+	}
+}
+
+// TestListMarkers_KeepsEntityNameForViewableEntity is the positive
+// counterpart: a linked entity the viewer IS permitted to see keeps its
+// name/icon.
+func TestListMarkers_KeepsEntityNameForViewableEntity(t *testing.T) {
+	repo := &mockMapRepo{
+		listMarkersFn: func(_ context.Context, _ string, _ int) ([]Marker, error) {
+			return []Marker{
+				{ID: "mk-1", Name: "Pin 1", EntityID: strPtrMK("ent-public"), EntityName: "Town Hall", EntityIcon: "fa-building"},
+			}, nil
+		},
+	}
+	gate := &fakeEntityVisibilityGate{viewable: map[string]bool{"ent-public": true}}
+	svc := newTestMapService(repo)
+	svc.(*mapService).entityGate = gate
+
+	markers, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 1, "player-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if markers[0].EntityName != "Town Hall" || markers[0].EntityIcon != "fa-building" {
+		t.Errorf("expected viewable entity's name/icon preserved, got name=%q icon=%q",
+			markers[0].EntityName, markers[0].EntityIcon)
+	}
+}
+
+// TestListMarkers_OwnerBypassesEntityGate pins that owners (who already see
+// dm_only markers unfiltered) also see every linked entity's name, matching
+// entities' own visibilityFilter bypass for the same role.
+func TestListMarkers_OwnerBypassesEntityGate(t *testing.T) {
+	repo := &mockMapRepo{
+		listMarkersFn: func(_ context.Context, _ string, _ int) ([]Marker, error) {
+			return []Marker{
+				{ID: "mk-1", Name: "Pin 1", EntityID: strPtrMK("ent-secret"), EntityName: "Secret NPC", EntityIcon: "fa-user"},
+			}, nil
+		},
+	}
+	gate := &fakeEntityVisibilityGate{viewable: map[string]bool{}}
+	svc := newTestMapService(repo)
+	svc.(*mapService).entityGate = gate
+
+	markers, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 3 /* RoleOwner */, "owner-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if gate.called {
+		t.Error("expected the entity visibility gate NOT to be consulted for an owner")
+	}
+	if markers[0].EntityName != "Secret NPC" {
+		t.Errorf("expected owner to see the entity name unfiltered, got %q", markers[0].EntityName)
+	}
+}
+
+// TestListMarkers_FailsClosedWhenGateUnwired pins the fail-closed default:
+// an unconfigured (nil) EntityVisibilityGate must never be treated as
+// "everything viewable" — that would silently reopen the leak this service
+// exists to close if wiring is ever dropped.
+func TestListMarkers_FailsClosedWhenGateUnwired(t *testing.T) {
+	repo := &mockMapRepo{
+		listMarkersFn: func(_ context.Context, _ string, _ int) ([]Marker, error) {
+			return []Marker{
+				{ID: "mk-1", Name: "Pin 1", EntityID: strPtrMK("ent-x"), EntityName: "Some NPC", EntityIcon: "fa-user"},
+			}, nil
+		},
+	}
+	svc := newTestMapService(repo) // no SetEntityVisibilityGate call
+
+	markers, err := svc.ListMarkers(context.Background(), "camp-1", "map-1", 1, "player-1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if markers[0].EntityName != "" || markers[0].EntityIcon != "" {
+		t.Errorf("expected fail-closed blanking with no gate configured, got name=%q icon=%q",
+			markers[0].EntityName, markers[0].EntityIcon)
 	}
 }
 

@@ -187,13 +187,14 @@ func (r *drawingRepo) ListDrawings(ctx context.Context, mapID string, role int, 
 		     visibility_rules IS NULL
 		     OR (
 		       NOT JSON_CONTAINS(visibility_rules, JSON_QUOTE(?), '$.denied_users')
+		       AND (? != '' OR JSON_LENGTH(COALESCE(JSON_EXTRACT(visibility_rules, '$.denied_users'), '[]')) = 0)
 		       AND (
 		         JSON_LENGTH(COALESCE(JSON_EXTRACT(visibility_rules, '$.allowed_users'), '[]')) = 0
 		         OR JSON_CONTAINS(visibility_rules, JSON_QUOTE(?), '$.allowed_users')
 		       )
 		     )
 		   )
-		 ORDER BY created_at ASC`, mapID, userID, userID)
+		 ORDER BY created_at ASC`, mapID, userID, userID, userID)
 	if err != nil {
 		return nil, apperror.NewInternal(err)
 	}

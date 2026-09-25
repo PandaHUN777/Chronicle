@@ -449,21 +449,34 @@ func (r *mediaRepository) ListAllFilenames(ctx context.Context) (map[string]bool
 // would leak a dm_only page's cover art to any campaign member (ADR-058). A
 // cover match reports the same ref_type ('image') as a profile-image match
 // so the "where is this used" UI doesn't mislabel it as "(in content)".
+//
+// image_path/cover_image_path can hold either the bare media id or a
+// disk-path form ("2026/09/<id>.png" — written by an import or a restored
+// backup; the API never writes it, but nothing normalizes it away either).
+// Matching only bare-id equality makes a path-form reference invisible to
+// this check, so it falls through to the same role-blind membership grant
+// ADR-058 exists to close. The LIKE arm mirrors
+// layouts.normalizeMediaID's basename+strip-extension logic: match a
+// "/<id>.<anything>" suffix. mediaID is a server-generated UUID (no LIKE
+// wildcard characters), so it's safe unescaped.
 func (r *mediaRepository) FindReferences(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
 	query := `SELECT id, name, slug, 'image' AS ref_type
 	          FROM entities
-	          WHERE campaign_id = ? AND image_path = ?
+	          WHERE campaign_id = ? AND (image_path = ? OR image_path LIKE CONCAT('%/', ?, '.%'))
 	          UNION
 	          SELECT id, name, slug, 'image' AS ref_type
 	          FROM entities
-	          WHERE campaign_id = ? AND cover_image_path = ?
+	          WHERE campaign_id = ? AND (cover_image_path = ? OR cover_image_path LIKE CONCAT('%/', ?, '.%'))
 	          UNION
 	          SELECT id, name, slug, 'content' AS ref_type
 	          FROM entities
 	          WHERE campaign_id = ? AND entry_html LIKE CONCAT('%/media/', ?, '%')
 	          ORDER BY name`
 
-	rows, err := r.db.QueryContext(ctx, query, campaignID, mediaID, campaignID, mediaID, campaignID, mediaID)
+	rows, err := r.db.QueryContext(ctx, query,
+		campaignID, mediaID, mediaID,
+		campaignID, mediaID, mediaID,
+		campaignID, mediaID)
 	if err != nil {
 		return nil, fmt.Errorf("finding media references: %w", err)
 	}

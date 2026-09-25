@@ -223,6 +223,7 @@ func (r *mapRepo) ListMarkers(ctx context.Context, mapID string, role int, userI
 		    m.visibility_rules IS NULL
 		    OR (
 		      NOT JSON_CONTAINS(m.visibility_rules, JSON_QUOTE(?), '$.denied_users')
+		      AND (? != '' OR JSON_LENGTH(COALESCE(JSON_EXTRACT(m.visibility_rules, '$.denied_users'), '[]')) = 0)
 		      AND (
 		        JSON_LENGTH(COALESCE(JSON_EXTRACT(m.visibility_rules, '$.allowed_users'), '[]')) = 0
 		        OR JSON_CONTAINS(m.visibility_rules, JSON_QUOTE(?), '$.allowed_users')
@@ -230,7 +231,10 @@ func (r *mapRepo) ListMarkers(ctx context.Context, mapID string, role int, userI
 		    )
 		  )
 		ORDER BY m.name`
-	rows, err := r.db.QueryContext(ctx, query, mapID, userID, userID)
+	// The second userID param implements permissions.DeniesAnonymous (ADR-049)
+	// in SQL: an anonymous (empty) userID can't be proven clear of a non-empty
+	// denied_users list, so it's excluded whenever that list is non-empty.
+	rows, err := r.db.QueryContext(ctx, query, mapID, userID, userID, userID)
 	if err != nil {
 		return nil, err
 	}

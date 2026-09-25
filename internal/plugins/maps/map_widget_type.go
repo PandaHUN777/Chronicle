@@ -124,7 +124,7 @@ func (w *mapWidgetType) renderInner(ctx context.Context, rc widgetbindings.Block
 		// SECURITY: only render an in-campaign map (cross-campaign / dangling →
 		// fall through to the choose/empty branch rather than leak or 500).
 		if err == nil && m != nil && m.CampaignID == rc.CC.Campaign.ID {
-			markers, mErr := w.svc.ListMarkers(ctx, m.ID, rc.Role, rc.UserID)
+			markers, mErr := w.svc.ListMarkers(ctx, rc.CC.Campaign.ID, m.ID, rc.Role, rc.UserID)
 			if mErr != nil {
 				slog.Warn("map widget RenderBlock: failed to list markers",
 					slog.String("map_id", m.ID), slog.Any("error", mErr))

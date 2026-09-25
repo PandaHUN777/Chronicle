@@ -21,6 +21,7 @@ import (
 type mockDrawingRepo struct {
 	getDrawingFn    func(ctx context.Context, id string) (*Drawing, error)
 	updateDrawingFn func(ctx context.Context, d *Drawing) error
+	createTokenFn   func(ctx context.Context, t *Token) error
 	getTokenFn      func(ctx context.Context, id string) (*Token, error)
 	updateTokenFn   func(ctx context.Context, t *Token) error
 	getLayerFn      func(ctx context.Context, id string) (*Layer, error)
@@ -39,7 +40,12 @@ func (r *mockDrawingRepo) ListDrawings(context.Context, string, int, string) ([]
 	return nil, nil
 }
 
-func (r *mockDrawingRepo) CreateToken(context.Context, *Token) error { return nil }
+func (r *mockDrawingRepo) CreateToken(ctx context.Context, t *Token) error {
+	if r.createTokenFn != nil {
+		return r.createTokenFn(ctx, t)
+	}
+	return nil
+}
 func (r *mockDrawingRepo) GetToken(ctx context.Context, id string) (*Token, error) {
 	return r.getTokenFn(ctx, id)
 }

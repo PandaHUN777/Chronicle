@@ -131,3 +131,31 @@ func TestAnonymous_PublicCampaign_SeesNoRestrictedEventLink(t *testing.T) {
 		t.Errorf("owner saw %d event links; want all 3", len(owner))
 	}
 }
+
+// TestCanUserView_DeniedUsersExcludesAnonymous is the deny-list half of
+// ADR-049: an allow list already excludes an unnamed anonymous viewer by
+// its default-deny shape, but a deny list defaults to allowing anyone NOT
+// named — and an anonymous viewer's empty userID never matches a real
+// denied id, so without this rule they'd see what the denied player can't.
+func TestCanUserView_DeniedUsersExcludesAnonymous(t *testing.T) {
+	denyRules := `{"denied_users":["u-bryn"]}`
+
+	if canUserView("everyone", &denyRules, int(permissions.RoleNone), "") {
+		t.Error("anonymous viewer must be denied when the item carries a non-empty deny list")
+	}
+	// Control: an authenticated non-member (also not on the deny list) still sees it —
+	// the falsifiable invariant is "anonymous == authenticated non-member", not
+	// "anonymous sees strictly less".
+	if !canUserView("everyone", &denyRules, int(permissions.RoleNone), "u-someone-else") {
+		t.Error("an authenticated user not on the deny list must still see the item")
+	}
+	// Control: the actually-denied player is still denied.
+	if canUserView("everyone", &denyRules, int(permissions.RolePlayer), "u-bryn") {
+		t.Error("the specifically denied player must stay denied")
+	}
+	// Control: no deny list at all leaves anonymous unaffected.
+	noRules := `{}`
+	if !canUserView("everyone", &noRules, int(permissions.RoleNone), "") {
+		t.Error("an item with no visibility_rules must stay visible to anonymous")
+	}
+}

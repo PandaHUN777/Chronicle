@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
+	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -24,6 +25,12 @@ const keyPrefixLen = 8
 // SetAddonGate was never called. A distinct value so the boot/wiring fault is
 // distinguishable in logs from a genuine "addon is off" refusal.
 var errAddonGateUnwired = errors.New("syncapi: addon gate not wired (SetAddonGate was never called)")
+
+// errMemberCheckerUnwired is the internal error behind a WebSocket refusal
+// when SetMemberChecker was never called. A distinct value so the boot/wiring
+// fault is distinguishable in logs from a genuine "creator lost access"
+// refusal.
+var errMemberCheckerUnwired = errors.New("syncapi: membership checker not wired (SetMemberChecker was never called)")
 
 // SyncAPIService handles business logic for the sync API.
 type SyncAPIService interface {
@@ -46,6 +53,12 @@ type SyncAPIService interface {
 	// closed (see AuthenticateKeyForWS) and CreateKey cannot record that a
 	// campaign now uses the Sync API.
 	SetAddonGate(gate SyncAPIAddonGate)
+
+	// SetMemberChecker injects the campaign membership reader used to
+	// confirm a stored key's creator is still an Owner before granting a
+	// WebSocket connection Owner-level access. MUST be called during
+	// wiring: without it AuthenticateKeyForWS fails closed.
+	SetMemberChecker(mc MembershipChecker)
 
 	// Authentication.
 	AuthenticateKey(ctx context.Context, rawKey string) (*APIKey, error)
@@ -96,6 +109,15 @@ type SyncAPIAddonGate interface {
 	EnableForCampaignBySlug(ctx context.Context, campaignID string, addonSlug string, userID string) error
 }
 
+// MembershipChecker is the narrow campaigns.CampaignService surface
+// AuthenticateKeyForWS needs to confirm a stored key's creator is still a
+// campaign Owner — the WebSocket twin of RequireKeyOwnerStillOwner
+// (middleware.go), which runs the same check on the REST path.
+// campaigns.CampaignService satisfies this structurally.
+type MembershipChecker interface {
+	GetMember(ctx context.Context, campaignID, userID string) (*campaigns.CampaignMember, error)
+}
+
 // syncAPIService implements SyncAPIService.
 type syncAPIService struct {
 	repo SyncAPIRepository
@@ -106,6 +128,12 @@ type syncAPIService struct {
 	// wiring than this one; a nil gate is treated as a wiring fault, not as
 	// permission — see AuthenticateKeyForWS.
 	addonGate SyncAPIAddonGate
+
+	// memberChecker confirms a stored key's creator is still a campaign
+	// Owner before AuthenticateKeyForWS grants Owner-level WS access. Same
+	// injected-after-construction, fail-closed-when-nil treatment as
+	// addonGate.
+	memberChecker MembershipChecker
 }
 
 // NewSyncAPIService creates a new sync API service.
@@ -116,6 +144,11 @@ func NewSyncAPIService(repo SyncAPIRepository) SyncAPIService {
 // SetAddonGate injects the campaign addon state reader/writer.
 func (s *syncAPIService) SetAddonGate(gate SyncAPIAddonGate) {
 	s.addonGate = gate
+}
+
+// SetMemberChecker injects the campaign membership reader.
+func (s *syncAPIService) SetMemberChecker(mc MembershipChecker) {
+	s.memberChecker = mc
 }
 
 // --- Key Management ---
@@ -529,7 +562,9 @@ func (s *syncAPIService) GetCampaignStats(ctx context.Context, campaignID string
 // --- WebSocket Authentication ---
 
 // AuthenticateKeyForWS validates a raw API key and returns the campaign ID,
-// owner user ID, and a default owner role (3). This provides the WebSocket
+// owner user ID, and Owner role (3) — granted only after confirming
+// key.UserID is still an Owner of key.CampaignID (the WS twin of the REST
+// gate RequireKeyOwnerStillOwner). This provides the WebSocket
 // authenticator with the identity needed to register a client.
 func (s *syncAPIService) AuthenticateKeyForWS(ctx context.Context, rawKey string) (campaignID, userID string, role int, err error) {
 	key, err := s.AuthenticateKey(ctx, rawKey)
@@ -570,8 +605,25 @@ func (s *syncAPIService) AuthenticateKeyForWS(ctx context.Context, rawKey string
 		return "", "", 0, syncAPIDisabledError()
 	}
 
-	// API keys are always created by the campaign owner, so default to owner role.
-	return key.CampaignID, key.UserID, 3, nil
+	// A sync key must never carry more power than its creator currently has:
+	// confirm key.UserID is still an Owner of key.CampaignID before granting
+	// Owner-level WS access — the WebSocket twin of the REST gate
+	// (RequireKeyOwnerStillOwner). A nil checker is a wiring fault, not
+	// permission — same fail-closed treatment as a nil addon gate above.
+	if s.memberChecker == nil {
+		slog.Error("websocket api key auth refused: membership checker not wired",
+			slog.String("campaign_id", key.CampaignID),
+			slog.Int("key_id", key.ID),
+		)
+		return "", "", 0, apperror.NewInternal(errMemberCheckerUnwired)
+	}
+	member, memErr := s.memberChecker.GetMember(ctx, key.CampaignID, key.UserID)
+	if memErr != nil || member.Role < campaigns.RoleOwner {
+		return "", "", 0, keyOwnerLostAccessError()
+	}
+
+	// key.UserID is confirmed Owner, so the WS session gets Owner role.
+	return key.CampaignID, key.UserID, int(campaigns.RoleOwner), nil
 }
 
 // --- Calendar Date Beacon ---
