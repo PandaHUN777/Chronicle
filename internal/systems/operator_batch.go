@@ -1,6 +1,6 @@
-// Package systems — operator_batch.go implements the BATCH half of the operator
-// AI workspace: the request/approve/execute protocol the user described, modeled
-// on the campaign ai_workspace plugin's export→prompt→parse→commit loop.
+// Package systems — operator_batch.go implements the BATCH half of the
+// operator AI workspace: a request/approve/execute protocol mirroring the
+// campaign ai_workspace plugin's export→prompt→parse→commit loop.
 //
 // Flow (all read-only):
 //  1. The operator downloads the FUNCTIONS SPEC (FunctionsSpecJSON) — a compact,
@@ -13,11 +13,9 @@
 //  5. On approval, RunBatch executes only the read-only diagnostics, redacts the
 //     output, and returns ONE compact document the operator pastes back to the AI.
 //
-// "Quantized / less context heavy": the batch runs ONLY the named diagnostics
-// (each already targeted), prefixed by a one-line manifest and a byte-count
-// footer so the AI sees the payload size. The heavy full dump (system.health) is
-// gated behind an explicit `full_dump: true` in the request — the security gate
-// the user asked for, so a stray full dump can't leak a wall of context.
+// The batch runs only the named diagnostics, prefixed by a one-line manifest
+// and a byte-count footer. The heavy full dump (system.health) requires an
+// explicit `full_dump: true` in the request so it can't leak by accident.
 package systems
 
 import (
@@ -26,11 +24,6 @@ import (
 	"sort"
 	"strings"
 )
-
-// Catalog returns the named read-only diagnostic catalog (exported so the admin
-// AI-workspace handler can render the functions spec and execute batches without
-// reaching into unexported state).
-func Catalog() []Diagnostic { return diagnosticCatalog() }
 
 // batchSpecVersion is the schema version the AI targets. Bumped only on a
 // breaking change to the request shape; ParseBatch accepts a missing/zero v as 1.
@@ -102,11 +95,9 @@ const (
 func callKey(name, arg string) string { return name + "\x00" + arg }
 
 // sanitizeInline collapses a value to a single safe line for the result
-// markdown's manifest: newlines and backticks (which would split the bullet or
-// close the inline-code span the AI reads) become spaces, and it is
-// length-capped. Defends the integrity of the document the operator pastes back
-// (LOW-severity finding) — purely cosmetic, but keeps a crafted note/name from
-// corrupting the manifest.
+// markdown's manifest: newlines and backticks (which would split the bullet
+// or close the inline-code span the AI reads) become spaces, and it is
+// length-capped, so a crafted note/name can't corrupt the pasted-back document.
 func sanitizeInline(s string) string {
 	s = strings.Map(func(r rune) rune {
 		if r == '\n' || r == '\r' || r == '`' {
@@ -165,10 +156,8 @@ func buildFunctionsSpec() FunctionsSpec {
 	return FunctionsSpec{
 		V: batchSpecVersion,
 		// The purpose line is what an assistant reads to decide whether to
-		// reach for this tool at all, so it has to name BOTH axes. It named
-		// only the served-bytes one, and on 2026-08-11 that cost an operator
-		// three unanswered questions: a marker search can prove a feature
-		// shipped and can never say whether it renders on their page.
+		// reach for this tool, so it must name BOTH axes: a marker found in
+		// the build proves it SHIPPED, never that it RENDERS.
 		Purpose:  "Read-only Chronicle operator diagnostics, on two axes. WHICH CODE IS RUNNING: what the server is ACTUALLY serving (build identity, file hashes, install-vs-loaded state) — for deploy/serve mismatches. WHY THIS CAMPAIGN LOOKS LIKE THIS: the calendar.* / campaign.* functions read one campaign's own render decisions, calendar data, routes and placed blocks. A marker found in the build proves it SHIPPED, never that it RENDERS — for the second question use calendar.render / campaign.config.",
 		HowToUse: "Compose ONE request_format object naming the functions you want, then tell the operator to paste it into Admin ▸ Diagnostics ▸ AI Workspace. It is reviewed and approved by a human, executed read-only and secret-redacted, and the compact result pasted back to you. Heavy/full-dump functions require \"full_dump\": true — request that only when a targeted function won't do.",
 		Request: BatchRequest{
@@ -293,7 +282,7 @@ func RunBatch(plan *BatchPlan) string {
 	// One authoritative classification pass, independent of the plan's stored
 	// flags: re-derive runnability from the live catalog AND dedup identical
 	// (name,arg) work, so the manifest and the payload can never disagree and a
-	// duplicate call can't re-run an expensive sweep (the MED finding).
+	// duplicate call can't re-run an expensive sweep.
 	type item struct {
 		name, arg string
 		run       bool
