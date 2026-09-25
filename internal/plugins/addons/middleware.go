@@ -15,7 +15,9 @@ import (
 //
 // When the addon is disabled:
 //   - HTMX requests receive a 404 with a human-readable message
-//   - Browser requests redirect to the campaign dashboard
+//   - fetch()/JSON callers (widgets that parse every response as JSON, e.g.
+//     entity_notes.js) receive a 404 JSON body instead of an HTML redirect
+//   - Other browser requests redirect to the campaign dashboard
 //
 // Must be applied AFTER RequireCampaignAccess (needs campaign :id param).
 func RequireAddon(svc AddonService, slug string) echo.MiddlewareFunc {
@@ -37,6 +39,12 @@ func RequireAddon(svc AddonService, slug string) echo.MiddlewareFunc {
 
 			// Addon is disabled — return appropriate response.
 			if middleware.IsHTMX(c) {
+				return apperror.NewNotFound(slug + " addon is not enabled for this campaign")
+			}
+
+			// fetch()/JSON callers get a JSON refusal, not a redirect they'd
+			// follow and then fail to parse as JSON (issue #619).
+			if middleware.IsAPIRequest(c) {
 				return apperror.NewNotFound(slug + " addon is not enabled for this campaign")
 			}
 
