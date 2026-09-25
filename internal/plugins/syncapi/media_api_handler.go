@@ -282,10 +282,18 @@ func (h *MediaAPIHandler) UploadMedia(c echo.Context) error {
 
 // DeleteMedia deletes a media file from the campaign.
 // DELETE /api/v1/campaigns/:id/media/:mediaID
+//
+// Owner-gated to match the web route (media/routes.go: DELETE
+// /campaigns/:id/media/:mid requires RoleOwner — "The media browser
+// (browse/delete) is Owner-only" per that file's doc comment).
+// RequirePermission(PermWrite) alone also admits a Scribe, whether via a
+// Foundry key or the Scribe's own session cookie (this route group accepts
+// both), which the web UI refuses.
 func (h *MediaAPIHandler) DeleteMedia(c echo.Context) error {
 	mediaID := c.Param("mediaID")
 	campaignID := c.Param("id")
 	ctx := c.Request().Context()
+	role := h.resolveRole(c)
 
 	// Verify file belongs to this campaign.
 	file, err := h.mediaSvc.GetByID(ctx, mediaID)
@@ -294,6 +302,11 @@ func (h *MediaAPIHandler) DeleteMedia(c echo.Context) error {
 	}
 	if file.CampaignID == nil || *file.CampaignID != campaignID {
 		return apperror.NewNotFound("media file not found")
+	}
+
+	// Only campaign owners can delete media.
+	if role < int(campaigns.RoleOwner) {
+		return apperror.NewForbidden("only campaign owners can delete media")
 	}
 
 	if err := h.mediaSvc.Delete(ctx, mediaID); err != nil {

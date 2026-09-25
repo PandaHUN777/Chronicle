@@ -50,6 +50,19 @@ func (h *MapAPIHandler) resolveRole(c echo.Context) int {
 	return int(member.Role)
 }
 
+// requireOwnerRole enforces the same Owner-only floor internal/plugins/maps
+// applies to GM-only map operations (fog of war, layer structure, and
+// marker/drawing/token deletion) on the web: RequirePermission(PermWrite)
+// alone also admits a Scribe key, which the web route refuses for these
+// actions. Fails closed — an unresolved role (resolveRole's 0) is refused
+// same as any role below Owner.
+func (h *MapAPIHandler) requireOwnerRole(c echo.Context) error {
+	if campaigns.Role(h.resolveRole(c)) < campaigns.RoleOwner {
+		return apperror.NewForbidden("owner role required for this map operation")
+	}
+	return nil
+}
+
 // requireMapInCampaign validates that the map belongs to the campaign in the URL.
 func (h *MapAPIHandler) requireMapInCampaign(c echo.Context) (*maps.Map, error) {
 	campaignID := c.Param("id")
@@ -243,6 +256,9 @@ func (h *MapAPIHandler) UpdateDrawing(c echo.Context) error {
 // DELETE /api/v1/campaigns/:id/maps/:mapID/drawings/:drawingID
 func (h *MapAPIHandler) DeleteDrawing(c echo.Context) error {
 	if _, err := h.requireMapInCampaign(c); err != nil {
+		return err
+	}
+	if err := h.requireOwnerRole(c); err != nil {
 		return err
 	}
 	if err := h.drawingSvc.DeleteDrawing(c.Request().Context(), c.Param("drawingID"), c.Param("mapID"), maps.ParseExpectedUpdatedAt(c)); err != nil {
@@ -469,6 +485,9 @@ func (h *MapAPIHandler) DeleteToken(c echo.Context) error {
 	if _, err := h.requireMapInCampaign(c); err != nil {
 		return err
 	}
+	if err := h.requireOwnerRole(c); err != nil {
+		return err
+	}
 	if err := h.drawingSvc.DeleteToken(c.Request().Context(), c.Param("tokenID"), c.Param("mapID"), maps.ParseExpectedUpdatedAt(c)); err != nil {
 		return err
 	}
@@ -506,6 +525,9 @@ func (h *MapAPIHandler) ListLayers(c echo.Context) error {
 func (h *MapAPIHandler) CreateLayer(c echo.Context) error {
 	m, err := h.requireMapInCampaign(c)
 	if err != nil {
+		return err
+	}
+	if err := h.requireOwnerRole(c); err != nil {
 		return err
 	}
 
@@ -547,6 +569,9 @@ func (h *MapAPIHandler) UpdateLayer(c echo.Context) error {
 	if _, err := h.requireMapInCampaign(c); err != nil {
 		return err
 	}
+	if err := h.requireOwnerRole(c); err != nil {
+		return err
+	}
 	layerID := c.Param("layerID")
 
 	var req apiUpdateLayerRequest
@@ -574,6 +599,9 @@ func (h *MapAPIHandler) DeleteLayer(c echo.Context) error {
 	if _, err := h.requireMapInCampaign(c); err != nil {
 		return err
 	}
+	if err := h.requireOwnerRole(c); err != nil {
+		return err
+	}
 	if err := h.drawingSvc.DeleteLayer(c.Request().Context(), c.Param("layerID"), c.Param("mapID"), maps.ParseExpectedUpdatedAt(c)); err != nil {
 		return err
 	}
@@ -595,6 +623,9 @@ func (h *MapAPIHandler) ListFog(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := h.requireOwnerRole(c); err != nil {
+		return err
+	}
 	fog, err := h.drawingSvc.ListFog(c.Request().Context(), m.ID)
 	if err != nil {
 		return apperror.NewInternal(fmt.Errorf("failed to list fog"))
@@ -607,6 +638,9 @@ func (h *MapAPIHandler) ListFog(c echo.Context) error {
 func (h *MapAPIHandler) CreateFog(c echo.Context) error {
 	m, err := h.requireMapInCampaign(c)
 	if err != nil {
+		return err
+	}
+	if err := h.requireOwnerRole(c); err != nil {
 		return err
 	}
 
@@ -633,6 +667,9 @@ func (h *MapAPIHandler) DeleteFog(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := h.requireOwnerRole(c); err != nil {
+		return err
+	}
 	// Pass the campaign-verified map ID so the service rejects a fog id that
 	// belongs to another map (SEC-IDOR-4).
 	if err := h.drawingSvc.DeleteFog(c.Request().Context(), c.Param("fogID"), m.ID); err != nil {
@@ -646,6 +683,9 @@ func (h *MapAPIHandler) DeleteFog(c echo.Context) error {
 func (h *MapAPIHandler) ResetFog(c echo.Context) error {
 	m, err := h.requireMapInCampaign(c)
 	if err != nil {
+		return err
+	}
+	if err := h.requireOwnerRole(c); err != nil {
 		return err
 	}
 	if err := h.drawingSvc.ResetFog(c.Request().Context(), m.ID); err != nil {
@@ -803,6 +843,9 @@ func (h *MapAPIHandler) UpdateMarker(c echo.Context) error {
 // DELETE /api/v1/campaigns/:id/maps/:mapID/markers/:markerID
 func (h *MapAPIHandler) DeleteMarker(c echo.Context) error {
 	if _, err := h.requireMapInCampaign(c); err != nil {
+		return err
+	}
+	if err := h.requireOwnerRole(c); err != nil {
 		return err
 	}
 	if err := h.mapSvc.DeleteMarker(c.Request().Context(), c.Param("markerID"), maps.ParseExpectedUpdatedAt(c)); err != nil {

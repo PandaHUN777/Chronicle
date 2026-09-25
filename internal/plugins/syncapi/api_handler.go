@@ -700,9 +700,16 @@ func (h *APIHandler) ToggleEntityReveal(c echo.Context) error {
 
 // DeleteEntity deletes an entity from the campaign.
 // DELETE /api/v1/campaigns/:id/entities/:entityID
+//
+// Owner-gated to match the web route (entities/routes.go: DELETE
+// /entities/:eid requires RoleOwner — "Owner can delete" per that file's
+// header comment). RequirePermission(PermWrite) alone also admits a
+// Scribe, whether via a Foundry key or the Scribe's own session cookie
+// (this route group accepts both), which the web UI refuses.
 func (h *APIHandler) DeleteEntity(c echo.Context) error {
 	entityID := c.Param("entityID")
 	ctx := c.Request().Context()
+	role := h.resolveRole(c)
 
 	// Verify entity belongs to this campaign.
 	entity, err := h.entitySvc.GetByID(ctx, entityID)
@@ -711,6 +718,11 @@ func (h *APIHandler) DeleteEntity(c echo.Context) error {
 	}
 	if entity.CampaignID != c.Param("id") {
 		return apperror.NewNotFound("entity not found")
+	}
+
+	// Only campaign owners can delete entities.
+	if role < int(campaigns.RoleOwner) {
+		return apperror.NewForbidden("only campaign owners can delete entities")
 	}
 
 	if err := h.entitySvc.Delete(ctx, entityID); err != nil {
