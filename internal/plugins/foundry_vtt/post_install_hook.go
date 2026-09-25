@@ -12,30 +12,22 @@ import (
 )
 
 // PostInstallHook implements packages.PostInstallHook for
-// PackageTypeFoundryModule. After the packages plugin extracts
-// a foundry-module install, this hook:
+// PackageTypeFoundryModule. After the packages plugin extracts a
+// foundry-module install, this hook loads chronicle-package.json (or
+// applies defaults when absent, but fails loudly if present and
+// invalid) and rewrites the version field in the on-disk module.json
+// so the served manifest reflects the installed version, not the
+// upstream GitHub release's stale version string.
 //
-//  1. Loads chronicle-package.json (or applies hardcoded defaults
-//     when absent). Fails the install loudly if the descriptor is
-//     PRESENT but invalid — silent fallback would mask an upstream
-//     contract violation.
-//  2. Rewrites the version field in the on-disk module.json (at
-//     the descriptor-declared moduleJsonPath) so the served
-//     manifest reflects the installed version, not the upstream
-//     GitHub release's stale version string.
-//
-// The hook does NOT rewrite the manifest/download URL fields at
+// It does NOT rewrite the manifest/download URL fields at
 // install-time — those are rewritten per-request at serve-time by
-// BuildManifestForCampaign so the URL is per-campaign and per-token-
-// version. Baking them in here would defeat per-campaign URLs.
-//
-// Registration happens at boot in cmd/server/main.go via
-// packages.RegisterPostInstallHook (added in C-FMC-5a).
+// BuildManifestForCampaign so the URL stays per-campaign and
+// per-token-version. Registered at boot via
+// packages.RegisterPostInstallHook.
 type PostInstallHook struct{}
 
-// NewPostInstallHook constructs the hook. Stateless — kept as a
-// constructor for symmetry with the rest of the plugin and to make
-// future configuration easy without an API break.
+// NewPostInstallHook constructs the hook. Stateless; kept as a
+// constructor for symmetry with the rest of the plugin.
 func NewPostInstallHook() *PostInstallHook {
 	return &PostInstallHook{}
 }
@@ -46,28 +38,20 @@ func (h *PostInstallHook) PackageType() packages.PackageType {
 }
 
 // AfterInstall is called by the packages plugin after a foundry-
-// module package's zip is extracted and the DB row updated.
-//
-// Errors here fail the install + cause cleanup of destDir
-// (handled by the packages plugin's caller per the C-FMC-5a
-// fail-loud contract). The operator sees the failure immediately
-// instead of debugging "why is Foundry still showing v0.1.0 after
-// I installed v0.2.0" hours later.
+// module package's zip is extracted and the DB row updated. Errors
+// here fail the install and cause cleanup of destDir, so the operator
+// sees the failure immediately rather than a stale served version.
 func (h *PostInstallHook) AfterInstall(ctx context.Context, pkg *packages.Package, version, previousVersion, destDir string) error {
-	_ = previousVersion // The on-disk rewrite hook doesn't need the previous version; AutoPinHook (C-FMC-6) consumes it.
-	// 1. Load the descriptor. A missing descriptor is the normal
-	//    fallback path; a present-but-invalid descriptor is an
-	//    upstream packaging bug we fail loudly.
+	_ = previousVersion // not needed here; AutoPinHook consumes it.
+	// A missing descriptor is the normal fallback path; a
+	// present-but-invalid one is an upstream packaging bug we fail
+	// loudly on. `desc` is populated regardless — loadDescriptor
+	// returns defaultDescriptor() alongside errDescriptorNotFound.
 	desc, err := loadDescriptor(destDir)
 	if err != nil && !errors.Is(err, errDescriptorNotFound) {
-		// loadDescriptor already wrapped this as *Error.
 		return err
 	}
-	// `desc` is populated regardless — loadDescriptor returns
-	// defaultDescriptor() alongside errDescriptorNotFound.
 
-	// 2. Resolve the manifest path inside destDir per the
-	//    descriptor's moduleJsonPath.
 	manifestPath := filepath.Join(destDir, desc.Package.ModuleJSONPath)
 
 	if err := rewriteModuleJSONVersion(manifestPath, version); err != nil {
@@ -77,21 +61,14 @@ func (h *PostInstallHook) AfterInstall(ctx context.Context, pkg *packages.Packag
 }
 
 // rewriteModuleJSONVersion reads module.json, sets its "version"
-// field to the installed version string, and writes the file back.
-// Preserves every other field verbatim (uses a generic
-// map[string]any to round-trip unknown keys).
+// field to the installed version string, and writes the file back,
+// preserving every other field (round-trips via map[string]any).
+// The upstream GitHub release zip ships a module.json with a stale
+// version string baked in, so the served manifest would otherwise
+// disagree with the DB-tracked version.
 //
-// This is the fix for the operator's "Foundry shows v0.1.0 after
-// installing v0.2.0" bug — the upstream GitHub release zip ships
-// a module.json with a stale version string baked in; Chronicle
-// rewrites it on install so the served manifest agrees with the
-// DB-tracked version.
-//
-// File permissions preserved by writing back at 0644 (the
-// extraction step already created the file with similar perms).
-// File replacement uses os.WriteFile (not rename) — Foundry's
-// manifest read is held exclusively by the serve handler, no
-// concurrent reader to race with.
+// Uses os.WriteFile (not rename): no concurrent reader holds the
+// manifest, since the serve handler reads it, not this hook.
 func rewriteModuleJSONVersion(path, version string) error {
 	bytes, err := os.ReadFile(path)
 	if err != nil {

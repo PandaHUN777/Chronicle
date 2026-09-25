@@ -1,11 +1,7 @@
-// entity_partial_update_test.go — sweep R4, the service half of the
-// entities absent-means-preserve contract.
-//
-// Before this, entityService.Update assigned ParentID and TypeLabel
-// unguarded with "" meaning "clear". Every partial caller therefore
-// un-parented the entity and erased its descriptor whether it meant to or
-// not: syncapi's update body had no parent_id member at all, and the
-// AI-workspace commit-update path never sent one either.
+// entity_partial_update_test.go pins that entityService.Update treats an
+// absent ParentID/TypeLabel as "preserve", never as "" meaning "clear" — a
+// caller that omits a field (e.g. syncapi's update body, which has no
+// parent_id member) must not un-parent the entity or erase its descriptor.
 package entities
 
 import (

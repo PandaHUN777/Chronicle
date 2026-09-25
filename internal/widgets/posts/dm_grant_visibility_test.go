@@ -1,20 +1,12 @@
-// dm_grant_visibility_test.go — ADR-057 slice 2 (P1FIX dispatch, review
-// finding on the slice-1 commit).
+// dm_grant_visibility_test.go pins that ListPosts's entity-privacy gate
+// (h.entityGate.ResolveViewableEntity) uses cc.VisibilityRole(), not the raw
+// int(cc.MemberRole) — otherwise a Co-DM (Player + DM grant) gets 404'd
+// before the content branch's cc.IsDmGranted check can admit them (ADR-057).
 //
-// ListPosts's content branch already checks cc.IsDmGranted directly
-// (`includeDMOnly := cc.MemberRole >= campaigns.RoleScribe || cc.IsDmGranted`)
-// — a Co-DM (Player + DM grant) was always meant to see dm_only posts. But the
-// entity-privacy gate a few lines above it (h.entityGate.ResolveViewableEntity)
-// passed the raw int(cc.MemberRole) instead of the promoted
-// cc.VisibilityRole() — so the gate 404'd the Co-DM before the branch written
-// for them could run. Same one-function, two-role-derivations shape as
-// BacklinksFragment (ADR-057).
-//
-// postsDmGrantGate mirrors the real adapter's behavior (entities'
-// CheckEntityAccess via ResolveViewableEntity), i.e. the repository's
-// default-mode visibility rule: a dm_only (private) entity requires
-// role>=RoleScribe (2) — the threshold VisibilityRole()'s Owner promotion (3)
-// clears and int(cc.MemberRole) for a Player (1) does not.
+// postsDmGrantGate mirrors the real adapter's default-mode visibility rule: a
+// dm_only (private) entity requires role>=RoleScribe (2), a threshold
+// VisibilityRole()'s Owner promotion (3) clears and a raw Player role (1)
+// does not.
 package posts
 
 import (

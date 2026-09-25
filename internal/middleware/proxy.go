@@ -29,25 +29,21 @@ var DefaultTrustedProxies = []string{
 }
 
 // TrustedProxies configures Echo to trust reverse proxy headers
-// (X-Forwarded-For, X-Real-IP) from specific IP ranges, and returns an error if
-// any entry is unparseable.
-//
-// Chronicle runs behind a reverse proxy. Without this config, c.RealIP() would
-// return the proxy's address for every request, which collapses per-IP rate
-// limiting into one shared bucket and writes the same address into every audit
-// row. Rate limiting, audit logging and abuse detection all depend on it.
+// (X-Forwarded-For, X-Real-IP) from specific IP ranges, and returns an error
+// if any entry is unparseable. Without this, c.RealIP() returns the proxy's
+// address for every request, collapsing per-IP rate limiting into one shared
+// bucket and writing the same address into every audit row.
 //
 // Entries may be CIDR blocks ("10.0.0.0/8") or bare addresses ("100.82.251.84",
-// read as a single host). An unparseable entry is a startup ERROR and never a
-// silent skip: this list used to drop what it could not parse, so one typo in
-// the deployment environment would silently stop client IPs resolving and
-// nothing would say so.
+// read as a single host). An unparseable entry is a startup ERROR, never a
+// silent skip, so a typo in the deployment environment can't silently stop
+// client IPs resolving.
 //
-// SECURITY, and the reason a wide range is the wrong answer: once a peer is
-// trusted, the headers it sends decide what gets recorded. If the proxy APPENDS
-// to X-Forwarded-For rather than replacing it, a visitor can supply the leftmost
-// entry and choose the address in their own audit row. Trust the specific proxy,
-// and verify that it sets X-Real-IP or overwrites X-Forwarded-For.
+// SECURITY: once a peer is trusted, the headers it sends decide what gets
+// recorded. If the proxy APPENDS to X-Forwarded-For rather than replacing it,
+// a visitor can supply the leftmost entry and choose the address in their own
+// audit row — trust the specific proxy, and verify it sets X-Real-IP or
+// overwrites X-Forwarded-For.
 func TrustedProxies(e *echo.Echo, trustedCIDRs []string) error {
 	// Echo's IPExtractor determines how c.RealIP() resolves the client IP.
 	// We use a custom extractor that checks X-Forwarded-For and X-Real-IP

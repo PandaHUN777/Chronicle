@@ -9,10 +9,10 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 )
 
-// Scheduler-scoped notification business logic (C-SCHED-P2). The scheduler is
-// the only writer this slice: new proposals notify members; received responses
-// notify the proposer. The store itself is generic (T-B2) but no other feature
-// subscribes yet — no prefs, no digests, no per-user websockets (RC-12.5).
+// Scheduler-scoped notification business logic: new proposals notify
+// members; received responses notify the proposer. The store itself is
+// generic (see NotifyUsers) but no other feature subscribes yet — no prefs,
+// no digests, no per-user websockets.
 
 // notificationPayload is the small render context stored as JSON on each row.
 type notificationPayload struct {
@@ -36,12 +36,10 @@ func proposalLink(campaignID, proposalID string) string {
 }
 
 // NotifyUsers writes one notification per recipient with a caller-supplied type,
-// message, and in-app link.
-//
-// The generic entry point (C-CAL-RSVP-P1). The store has always been generic
-// (T-B2) — this is the method that lets a non-scheduler feature use it without
-// the scheduler growing a bespoke NotifyX per feature and without that feature
-// touching the repository. Callers own their own type constant.
+// message, and in-app link. The generic entry point: it lets a non-scheduler
+// feature use the notification store without the scheduler growing a bespoke
+// NotifyX per feature and without that feature touching the repository.
+// Callers own their own type constant.
 //
 // Empty recipient ids are skipped rather than rejected, so a caller can pass a
 // roster slice that may contain a blank without pre-filtering. A blank ntype is
@@ -135,8 +133,8 @@ func (s *sessionService) NotifyProposalResponse(ctx context.Context, campaignID,
 
 // NotifyProposalConfirmed writes a "session confirmed" notification to every
 // distinct member who responded to the proposal, linking to the newly-created
-// session (C-SCHED-P3). Reuses the P2 notification store — no new infra, no
-// time-based reminder jobs (none exist; adding one would be a stop-and-flag).
+// session. Reuses the same notification store — no new infra, no time-based
+// reminder jobs (none exist in this product).
 func (s *sessionService) NotifyProposalConfirmed(ctx context.Context, campaignID, proposalID, sessionID string) error {
 	p, _, err := s.repo.GetProposal(ctx, campaignID, proposalID)
 	if err != nil {

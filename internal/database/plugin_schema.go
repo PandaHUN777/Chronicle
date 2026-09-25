@@ -93,20 +93,19 @@ func RunPluginMigrations(db *sql.DB, plugins []PluginSchema) []PluginMigrationRe
 // MarkPluginMigrationApplied records `version` as already applied for `slug`
 // WITHOUT running its SQL, so the migration runner skips straight past it.
 //
-// This exists for exactly one situation: a migration whose SQL can never
-// succeed against the database in front of it, because it encodes an upgrade
-// step from a predecessor state this database was never in. `foundry_vtt`'s
-// migration 001 is the archetype — it RENAMEs a table the deleted
-// `foundry_modules` plugin used to create, so on a fresh install its first
-// statement fails and (since the runner returns on the first failure) every
-// later migration for that plugin is unreachable forever.
+// For a migration whose SQL can never succeed against the database in front
+// of it — it encodes an upgrade step from a predecessor state this database
+// was never in (e.g. `foundry_vtt` migration 001 RENAMEs a table only the
+// deleted `foundry_modules` plugin created, so a fresh install's first
+// statement fails and every later migration for that plugin becomes
+// unreachable).
 //
 // Marking a migration applied is a DATA fix to the tracking table, not a
-// schema change, which is why it lives in a Go reconciler rather than in a
-// migration (see CLAUDE.md → "Migration Safety Rules"). The caller owns the
-// judgement that the migration is genuinely inapplicable; a later idempotent
-// migration must still establish the schema the skipped one would have
-// produced, or the plugin ends up "healthy" with a missing table.
+// schema change, so it lives in a Go reconciler rather than a migration (see
+// CLAUDE.md → "Migration Safety Rules"). The caller owns the judgement that
+// the migration is genuinely inapplicable; a later idempotent migration must
+// still establish the schema the skipped one would have produced, or the
+// plugin ends up "healthy" with a missing table.
 //
 // Idempotent: INSERT IGNORE, and the tracking table is ensured first because
 // reconcilers run BEFORE RunPluginMigrations creates it.
@@ -314,8 +313,8 @@ func parsePluginMigrations(migrationsFS fs.FS) ([]pluginMigration, error) {
 // executed individually.
 // The migration is NOT atomic and cannot be — MariaDB commits every DDL
 // statement implicitly. Two mechanisms make a partial failure survivable
-// instead of terminal (C-SWEEP-R4 / data/plugin-migration-no-transaction); see
-// plugin_migration_safety.go for exactly what they do and do not promise:
+// instead of terminal; see plugin_migration_safety.go for exactly what
+// they do and do not promise:
 //
 //   - a pre-flight applicability check, so a migration that cannot complete
 //     aborts having executed nothing at all, and
@@ -410,39 +409,6 @@ func splitPluginStatements(sql string) []string {
 		}
 	}
 	return stmts
-}
-
-// LatestMigrationVersion returns the highest migration version number found
-// in a plugin's embedded migrations filesystem. Returns 0 if nil or empty.
-func LatestMigrationVersion(migrationsFS fs.FS) (int, error) {
-	if migrationsFS == nil {
-		return 0, nil
-	}
-
-	entries, err := fs.ReadDir(migrationsFS, ".")
-	if err != nil {
-		return 0, err
-	}
-
-	highest := 0
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		matches := pluginMigrationFileRe.FindStringSubmatch(entry.Name())
-		if len(matches) < 2 {
-			continue
-		}
-		v, err := strconv.Atoi(matches[1])
-		if err != nil {
-			continue
-		}
-		if v > highest {
-			highest = v
-		}
-	}
-
-	return highest, nil
 }
 
 // PluginMigrationsSubdir is the subdirectory within each plugin's embed.FS

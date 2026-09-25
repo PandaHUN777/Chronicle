@@ -1,23 +1,13 @@
-// dm_grant_visibility_test.go — ADR-057 slice 2 (P1FIX dispatch, review
-// finding on the slice-1 commit).
+// dm_grant_visibility_test.go pins that ListRelations's source-entity gate
+// (h.entityGate.ResolveViewableEntity) uses cc.VisibilityRole(), not the raw
+// int(cc.MemberRole) — otherwise a Co-DM (Player + DM grant) gets 404'd
+// before the "privileged" content branch's cc.IsDmGranted check can admit
+// them to the full, unfiltered relation list for a dm_only entity (ADR-057).
 //
-// ListRelations's "privileged" content branch already checks cc.IsDmGranted
-// directly (line 84: `cc.MemberRole == campaigns.RoleOwner || cc.IsSiteAdmin
-// || cc.IsDmGranted`) — so a Co-DM (Player + DM grant) was always meant to
-// see the full, unfiltered relation list for a dm_only entity. But the
-// SOURCE-entity gate a few lines above it (h.entityGate.ResolveViewableEntity)
-// passed the raw int(cc.MemberRole) instead of the promoted
-// cc.VisibilityRole() — so the gate 404'd the Co-DM before the privileged
-// branch it was written for could ever run. Exactly the BacklinksFragment
-// shape called out in ADR-057: one function, two role derivations that
-// disagree.
-//
-// relDmGrantGate mirrors the real adapter's behavior (entities.CheckEntityAccess
-// via ResolveViewableEntity), which in turn mirrors the repository's
-// default-mode visibility rule: a dm_only (private) source entity requires
-// role>=RoleScribe (2). That's the actual threshold VisibilityRole()'s Owner
-// promotion (3) must clear and int(cc.MemberRole) for a Player (1) does not
-// — so this test exercises the real threshold, not an arbitrary sentinel.
+// relDmGrantGate mirrors the real adapter's default-mode visibility rule: a
+// dm_only (private) source entity requires role>=RoleScribe (2), the actual
+// threshold VisibilityRole()'s Owner promotion (3) clears and a raw Player
+// role (1) does not.
 package relations
 
 import (

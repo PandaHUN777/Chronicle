@@ -170,11 +170,9 @@ func (h *Handler) ToggleCampaignAddon(c echo.Context) error {
 		return c.Redirect(http.StatusSeeOther, "/campaigns/"+cc.Campaign.ID+"/plugins")
 	}
 
-	// C-EXT-HUB Phase 1: toggles fired from the new top-level
-	// Extensions hub emit the `extensions-hub-refresh` event the hub
-	// container listens for. Same shape as the `plugins` branch above
-	// — chosen over a new endpoint to keep the addons store the
-	// single source of truth for per-campaign toggle state.
+	// Toggles from the Extensions hub emit `extensions-hub-refresh`, which the
+	// hub container listens for; same shape as the `plugins` branch above, to
+	// keep the addons store the single source of truth for toggle state.
 	if c.FormValue("redirect_to") == "extensions-hub" {
 		if middleware.IsHTMX(c) {
 			// On enable, if the addon exposes a settings page with outstanding

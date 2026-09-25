@@ -2,17 +2,14 @@
 // wall-clock times and absolute instants, plus helpers for projecting a
 // recurring weekly pattern onto a concrete calendar week in a viewer's zone.
 //
-// It is deliberately dependency-free (standard library only) and imports no
-// Chronicle plugin packages, so both the availability scheduler and the
-// real-calendar lane can share one converter instead of maintaining two
-// divergent DST implementations (see C-SCHED-AUDIT §A7).
+// Deliberately dependency-free (standard library only) and imports no
+// Chronicle plugin packages, so multiple callers can share one converter.
 //
-// The load-bearing rule (RC-12.5): a *recurring* availability block is stored
-// as a zone-local wall-clock (weekday + minute-of-local-midnight + IANA zone),
-// NEVER as a UTC instant. It only becomes an absolute instant when projected
+// The load-bearing rule: a *recurring* availability block is stored as a
+// zone-local wall-clock (weekday + minute-of-local-midnight + IANA zone),
+// never as a UTC instant. It only becomes an absolute instant when projected
 // onto a specific real-world date, because the UTC offset of "18:00 local"
-// depends on whether that date is inside daylight-saving time. Resolving the
-// offset against the real date is what makes the conversion DST-correct.
+// depends on whether that date is inside daylight-saving time.
 package timeutil
 
 import "time"
@@ -49,10 +46,9 @@ func IsValidLocation(name string) bool {
 }
 
 // WallClockInstant resolves a zone-local wall-clock — a civil date plus a
-// minute offset from local midnight — to an absolute instant. It is
-// DST-correct: time.Date computes the zone offset against the real (y, m, d),
-// so the same minuteOfDay maps to different absolute instants on either side
-// of a daylight-saving transition.
+// minute offset from local midnight — to an absolute instant. DST-correct:
+// time.Date computes the zone offset against the real (y, m, d), so the same
+// minuteOfDay maps to different absolute instants across a DST transition.
 //
 // minuteOfDay may be 0..MinutesPerDay (or beyond); time.Date normalizes it,
 // so MinutesPerDay correctly rolls to 00:00 of the following civil day —
@@ -118,28 +114,19 @@ func (d CivilDate) midnightUTC() time.Time {
 	return time.Date(d.Year, d.Month, d.Day, 0, 0, 0, 0, time.UTC)
 }
 
-// StartOfCivilDay returns the FIRST REAL INSTANT of civil date d in loc.
+// StartOfCivilDay returns the first real instant of civil date d in loc.
 //
-// THE DEFECT IT PREVENTS: `time.Date(y, m, d, 0, 0, 0, 0, loc)` is NOT the
-// start of the day in every zone. Where the DST jump lands ON midnight — the
-// clocks go 00:00 → 01:00, as they do in America/Havana (2026-03-08),
-// America/Santiago (2026-09-06) and Atlantic/Azores (2026-03-28) — local 00:00
-// does not exist, and Go normalises the nonexistent wall clock BACKWARDS to
-// 23:00 on the PREVIOUS day. Any caller that used the naive expression as a
-// day BOUNDARY therefore received a boundary at or BEFORE the instant it was
-// already holding.
+// `time.Date(y, m, d, 0, 0, 0, 0, loc)` is not the start of the day in every
+// zone: where a DST jump lands on midnight (e.g. 00:00 → 01:00), local 00:00
+// does not exist and Go normalises it backwards to 23:00 the previous day. A
+// caller using that naive expression as a day boundary can get a boundary at
+// or before the instant it already holds, which can make a day-splitting loop
+// non-terminating. Every "end of the local day" computation must come through
+// here instead.
 //
-// That is exactly how the availability overlay's splitToViewerDays became a
-// non-terminating ALLOCATING loop: its only advance was `cur = segEnd`, and
-// segEnd came back equal to cur. One authenticated GET with `?tz=America/Havana`
-// on the transition week took the whole self-hosted instance to OOM, and the
-// same thing fired by accident for any Cuban/Chilean/Azorean viewer whose
-// stored profile zone drove the projection. Every new "end of the local day"
-// computation must come through here.
-//
-// The returned instant is always ON d in loc, and is always the earliest such
-// instant, so it is a strictly-increasing function of the civil date — which is
-// the property a splitting loop needs to terminate.
+// The returned instant is always on d in loc, and is always the earliest such
+// instant, so it is a strictly-increasing function of the civil date — the
+// property a splitting loop needs to terminate.
 func StartOfCivilDay(loc *time.Location, d CivilDate) time.Time {
 	if loc == nil {
 		loc = time.UTC
@@ -148,14 +135,12 @@ func StartOfCivilDay(loc *time.Location, d CivilDate) time.Time {
 	if y, m, dd := naive.Date(); y == d.Year && m == d.Month && dd == d.Day {
 		return naive
 	}
-	// Local midnight does not exist on this date. `naive` normalised backwards
-	// into the previous local day, so the real start of d is the transition
-	// instant — the first instant whose LOCAL date is d. Zone transitions land
-	// on whole minutes, so stepping a minute at a time from the normalised
-	// instant finds it exactly; the largest jump in the IANA database is two
-	// hours, so this settles in <=120 steps. The 24h ceiling is an absolute
-	// bound, present so a future tzdata oddity degrades to a wrong-but-finite
-	// answer rather than to the unbounded loop this function exists to kill.
+	// Local midnight does not exist on this date; `naive` normalised backwards
+	// into the previous local day. Step a minute at a time from it to find
+	// the transition instant (the first instant whose local date is d); zone
+	// transitions land on whole minutes and the largest IANA jump is two
+	// hours, so this settles in <=120 steps. The 24h ceiling bounds a future
+	// tzdata oddity to a wrong-but-finite answer instead of an unbounded loop.
 	for i := 1; i <= 24*60; i++ {
 		t := naive.Add(time.Duration(i) * time.Minute)
 		if y, m, dd := t.Date(); y == d.Year && m == d.Month && dd == d.Day {

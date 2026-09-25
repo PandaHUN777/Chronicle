@@ -1,19 +1,10 @@
 package sessions
 
 // POST /campaigns/:id/availability/exceptions must MARK A WINDOW, not replace
-// the day.
-//
-// THE DEFECT: AddMyException inserted one row via repo.AddException. Exception
-// rows fully REPLACE the recurring pattern for their date (effectiveBlocks),
-// so that single row became the member's entire day. A member whose recurring
-// Tuesday was 09:00–23:00 and who posted "I'm ALSO free 07:00–08:00" ended up
-// available for one hour at 7am and busy every evening — fourteen hours gone
-// from the Director's overlay and from the derived best-window, with their own
-// grid still showing 09:00–23:00 so nothing on screen told them.
-//
-// The compose-the-day rule that prevents this already existed; it had been
-// applied to the RSVP-offer path and to the client-side editor, and never to
-// this endpoint, which is a documented Player+ route.
+// the day: exception rows fully replace the recurring pattern for their date
+// (effectiveBlocks), so AddMyException must compose the new window with the
+// existing day rather than inserting it as the day's only row, the same rule
+// already applied to the RSVP-offer path and the client-side editor.
 
 import (
 	"context"

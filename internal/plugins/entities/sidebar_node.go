@@ -167,11 +167,11 @@ func (r *sidebarNodeRepository) UpdateParent(ctx context.Context, id, campaignID
 	return nil
 }
 
-// ResequenceNodes writes sort_order = position for each id (0..N-1) in a single
-// transaction, mirroring the entities' ResequenceSiblings. Either every node in
-// the ordered set is renumbered or none is, so a partial failure can't leave the
-// sibling set with colliding orders that the (sort_order, name) render tiebreak
-// would silently revert (the #477 bug class, now closed for folder nodes too).
+// ResequenceNodes writes sort_order = position for each id (0..N-1) in a
+// single transaction, mirroring the entities' ResequenceSiblings. Either
+// every node in the ordered set is renumbered or none is, so a partial
+// failure can't leave the sibling set with colliding orders that the
+// (sort_order, name) render tiebreak would silently revert.
 func (r *sidebarNodeRepository) ResequenceNodes(ctx context.Context, campaignID string, orderedIDs []string) error {
 	if len(orderedIDs) == 0 {
 		return nil
@@ -208,17 +208,17 @@ func generateNodeID() string {
 }
 
 // sidebarTreeType resolves the entity type the sidebar tree advertises as
-// data-entity-type-id (read by sidebar_tree.js when it creates an empty folder,
-// i.e. a sidebar_nodes row). It prefers the drilled category's own type — the
-// sidebar URL's ?type= param — so the new node is scoped to the category and
-// reloads via ListByType(typeID) on the next refresh. A category listing rolls
-// up its sub-type entities (expandTypeIDsForListing), so results[0].EntityTypeID
-// may be a SUB-type; scoping a folder node to that sub-type made it invisible on
-// refresh and silently orphaned the dropped entities (the "creating a folder does
-// nothing" bug). The row/node fallbacks only apply when no category type is
-// supplied, so the attribute is never absent. This is a plain Go helper rather
-// than a templ conditional-attribute chain because templ (v0.3.x) does not fold
-// else-if branches for attributes — it emits each as an independent block plus a
+// data-entity-type-id (read by sidebar_tree.js when it creates an empty
+// folder, i.e. a sidebar_nodes row). It prefers the drilled category's own
+// type — the sidebar URL's ?type= param — so the new node is scoped to the
+// category and reloads via ListByType(typeID) on the next refresh. A
+// category listing rolls up its sub-type entities
+// (expandTypeIDsForListing), so results[0].EntityTypeID may be a SUB-type;
+// scoping a folder node to that sub-type would orphan it on refresh. The
+// row/node fallbacks only apply when no category type is supplied, so the
+// attribute is never absent. This is a plain Go helper rather than a templ
+// conditional-attribute chain because templ (v0.3.x) does not fold else-if
+// branches for attributes — it emits each as an independent block plus a
 // stray literal "else".
 func sidebarTreeType(typeID int, results []Entity, nodes []SidebarNode) int {
 	if typeID > 0 {

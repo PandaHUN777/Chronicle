@@ -1,6 +1,4 @@
-// extensions_hub_test.go — C-EXT-HUB Phase 1 tests.
-//
-// Covers:
+// extensions_hub_test.go covers the Extensions hub:
 //   - HasExtensionDashboard / HasExtensionEntitySetup slug tables
 //     (the capability lookup the addonListerAdapter calls).
 //   - ExtensionsHubFragment render: 1-element-array case, zero
@@ -54,7 +52,7 @@ func TestHasExtensionEntitySetup_KnownSlugs(t *testing.T) {
 	}{
 		{"calendar", true},
 		{"timeline", false}, // Phase 4 calendar-only this wave
-		{"maps", false},     // maps already has its own setup; not a Phase 4 target
+		{"maps", false},     // maps has its own setup card outside this mechanism
 		{"", false},
 	}
 	for _, c := range cases {
@@ -88,10 +86,9 @@ func TestExtensionsHubFragment_EmptyState(t *testing.T) {
 	}
 }
 
-// TestExtensionsHubFragment_SingleElementArray is the single-element-
-// array fixture the dispatch standing-pattern calls out — surfaces
-// any rendering branch that assumes len>1 (e.g. grid-cols collapse,
-// trailing-comma errors in JSON serialization).
+// TestExtensionsHubFragment_SingleElementArray covers the single-element-
+// array case, surfacing any rendering branch that assumes len>1 (e.g.
+// grid-cols collapse, trailing-comma errors in JSON serialization).
 func TestExtensionsHubFragment_SingleElementArray(t *testing.T) {
 	cc := &CampaignContext{Campaign: &Campaign{ID: "camp-1", Name: "Test"}}
 	addons := []PluginHubAddon{
@@ -117,10 +114,10 @@ func TestExtensionsHubFragment_SingleElementArray(t *testing.T) {
 	if !strings.Contains(html, `data-extension-enabled="true"`) {
 		t.Errorf("enabled-state attr missing for enabled card; got:\n%s", html)
 	}
-	// E1 (C-APPS-CAL-DASH-W1): calendar now has a DEDICATED dashboard page,
-	// so its "Open dashboard" affordance navigates to that page rather than
-	// HTMX-swapping the inline panel. (Apps without a dedicated page keep the
-	// inline-panel affordance — covered by ExtensionDashboardPageURL.)
+	// Calendar has a dedicated dashboard page, so its "Open dashboard"
+	// affordance navigates there instead of HTMX-swapping the inline panel.
+	// Apps without a dedicated page keep the inline-panel affordance
+	// (covered by ExtensionDashboardPageURL).
 	if !strings.Contains(html, `data-extension-dashboard-page`) {
 		t.Errorf("calendar should use the dedicated-page affordance; got:\n%s", html)
 	}

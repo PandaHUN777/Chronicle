@@ -1,10 +1,10 @@
-// repository.go — hand-written SQL for widget_bindings (C-WIDGET-BINDING-P1-SPINE).
+// Hand-written SQL for widget_bindings.
 //
-// SECURITY (precedent refinement #3): campaignID is pushed down to EVERY
-// signature so an unscoped read is unrepresentable — there is no method that
-// reads a binding without a campaign filter. MariaDB has no row-level-security
-// backstop, so this repository + the service are the only line of defense
-// against cross-campaign access.
+// SECURITY: campaignID is pushed down to every signature so an unscoped
+// read is unrepresentable — there is no method that reads a binding without
+// a campaign filter. MariaDB has no row-level-security backstop, so this
+// repository + the service are the only line of defense against
+// cross-campaign access.
 package widgetbindings
 
 import (

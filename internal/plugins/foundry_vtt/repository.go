@@ -6,19 +6,15 @@ import (
 	"time"
 )
 
-// Repository is the foundry_vtt plugin's data layer.
+// Repository is the foundry_vtt plugin's data layer. The per-campaign
+// token table is foundry_vtt_campaign_tokens; HMAC verification for
+// already-minted URLs keys off this plugin's "foundry-vtt:" domain
+// prefix, not the table name.
 //
-// As of C-FMC-5c the per-campaign token table is renamed from
-// foundry_module_campaign_tokens (under the deleted foundry_modules
-// plugin's namespace) to foundry_vtt_campaign_tokens. Existing token
-// rows are preserved by the rename; HMAC verification continues to
-// work for already-minted URLs because tokens use this plugin's
-// "foundry-vtt:" domain prefix, not the table name.
-//
-// CampaignsUsingVersion + CampaignsOlderThan are admin-UI queries that
-// list which campaigns are pinned to a given Foundry module version.
-// Used by the "campaigns using v0.1.5" expandable cards in the admin
-// /admin/packages page and by the "notify older campaigns" action.
+// CampaignsUsingVersion and CampaignsOlderThan are admin-UI queries
+// that list which campaigns are pinned to a given Foundry module
+// version, used by the "campaigns using v0.1.5" expandable cards on
+// /admin/packages and by the "notify older campaigns" action.
 type Repository interface {
 	GetCampaignToken(ctx context.Context, campaignID string) (*CampaignToken, error)
 	UpsertCampaignToken(ctx context.Context, t *CampaignToken) error
@@ -36,14 +32,12 @@ type Repository interface {
 	CampaignsOlderThan(ctx context.Context, version string, semverLess func(a, b string) bool) ([]CampaignUsage, error)
 
 	// CampaignsWithEmptyPin returns every campaign whose
-	// foundry_module_pin is NULL, missing from settings JSON, or "".
-	// These are the auto-tracking campaigns that silently follow
-	// whatever foundry-module version is currently installed.
-	//
-	// Added in C-FMC-6 for the auto-pin install hook and the one-time
-	// migration: both flows iterate these campaigns and explicit-pin
-	// them to a specific version, so future installs surface the
-	// version-spread to the admin instead of silently bumping.
+	// foundry_module_pin is NULL, missing from settings JSON, or "" —
+	// the auto-tracking campaigns that silently follow whatever
+	// foundry-module version is currently installed. Used by the
+	// auto-pin install hook and the one-time migration, which pin
+	// these campaigns explicitly so future installs surface the
+	// version spread to the admin instead of silently bumping.
 	CampaignsWithEmptyPin(ctx context.Context) ([]CampaignUsage, error)
 }
 
@@ -113,10 +107,8 @@ func (r *repository) BumpCampaignTokenVersion(ctx context.Context, campaignID st
 
 // CampaignsUsingVersion lists campaigns with FoundryModulePin == version.
 // JSON_UNQUOTE(JSON_EXTRACT(...)) walks the campaigns.settings JSON to
-// the foundry_module_pin field. Keeping the column name as
-// "foundry_module_pin" (not "foundry_vtt_pin") matches the campaigns
-// plugin's existing CampaignSettings struct from PR #300 — renaming
-// that field is out of scope for this PR.
+// the foundry_module_pin field; the key stays "foundry_module_pin" to
+// match the campaigns plugin's CampaignSettings struct.
 func (r *repository) CampaignsUsingVersion(ctx context.Context, version string) ([]CampaignUsage, error) {
 	return r.queryCampaignUsage(ctx, `
 		SELECT c.id, c.name, c.created_by, COALESCE(u.display_name, ''),
@@ -156,14 +148,10 @@ func (r *repository) CampaignsOlderThan(ctx context.Context, version string, sem
 }
 
 // CampaignsWithEmptyPin lists every campaign whose pin is NULL,
-// missing from the settings JSON, or empty string. These are the
-// auto-tracking campaigns C-FMC-6's auto-pin logic targets.
-//
-// JSON_EXTRACT returns NULL when the key is missing; the OR with
-// the empty-string comparison handles both shapes. JSON_UNQUOTE on
-// a NULL is a literal "null" string in some MySQL configs, so we
-// compare both NULL (the JSON shape) AND "null" (the unquoted shape)
-// defensively.
+// missing from the settings JSON, or empty string — the auto-tracking
+// campaigns the auto-pin logic targets. JSON_UNQUOTE on a NULL is a
+// literal "null" string in some MySQL configs, so both the NULL and
+// unquoted "null" shapes are compared defensively.
 func (r *repository) CampaignsWithEmptyPin(ctx context.Context) ([]CampaignUsage, error) {
 	return r.queryCampaignUsage(ctx, `
 		SELECT c.id, c.name, c.created_by, COALESCE(u.display_name, ''),
@@ -204,12 +192,8 @@ func (r *repository) queryCampaignUsage(ctx context.Context, query string, args 
 }
 
 // CampaignUsage is the renderable row for the admin's "campaigns
-// using version X" panel. Joined fields come from the queries above.
-//
-// Defined here (not in model.go) because it's tightly coupled to the
-// repository's column projection. Moving it would require keeping
-// the SELECT in sync with model.go separately; colocating keeps the
-// contract in one file.
+// using version X" panel. Defined here, not model.go, because it's
+// tightly coupled to the repository's column projection.
 type CampaignUsage struct {
 	CampaignID   string     `json:"campaign_id"`
 	CampaignName string     `json:"campaign_name"`

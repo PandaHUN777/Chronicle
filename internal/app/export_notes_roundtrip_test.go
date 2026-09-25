@@ -1,14 +1,6 @@
-// export_notes_roundtrip_test.go proves campaign export/import carries shared
-// notes.
-//
-// Fix id: promises/notes-never-exported (C-SWEEP-R4 stage 15). Cited here so
-// the id is greppable from the code that discharges it — the R4 review found
-// this fix real but untraceable by name.
-// Before sweep R4 stage 15 neither adapter existed and neither setter
-// was called, so `Notes` was always empty in the envelope and always empty on
-// the way back in: the backup silently dropped every shared note in the
-// campaign. The round trip below fails (zero notes exported, zero recreated)
-// with either adapter removed or either wiring call dropped.
+// export_notes_roundtrip_test.go proves campaign export/import carries
+// shared notes: it fails (zero notes exported, zero recreated) if either
+// the note export/import adapter or its wiring call is removed.
 package app
 
 import (
@@ -230,11 +222,9 @@ func (failingNoteService) Create(context.Context, string, string, notes.CreateNo
 	return nil, apperror.NewInternal(errors.New("notes table is gone"))
 }
 
-// TestNoteImportAdapter_CountsDroppedNotes pins the second half of the
-// silent-partial-import fix at the adapter layer: an adapter that skips a row
-// must record it, not just log it. With the report.Fail call removed from the
-// create branch the import still "succeeds" with zero notes and a clean
-// report — exactly the lie stage 16 closes.
+// TestNoteImportAdapter_CountsDroppedNotes pins that an adapter which skips a
+// row must record it via report.Fail, not just log it — otherwise a failed
+// import still "succeeds" with zero notes and a clean report.
 func TestNoteImportAdapter_CountsDroppedNotes(t *testing.T) {
 	report := campaigns.NewImportReport()
 	a := &noteImportAdapter{svc: failingNoteService{}}

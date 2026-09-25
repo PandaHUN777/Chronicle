@@ -40,11 +40,10 @@ const CSRFFriendlyMessage = "Your session expired or this page was open too long
 
 // schemeIsSecure reports whether the ORIGINAL client connection was HTTPS,
 // tolerant of a TLS-terminating proxy. req.TLS is set only when Go itself
-// terminated TLS; behind a proxy the signal is X-Forwarded-Proto, which can be
-// a comma-separated list ("https, http" — left-most is the client) and is
-// matched case-insensitively. Getting this wrong is the root cause of the
-// login CSRF failure: an inconsistent reading flips the cookie name between
-// the GET that sets the token and the POST that validates it.
+// terminated TLS; behind a proxy the signal is X-Forwarded-Proto, which can
+// be a comma-separated list ("https, http" — left-most is the client) and is
+// matched case-insensitively. An inconsistent reading here flips the cookie
+// name between the GET that sets the token and the POST that validates it.
 func schemeIsSecure(req *http.Request) bool {
 	if req.TLS != nil {
 		return true
@@ -70,13 +69,11 @@ func SchemeIsSecure(req *http.Request) bool {
 }
 
 // readExistingCSRF returns the value of whichever CSRF cookie the browser
-// actually sent, checking BOTH the __Host- (HTTPS) and bare (HTTP) names. This
-// is the load-bearing fix: behind a proxy the scheme we derive on the POST can
-// differ from the one on the GET that set the cookie, so picking a single name
-// by the current scheme can miss a cookie that's right there under the other
-// name — which made the double-submit compare the form token against a
-// freshly-generated value and 403 every fresh login. Prefer the prefixed name
-// (the more-secure one) when both are somehow present.
+// actually sent, checking BOTH the __Host- (HTTPS) and bare (HTTP) names.
+// Behind a proxy the scheme derived on the POST can differ from the one on
+// the GET that set the cookie, so picking a single name by the current
+// scheme can miss a cookie sitting under the other name. Prefer the
+// prefixed name (the more-secure one) when both are somehow present.
 func readExistingCSRF(req *http.Request) string {
 	for _, name := range []string{csrfCookieSecureName, csrfCookieBaseName} {
 		if ck, err := req.Cookie(name); err == nil && ck.Value != "" {

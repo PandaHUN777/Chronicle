@@ -1,15 +1,12 @@
-// extension_dashboards.go — C-EXT-HUB Phase 2 inline-dashboard
-// registry for the top-level Extensions hub.
+// extension_dashboards.go — inline-dashboard registry for the
+// top-level Extensions hub.
 //
-// Mirrors the proven `RegisterSettingsTab` pattern from
-// settings_tabs.go: each plugin owns its own dashboard templ; the
-// campaigns plugin owns only the registry + the inline expand
-// chrome. Composition over a shared monolith — when timeline V2 or
-// maps add their own dashboards later they register the same way
-// without touching this file.
+// Mirrors the `RegisterSettingsTab` pattern from settings_tabs.go:
+// each plugin owns its own dashboard templ; the campaigns plugin owns
+// only the registry + the inline expand chrome, so a new plugin can
+// register a dashboard without touching this file.
 //
-// Wiring path (mirrors `ai_workspace.SettingsTabFactory()` in
-// `internal/app/routes.go:2465`):
+// Wiring path:
 //
 //   campaignHandler.RegisterExtensionDashboard(calendarHandler.ExtensionDashboardFactory())
 //

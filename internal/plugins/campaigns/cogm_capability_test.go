@@ -1,7 +1,6 @@
-// cogm_capability_test.go — C-CAL-COGM-CAPABILITY (Phase 3 / D6).
-// The co-DM capability truth table + the RequireCapability gate: a DM-grantee
-// now has Owner-equivalent live-play powers (world-state control + dm_only
-// authoring), while Scribe/Player do not.
+// cogm_capability_test.go covers the co-DM capability truth table and the
+// RequireCapability gate: a DM-grantee has Owner-equivalent live-play powers
+// (world-state control + dm_only authoring), while Scribe/Player do not.
 package campaigns
 
 import (

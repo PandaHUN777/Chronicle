@@ -1,26 +1,7 @@
-// partial_update_contract_test.go — the structural ratchet for sweep R4's
-// absent-means-preserve contract.
-//
-// WHY THIS SHAPE, and not the one the dispatch asked for first.
-//
-// The ask was "a guard that fails when a service's update input carries a
-// VALUE-typed field the service assigns unguarded". The second half of that
-// is not expressible with go/ast, and pretending otherwise would have
-// produced a guard that passes by not looking — the exact failure sweep R3
-// stage 12 spent a stage repairing. Deciding whether an assignment is
-// "unguarded" needs data flow from an input field, through local variables
-// and helper calls, into a model field, across package boundaries; and even
-// with perfect flow analysis the answer is frequently "unguarded on purpose"
-// (a required Name validated non-empty upstream, a Visibility defaulted from
-// the stored row two lines above). A checker for that would be ~all false
-// positives and would be allowlisted into meaninglessness inside a month.
-//
-// What IS expressible, and is the actual precondition for the bug: an update
-// input can only preserve an absent key if its fields can REPRESENT absence.
-// Every defect in this sweep — sessions, entities, timeline events, markers,
-// calendar events — reduces to a field whose Go type has no absent state, so
-// the service had nothing to guard on even if it wanted to. This guard pins
-// representability, whole-tree, in two directions:
+// partial_update_contract_test.go is a structural ratchet for the
+// absent-means-preserve contract: an update input can only preserve an absent
+// key if its fields can represent absence, so this pins representability,
+// whole-tree, in two directions:
 //
 //  1. Every field of a CONTRACT-GOVERNED input must be able to say "absent":
 //     patch.Field[T], a pointer, a map or a slice. A value-typed field cannot
@@ -29,9 +10,9 @@
 //     NEW one must be added to one list or the other, which forces its author
 //     to decide — out loud — whether it is a partial update.
 //
-// It replaces nothing: each fixed endpoint also has its own three-direction
-// regression test (absent preserves · present replaces · explicit null
-// clears), and the convention is written down in .ai/conventions.md.
+// It does not replace per-endpoint regression tests (absent preserves ·
+// present replaces · explicit null clears); the convention is in
+// .ai/conventions.md.
 package patch_test
 
 import (
@@ -45,35 +26,20 @@ import (
 	"testing"
 )
 
-// contractGoverned lists the update inputs converted by sweep R4. Every field
-// of these must be presence-aware.
+// contractGoverned lists update inputs that must be presence-aware.
 var contractGoverned = map[string]string{
 	"sessions.UpdateSessionInput":       "PUT /campaigns/:id/sessions/:sid — Mark Complete wiped the schedule, summary, in-world date and recurrence",
 	"entities.UpdateEntityInput":        "PUT /entities/:eid and the syncapi twin — every sync push un-parented the entity; {name} alone un-privated it",
 	"timeline.UpdateTimelineEventInput": "PUT .../standalone-events/:eid — a rename cleared eight fields, including per-player visibility rules",
 	"maps.UpdateMarkerInput":            "PUT .../markers/:mkid — an edit or a drag cleared pin_category, visibility_rules and the Foundry pairing key",
-	// CALV5 SALVAGE: restored with the domain layer (2026-08-21). It is on the
-	// GOVERNED list, not the allowlist, because the recovered type is already
-	// presence-aware — the sweep that fixed it survived in the recovered file.
+	// CALV5 SALVAGE: restored with the domain layer, already presence-aware,
+	// so it stays on the governed list rather than the allowlist.
 	"calendar.UpdateEventInput": "PUT .../calendar/events/:eid — Foundry's five-key push turned off recurrence, all-day and the entity link",
 
-	// Original note, kept because the incident is the reason the entry exists:
-	// "PUT .../calendar/events/:eid — Foundry's five-key push turned off
-	// recurrence, all-day and the entity link".
-	//
-	// That is a REAL incident, not a hypothetical: the Foundry module sends a
-	// narrow body on a rename, and a value-typed input read every absent field
-	// as a zero and wrote it. V5's event update input must be presence-aware
-	// from its first commit, and this line must come back with it — the module
-	// still sends narrow bodies (its own contract pins them), so the defect is
-	// waiting for any successor that forgets.
-
-	// ADR-054 #1-#6 (2026-09-12 partial-update sweep, task #6). All six
-	// reproduced against the shipped code with a temporary red test before
-	// the fix; see the *_partial_update_test.go files next to each.
+	// Each is pinned by a *_partial_update_test.go next to it.
 	"maps.UpdateTokenInput":        "PUT .../tokens/:tid (web + syncapi) — a drag PUT carrying only {x, y} zeroed IsHidden, IsLocked, both HP bars and every aura/light/vision field; a hidden ambush monster went visible on the next nudge",
-	"maps.UpdateDrawingInput":      "PUT .../drawings/:did (web + syncapi) — shares UpdateTokenInput's shape; a reshape-only push wiped fill, text content, font size and rotation. No shipped caller trips it today, fixed anyway per ADR-054 #6",
-	"maps.UpdateLayerInput":        "PUT .../layers/:lid (web + syncapi) — a SortOrder-only reorder push turned visibility and lock off for every layer. No shipped caller trips it today, fixed anyway per ADR-054 #6",
+	"maps.UpdateDrawingInput":      "PUT .../drawings/:did (web + syncapi) — shares UpdateTokenInput's shape; a reshape-only push wiped fill, text content, font size and rotation. No shipped caller trips it today, fixed anyway under the partial-update contract",
+	"maps.UpdateLayerInput":        "PUT .../layers/:lid (web + syncapi) — a SortOrder-only reorder push turned visibility and lock off for every layer. No shipped caller trips it today, fixed anyway under the partial-update contract",
 	"maps.UpdateMapInput":          "PUT /campaigns/:id/maps/:mid — a rename-only push unlinked the map's image and wiped its description; ImageID/Description were already *string and STILL blindly overwritten, because a plain pointer bound from JSON can't tell absent from null either",
 	"timeline.UpdateTimelineInput": "PUT /campaigns/:id/timelines/:tid — fired on EVERY settings save, not just a narrow push: the request struct has no visibility_rules/description_html member at all, so both were unconditionally blanked and canUserView() treats an absent VisibilityRules as visible to everyone",
 	"tags.UpdateTagInput":          "tagService.Update — the worst finding of the 2026-09-12 toggle-truth sweep (ADR-056): Color/DmOnly were plain value types, so ANY rename necessarily also sent DmOnly's zero value and turned a DM-only tag public",
@@ -83,30 +49,24 @@ var contractGoverned = map[string]string{
 // governedFieldExceptions are value-typed fields deliberately left on a
 // governed struct. Each needs a reason, and the reason has to be a fact.
 var governedFieldExceptions = map[string]string{
-	"entities.UpdateEntityInput.ImagePath": "INERT — entityService.Update never reads it. That is its own defect (campaign import believes it is applying image paths through this input and is not); booked in .ai/todo.md rather than fixed under a ruling that was about a different bug. It cannot clobber anything precisely because nothing reads it.",
+	"entities.UpdateEntityInput.ImagePath": "INERT — entityService.Update never reads it. That is its own defect (campaign import believes it is applying image paths through this input and is not); tracked as #613 rather than fixed under a ruling that was about a different bug. It cannot clobber anything precisely because nothing reads it.",
 
-	// ADR-054 #6: on each of these, Update only ever ASSIGNS Name when the
-	// caller sends a non-empty value ("if input.Name != \"\" { … }"), so an
-	// absent/blank name was already preserved before this sweep — Name was
-	// never part of the blind-overwrite class these structs are fixed for.
+	// Update only assigns Name when non-empty, so it already preserves an
+	// absent/blank name without needing presence-awareness.
 	"maps.UpdateTokenInput.Name": "value-typed by choice: UpdateToken only assigns Name when it is non-empty, so an absent/blank name already preserved the stored one before this fix.",
 	"maps.UpdateLayerInput.Name": "value-typed by choice: UpdateLayer only assigns Name when it is non-empty, so an absent/blank name already preserved the stored one before this fix.",
-	// ADR-054 #4/#2/tags: on these three, Name is REQUIRED — Update validates
-	// the merged name is non-empty and rejects the whole call with 400 when
-	// it is blank, so an absent name fails LOUDLY instead of silently
-	// overwriting. That is a different (and already-safe) failure mode from
-	// the silent-clobber class the rest of each struct was fixed for.
+	// On these three, Name is required — Update rejects a blank merged name
+	// with 400, failing loudly instead of silently overwriting.
 	"maps.UpdateMapInput.Name":          "value-typed by choice: UpdateMap validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
 	"timeline.UpdateTimelineInput.Name": "value-typed by choice: UpdateTimeline validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
 	"tags.UpdateTagInput.Name":          "value-typed by choice: tagService.Update validates the merged name is non-empty and rejects the whole call with 400 when it is blank, so an absent name fails loudly rather than silently overwriting.",
 	"tags.UpdateTagRequest.Name":        "value-typed by choice: the same required-name validation applies via UpdateTagInput.Name above — this is the wire-bound twin.",
 }
 
-// notYetSwept freezes the rest of the inventory. Nothing here was audited by
-// sweep R4 — being on this list is a statement about what was LOOKED AT, not
-// a claim that the struct is safe. Removing a name from here means the
-// struct became contract-governed; adding one means a new update input
-// shipped and its author decided it is not a partial update.
+// notYetSwept freezes the rest of the inventory. Being on this list is a
+// statement about what was looked at, not a claim of safety. Removing a name
+// means the struct became contract-governed; adding one means a new update
+// input shipped and its author decided it is not a partial update.
 var notYetSwept = map[string]bool{
 	"packages.UpdatePolicyInput":          true,
 	"packages.UpdateRepoURLInput":         true,
@@ -120,34 +80,17 @@ var notYetSwept = map[string]bool{
 	"entities.UpdatePromptInput":          true,
 	"maps.UpdateTokenPositionInput":       true,
 	"campaigns.UpdateCampaignInput":       true,
-	// CALV5 SALVAGE: these three came back with the recovered domain layer and
-	// are listed again because they were never swept — pretending otherwise
-	// would make this test lie. They are the ORIGINAL types recovered verbatim,
-	// not V5 rewrites, so restoring the status quo is the honest entry.
-	//
-	// BUT NOTE THE OPPORTUNITY, because it will not come again this cheaply:
-	// they currently have NO handler, NO service and NO repository — nothing
-	// calls them. Sweeping them to patch.Field is therefore risk-free right
-	// now, where doing it later means touching live write paths. V5 should
-	// sweep them before giving them a handler, and delete these three lines.
+	// CALV5 SALVAGE: these three (recovered verbatim with the domain layer)
+	// have no handler, service or repository yet. V5 must sweep them to
+	// patch.Field before wiring a handler, then delete these three lines.
 	"calendar.UpdateEventVisibilityInput":    true,
 	"calendar.UpdateCalendarVisibilityInput": true,
 	"calendar.UpdateCalendarInput":           true,
 
-	// The scanner widened from Update*Input to Update*Request on 2026-09-12
-	// (ADR-056: "a guard that can see half the surface is a guard that
-	// certifies the other half by silence" — the tags finding below is why).
-	// These ten are what the wider scanner found on day one; NONE were
-	// looked at by this sweep (task #6 fixed exactly the six named in
-	// contractGoverned's ADR-054 block plus tags, and no others). Being on
-	// this list is a statement about what was SEEN, not a claim of safety —
-	// several of these (UpdateEntityRequest, UpdateEntityTypeRequest,
-	// UpdateSMTPRequest) look exactly like the shape this ratchet exists to
-	// catch and are good candidates for the next sweep.
-	//
-	// campaigns.* and entities.* entries here are additionally out of THIS
-	// session's reach: campaigns/ is another agent's worktree right now, and
-	// widening scope to entities/ mid-task was not what was asked.
+	// The scanner covers Update*Input and Update*Request (ADR-056). These are
+	// unaudited, not verified safe — several (UpdateEntityRequest,
+	// UpdateEntityTypeRequest, UpdateSMTPRequest) look like good candidates
+	// for the next sweep.
 	"campaigns.UpdateCampaignRequest":         true,
 	"campaigns.UpdateRoleRequest":             true,
 	"campaigns.UpdateSidebarConfigRequest":    true,

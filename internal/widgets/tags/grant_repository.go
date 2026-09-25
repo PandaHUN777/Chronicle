@@ -9,9 +9,9 @@ import (
 )
 
 // TagPermissionRepository owns all SQL for the tag_permissions table — the
-// additive visibility grants carried by tags (C-PERM-W1-TAG-GRANTS). Kept as a
-// distinct repository from TagRepository so the grant surface can be tested and
-// reasoned about in isolation; both back the same widget.
+// additive visibility grants carried by tags. Kept as a distinct repository
+// from TagRepository so the grant surface can be tested and reasoned about in
+// isolation; both back the same widget.
 type TagPermissionRepository interface {
 	// Create inserts a grant. The grant's ID is set on the struct after insert.
 	// Returns a Conflict error if the (tag, subject) pair already exists.

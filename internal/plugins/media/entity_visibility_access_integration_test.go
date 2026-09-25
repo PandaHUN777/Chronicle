@@ -1,38 +1,25 @@
 // entity_visibility_access_integration_test.go drives ADR-058's rule
 // against a REAL MariaDB, through the REAL production components on both
-// sides of the seam this ADR wires together — never a reimplementation of
+// sides of the seam ADR-058 wires together, never a reimplementation of
 // either:
 //
-//   - media.NewMediaRepository(db).FindReferences — the exact SQL fixed
-//     in repository.go (STEP 1 of this slice: cover_image_path was
-//     missing from the UNION, which is the hole decision 3 warns about —
-//     "every cover image looks unreferenced [and] falls through to the
-//     unreferenced path"). The entity_visibility_access_test.go unit
-//     tests fake this call; this file is what actually proves
-//     cover_image_path reaches the query.
-//   - entities.NewEntityRepository(db).FilterViewableEntityIDs — the
-//     exact canonical visibility predicate sessions, relations, armory
-//     and npcs all call, reached here through a tiny local adapter
-//     (dbEntityVisibility) so media's EntityVisibilityFilter interface is
-//     satisfied without media importing anything from entities beyond
-//     its already-exported repository constructor. The unit tests fake
-//     this too; this file proves the real is_private/visibility
-//     predicate actually denies/grants the way these tests assume.
+//   - media.NewMediaRepository(db).FindReferences, whose UNION must include
+//     cover_image_path or a cover image looks unreferenced and falls
+//     through to the unreferenced-media path.
+//   - entities.NewEntityRepository(db).FilterViewableEntityIDs, the
+//     canonical visibility predicate sessions/relations/armory/npcs all
+//     call, reached here through a local adapter (dbEntityVisibility) so
+//     media's EntityVisibilityFilter interface is satisfied without
+//     importing entities beyond its exported repository constructor.
 //
-// Both are reached by calling the REAL Handler.checkMediaAccess.
+// Both are reached by calling the REAL Handler.checkMediaAccess. Campaign
+// membership and the DM-grant signal are read directly with plain SQL here
+// (dbMemberChecker below), not through campaigns.CampaignService — that
+// service's own correctness is out of scope for this file.
 //
-// WHAT THIS FILE DOES NOT PROVE: campaign membership and the DM-grant
-// signal are read directly with plain SQL here (dbMemberChecker below),
-// not through campaigns.CampaignService — that service's own correctness
-// is the campaigns package's own test suite's job, not this one's. What
-// this ADR actually changed is the reference lookup and the visibility
-// filter, and both of those are real in every test in this file.
-//
-// Skips (never fails) when no database answers, per house convention —
-// see entities/repository_integration_test.go and
-// sessions/dbtest_support_test.go, whose scratch-schema pattern this
-// mirrors (a throwaway schema per test run, fully migrated, dropped on
-// cleanup — never the shared dev database).
+// Skips (never fails) when no database answers: a throwaway schema per
+// test run, fully migrated, dropped on cleanup — never the shared dev
+// database (see entities/repository_integration_test.go).
 package media
 
 import (
@@ -53,11 +40,10 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/entities"
 )
 
-// newADR058ScratchDB creates a fresh, fully-migrated (core migrations
-// only — neither entities nor media declares its own plugin migrations;
-// both tables live in db/migrations/000001_baseline.up.sql) throwaway
-// schema and drops it on cleanup. Skips rather than fails when no server
-// answers.
+// newADR058ScratchDB creates a fresh, fully-migrated throwaway schema
+// (core migrations only — entities and media tables both live in
+// db/migrations/000001_baseline.up.sql) and drops it on cleanup. Skips
+// rather than fails when no server answers.
 func newADR058ScratchDB(t *testing.T) *sql.DB {
 	t.Helper()
 
@@ -373,12 +359,10 @@ func TestADR058Integration_SharedHiddenAndVisible_ReadableAtAll(t *testing.T) {
 	mustAllow(t, h.checkMediaAccess(c, file, false, ""), "[real DB] image shared by a hidden entity's image_path AND a visible entity's entry_html")
 }
 
-// TestADR058Integration_CoverImageOnly_PlayerDenied is the step-1 trap,
-// proven against the real repository query: a file referenced ONLY via
-// cover_image_path on a dm_only entity must be denied — before the fix,
-// FindReferences never looked at that column, so this file would have
-// looked unreferenced and fallen through to decision 3's plain membership
-// grant, LEAKING the hidden entity's cover art to every campaign member.
+// TestADR058Integration_CoverImageOnly_PlayerDenied proves, against the
+// real repository query, that a file referenced ONLY via cover_image_path
+// on a dm_only entity is denied — FindReferences must include that column
+// or the file looks unreferenced and leaks via the plain-membership grant.
 func TestADR058Integration_CoverImageOnly_PlayerDenied(t *testing.T) {
 	if testing.Short() {
 		t.Skip("integration test requires a database; skipped under -short")
@@ -394,8 +378,7 @@ func TestADR058Integration_CoverImageOnly_PlayerDenied(t *testing.T) {
 		Name: "Secret Lair", IsPrivate: true, CoverImagePath: &fileID,
 	})
 
-	// Sanity check the fix directly: FindReferences must report this
-	// entity for a cover-only reference (pre-fix, this would be empty).
+	// FindReferences must report this entity for a cover-only reference.
 	refs, err := NewMediaRepository(db).FindReferences(context.Background(), campaignID, fileID)
 	if err != nil {
 		t.Fatalf("FindReferences: %v", err)

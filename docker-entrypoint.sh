@@ -13,9 +13,9 @@ set -e
 
 if [ "$(id -u)" = "0" ]; then
     # Running as root: ensure dirs exist, fix ownership, drop privileges.
-    # /app/data/backups is created so the in-process pre-migration backup
-    # (PreMigrationBackup, BACKUP_DIR=/app/data/backups by default) and the
-    # operator scripts/backup.sh have a writable destination on first boot.
+    # /app/data/backups must exist so the in-process pre-migration backup
+    # (BACKUP_DIR=/app/data/backups by default) and scripts/backup.sh have a
+    # writable destination on first boot.
     mkdir -p /app/data/media /app/data/backups /app/foundry-module
     chown -R chronicle:chronicle /app/data /app/foundry-module
     exec su-exec chronicle "$@"

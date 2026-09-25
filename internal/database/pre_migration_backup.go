@@ -86,11 +86,9 @@ func PreMigrationBackup(db *sql.DB, cfg HealthCheckConfig) error {
 	}
 
 	if _, err := exec.LookPath("mysqldump"); err != nil {
-		// mysqldump is the only hard requirement — without it we
-		// can't snapshot the DB at all and the whole pre-migration
-		// safety net is useless. In legacy fail-open mode we log
-		// and return nil so boot proceeds; in fail-closed mode the
-		// caller surfaces this as a startup failure.
+		// mysqldump is the only hard requirement — without it the DB can't be
+		// snapshotted at all. Fail-open mode logs and lets boot proceed;
+		// fail-closed mode (BackupRequired) surfaces this as a startup failure.
 		slog.Warn("pre-migration backup skipped: mysqldump not on PATH")
 		if cfg.BackupRequired {
 			return errors.New("BACKUP_REQUIRED=1 but mysqldump is not on PATH")

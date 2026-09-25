@@ -151,8 +151,7 @@ templ MapShowFragment(cc *campaigns.CampaignContext, data MapViewData) {
 // mapShowContent renders the dedicated map page: page-level wrapper + the
 // breadcrumbs/title header + the editor body. The editor body itself is
 // extracted into MapEditorBody so it can be reused inline by the per-entity
-// Map Editor block (the iframe approach got blocked by the app's
-// frame-ancestors 'none' CSP — inline-render is the future-proof path).
+// Map Editor block.
 templ mapShowContent(cc *campaigns.CampaignContext, data MapViewData) {
 	<div class="h-full flex flex-col -mx-5 -my-4">
 		<!-- Map header with name, back link, and controls -->
@@ -177,11 +176,8 @@ templ mapShowContent(cc *campaigns.CampaignContext, data MapViewData) {
 					</nav>
 					<div class="flex items-center gap-2">
 						<h1 class="text-lg font-semibold text-fg">{ data.Map.Name }</h1>
-						// VTT presence pill. NW-2.2 Chunk D: moved to
-						// foundry_vtt; lazy-loaded so maps stays VTT-
-						// agnostic. data.FoundryPresence stays on the
-						// data struct for now (no caller broken) and
-						// is flagged for cleanup in a follow-up.
+						// VTT presence pill, owned by foundry_vtt and lazy-loaded
+						// so this plugin stays VTT-agnostic.
 						<span
 							hx-get={ fmt.Sprintf("/campaigns/%s/foundry-vtt/presence-pill-fragment", data.CampaignID) }
 							hx-trigger="load"
@@ -205,23 +201,14 @@ templ mapShowContent(cc *campaigns.CampaignContext, data MapViewData) {
 // container, modals, the server-rendered config div, and the IIFE that
 // wires everything together. Reusable in two contexts:
 //
-//   1. The dedicated map page (mapShowContent) calls it with
-//      mapContainerClass="flex-1 relative bg-surface-alt", mapContainerStyle=""
-//      so the container fills the remaining flex height.
-//   2. The per-entity Map Editor block (BlockEntityMapEmbed) calls it with
-//      mapContainerClass="relative bg-surface-alt rounded-lg border border-edge overflow-hidden"
-//      and mapContainerStyle="height: 600px;" for a fixed-height embed.
+//   1. The dedicated map page (mapShowContent), mapContainerClass="flex-1
+//      relative bg-surface-alt" so the container fills the flex height.
+//   2. The per-entity Map Editor block (BlockEntityMapEmbed), with a fixed
+//      mapContainerStyle="height: 600px;" embed.
 //
-// All editor functionality (markers, drawings, settings modal, Foundry
-// sync compatibility) is identical in both contexts — same IDs, same
-// IIFE — so a single map_editor block on an entity page gets the full
-// dedicated-page experience inline.
-//
-// CONSTRAINT: only one MapEditorBody may render per page (the IIFE binds
-// to fixed IDs like #map-container, #marker-modal, etc.). Callers must
-// not include this twice in the same DOM. The map_editor block is
-// declared template-context-only and entity templates only ever render
-// one map per page, so this is enforced by the layout editor in practice.
+// CONSTRAINT: only one MapEditorBody may render per page — the IIFE binds
+// to fixed IDs like #map-container, #marker-modal, etc. Callers must not
+// include this twice in the same DOM.
 templ MapEditorBody(cc *campaigns.CampaignContext, data MapViewData, mapContainerClass, mapContainerStyle string) {
 	<!-- Leaflet CSS + JS (vendored locally for CSP compliance).
 	     Browsers dedupe link/script by URL, so two MapEditorBody mounts
@@ -1072,12 +1059,9 @@ func derefStr(s *string) string {
 }
 
 // backgroundColorOrDefault returns the value used as the color picker's
-// initial state. <input type="color"> requires a hex value, so we fall
-// back to a neutral dark gray when no override is set — purely cosmetic
-// for the picker UI; whether the color is actually applied to the map
-// canvas depends on the hidden "is set" flag and what the renderer
-// receives. Don't mistake this default for the rendered fallback;
-// that's bg-surface-alt (theme-following) further down.
+// initial state. <input type="color"> requires a hex value, so this falls
+// back to a neutral dark gray when no override is set — cosmetic only; the
+// hidden "is set" flag governs whether the color is actually applied.
 func backgroundColorOrDefault(s *string) string {
 	if s == nil || *s == "" {
 		return "#1f2937"
@@ -1095,12 +1079,6 @@ func backgroundColorIsSet(s *string) string {
 	}
 	return ""
 }
-
-// foundryPresencePill + foundryPresenceRelative + foundryPresenceTimestamp
-// moved to internal/plugins/foundry_vtt/presence_pill.templ
-// (CampaignShowPresencePill) per NW-2.2 Chunk D. maps.templ now lazy-loads
-// the pill via hx-get to keep this plugin VTT-agnostic. See the slot at the
-// map-title section above + cordinator/decisions/2026-05-23-packages-treatment.md.
 
 // mapBackgroundStyle returns an inline style="background-color: ..."
 // fragment when the map has a custom color override, or empty string
@@ -1124,12 +1102,10 @@ func mapImageSignedURL(ctx context.Context, imageID *string) string {
 }
 
 // mustMarshalMarkers serializes markers to JSON for the JS initialization.
-// Empty/nil slices both serialize to "[]" — without the explicit guard,
-// json.Marshal returns the literal "null" for a nil slice, the JS sees
-// the string "null" via dataset, JSON.parse turns it into the JS value
-// null, and markers.length on the next line throws. The IIFE then dies
-// before assigning window.uploadMapImage / saveMapSettings / etc., which
-// surfaces as the cascading "is not defined" errors in the console.
+// Empty/nil slices must both serialize to "[]": json.Marshal returns the
+// literal "null" for a nil slice, which JS would parse as null and crash on
+// markers.length, dying before window.uploadMapImage/saveMapSettings/etc.
+// get assigned.
 func mustMarshalMarkers(markers []Marker) string {
 	if len(markers) == 0 {
 		return "[]"

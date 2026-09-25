@@ -518,14 +518,14 @@ func TestCreate_Success(t *testing.T) {
 	}
 }
 
-// TestCreate_OwnerUserID guards CH1+CH5 plumbing: when the API
-// passes through an owner_user_id, the service must forward it onto
-// the persisted Entity row so the player landing query
-// ("characters owned by current user") finds the new entity.
+// TestCreate_OwnerUserID guards that when the API passes through an
+// owner_user_id, the service forwards it onto the persisted Entity row so
+// the player landing query ("characters owned by current user") finds the
+// new entity.
 //
-// Cross-campaign membership validation deliberately lives at the call
-// site (sync API handler) rather than the service — the test for
-// that lives where the validation lives.
+// Cross-campaign membership validation deliberately lives at the call site
+// (sync API handler) rather than the service — the test for that lives
+// where the validation lives.
 func TestCreate_OwnerUserID(t *testing.T) {
 	typeRepo := &mockEntityTypeRepo{
 		findByIDFn: func(_ context.Context, id int) (*EntityType, error) {
@@ -1830,13 +1830,12 @@ func TestSetEntityPermissions_PublishesUpdatedEvent(t *testing.T) {
 	}
 }
 
-// TestUpdateFields_PublishesUpdatedEvent verifies that UpdateFields broadcasts an
-// "updated" event carrying the NEW fields, so live consumers (the web dynamic
-// surface, other open clients, the Foundry sync) observe field changes
-// immediately rather than only after a manual refresh (GAP-1). It also confirms
-// the broadcast is best-effort: when the entity can't be loaded, no event fires
-// and no panic occurs — preserving the method's pre-existing tolerance of a
-// load failure.
+// TestUpdateFields_PublishesUpdatedEvent verifies that UpdateFields broadcasts
+// an "updated" event carrying the NEW fields, so live consumers (the web
+// dynamic surface, other open clients, the Foundry sync) observe field
+// changes immediately rather than only after a manual refresh. It also
+// confirms the broadcast is best-effort: when the entity can't be loaded, no
+// event fires and no panic occurs.
 func TestUpdateFields_PublishesUpdatedEvent(t *testing.T) {
 	newFields := map[string]any{"stamina_current": 21, "combat_status": []any{"bleeding"}}
 

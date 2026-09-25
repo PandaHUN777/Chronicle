@@ -173,10 +173,6 @@ All classes have `.dark` variants for dark mode support.
 - No TailwindCSS dependency
 - Font Awesome — Type icons and lock icon
 
-## Known Limitations & Future Work
+## Known limitations
 
-- No keyboard-only trigger (hover/touch only)
-- Cache not persisted across page loads
-- No prefetching on link proximity
-- Tooltip width fixed at 320px (max 90vw on mobile)
-- No support for rich HTML in entry excerpt (plain text only)
+No keyboard-only trigger (hover/touch only). Open work: #623.

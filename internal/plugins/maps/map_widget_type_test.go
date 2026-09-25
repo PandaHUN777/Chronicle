@@ -1,6 +1,5 @@
-// map_widget_type_test.go — C-WIDGET-BINDING-P3a. The map widget type
-// (instance = a map record) + the map delete-hook. Mirrors the calendar/
-// timeline widget-type tests.
+// map_widget_type_test.go covers the map widget type (instance = a map
+// record) and the map delete-hook.
 package maps
 
 import (
@@ -66,8 +65,8 @@ func TestMapWidgetType_NoDefault(t *testing.T) {
 	}
 }
 
-// ListInstances (C-WIDGET-BINDING-P4b) maps the campaign's maps to picker
-// InstanceRefs; CreateInstance creates a named map and returns its id.
+// ListInstances maps the campaign's maps to picker InstanceRefs;
+// CreateInstance creates a named map and returns its id.
 func TestMapWidgetType_ListAndCreateInstances(t *testing.T) {
 	var created *Map
 	repo := &mockMapRepo{

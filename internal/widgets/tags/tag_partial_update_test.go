@@ -1,12 +1,6 @@
-// tag_partial_update_test.go — sweep R4 / ADR-056, the tags half of the
-// absent-means-preserve contract. This is the worst finding of the
-// 2026-09-12 toggle-truth sweep: tagService.Update took plain `color
-// string, dmOnly bool` parameters, so there was no way for a caller that
-// only means to rename a tag to represent "leave DmOnly alone" — the best
-// it could do was resend the value it already knew, and any caller that
-// did not (a bare rename form, a syncapi client sending {name} only)
-// necessarily sent Go's zero value and turned a DM-only tag public to
-// every player.
+// tag_partial_update_test.go pins the absent-means-preserve contract
+// (ADR-056): a partial update that omits color/dmOnly must leave the stored
+// value unchanged, not silently reset it (e.g. turning a DM-only tag public).
 package tags
 
 import (

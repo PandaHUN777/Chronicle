@@ -105,10 +105,9 @@ func TestCharacterSurfaceSchemaJSON_StripsGMFieldsForNonGM(t *testing.T) {
 }
 
 // TestCharacterSurfaceSchemaJSON_StripsOwnerOnlyFieldsForNonOwner pins that
-// the server-rendered character sheet omits owner_only field values (e.g.
-// Draw Steel's backstory) for a viewer who is neither GM nor the entity's
-// claimed owner, but keeps them for the owner and for a GM regardless of
-// ownership (C-FIELDS-OWNER-FILTER).
+// the server-rendered character sheet omits owner_only field values for a
+// viewer who is neither GM nor the entity's claimed owner, but keeps them
+// for the owner and for a GM regardless of ownership.
 func TestCharacterSurfaceSchemaJSON_StripsOwnerOnlyFieldsForNonOwner(t *testing.T) {
 	et := &EntityType{Fields: []FieldDefinition{
 		{Key: "might", Label: "Might", Section: "Stats"},

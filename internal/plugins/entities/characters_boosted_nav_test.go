@@ -9,26 +9,14 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// characters_boosted_nav_test.go — the Characters page must survive a boosted
-// sidebar navigation.
-//
-// THE DEFECT IN ONE SENTENCE: characters.js shipped as a `<script src>` inside
-// CharactersPage's body, which the App layout renders inside
-// <main id="main-content">; every sidebar link is hx-boost="true"
-// hx-target="#main-content" hx-select="#main-content" hx-swap="innerHTML", and
-// boot.js sets htmx.config.allowScriptTags=false, at which setting htmx's
-// makeFragment does not merely decline to EXECUTE the script tags in the
-// swapped fragment — it REMOVES them. So the cast cards' "quick look" button
-// wired itself when someone typed the URL and silently did not when they
-// clicked through the sidebar, with the page rendering pixel-identically either
-// way because the stylesheets in the same region survive.
-//
-// This is the surface named in C-HTMX-SCRIPT-SWEEP (tools/page-script-allowlist.txt).
-// The fix is the one the ratchet's own message prescribes: contribute the
-// script to the plugin body-script registry (internal/app/routes.go →
-// layouts.SetPluginBodyScripts → internal/templates/layouts/base.templ), which
-// emits after {children...} — outside the swapped region, and therefore
-// identical on both navigation paths.
+// characters_boosted_nav_test.go pins that the Characters page survives a
+// boosted sidebar navigation: every sidebar link is hx-boost with
+// hx-target="#main-content", and boot.js sets htmx.config.allowScriptTags=false,
+// under which htmx REMOVES any <script> tag inside the swapped fragment rather
+// than just declining to execute it. A page script must therefore ship via the
+// plugin body-script registry (internal/app/routes.go ->
+// layouts.SetPluginBodyScripts -> internal/templates/layouts/base.templ),
+// which emits outside the swapped region. See tools/page-script-allowlist.txt.
 
 // castSwappedRegion returns the substring htmx would keep on a boosted sidebar
 // navigation: the contents of <main id="main-content">. Both bounds are checked
@@ -68,14 +56,11 @@ func renderCharactersPage(t *testing.T, view CastView) string {
 	return sb.String()
 }
 
-// TestCharactersPageMountsNoScriptInsideTheSwappedRegion is the durable form of
-// the fix.
-//
-// THE SCOPE IS THE SWAPPED REGION, not the document. The shell's own several
-// dozen script tags sit outside <main> and are exactly what a boosted
-// navigation is designed to keep; counting those would be measuring the layout.
-// What must be zero is scripts INSIDE #main-content — for a page with a party,
-// and for the empty page a fresh campaign gets.
+// TestCharactersPageMountsNoScriptInsideTheSwappedRegion checks the swapped
+// region only (inside <main>), not the whole document: the shell's own script
+// tags sit outside it and a boosted navigation is meant to keep those. Scripts
+// inside #main-content must be zero, for a page with a party and for an empty
+// one.
 func TestCharactersPageMountsNoScriptInsideTheSwappedRegion(t *testing.T) {
 	owner := func(s string) *string { return &s }
 	populated := CastView{
@@ -100,15 +85,12 @@ func TestCharactersPageMountsNoScriptInsideTheSwappedRegion(t *testing.T) {
 	}
 }
 
-// TestCharactersDriverShipsFromThePluginBodyScriptRegistry pins WHERE
-// characters.js is mounted, which is the whole of the fix. Without this the
-// previous test passes trivially by deleting the tag and orphaning the script.
-//
-// It reads the source because pluginBodyScripts is a local built during startup
-// wiring: there is no exported value to assert against, and a render-level
-// assertion cannot see it either (page templs render with an empty context in
-// these tests, by design). The search is scoped to the slice literal so the
-// nearby prose comment naming the file cannot satisfy it.
+// TestCharactersDriverShipsFromThePluginBodyScriptRegistry pins that
+// characters.js is mounted via the plugin body-script registry, not a
+// `<script src>` inside the page body; without this the previous test would
+// pass trivially by deleting the tag and orphaning the script. It reads the
+// source directly since pluginBodyScripts is a startup-wiring local with no
+// exported value to assert against.
 func TestCharactersDriverShipsFromThePluginBodyScriptRegistry(t *testing.T) {
 	src, err := os.ReadFile("../../app/routes.go")
 	if err != nil {

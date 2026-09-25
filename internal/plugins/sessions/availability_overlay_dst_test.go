@@ -7,26 +7,16 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/timeutil"
 )
 
-// This file guards the overlay projection against the DST-midnight zones —
-// the ones where local 00:00 does not exist on the transition day, because the
-// clocks jump straight from 00:00 to 01:00.
+// This file guards the overlay projection against DST-midnight zones — the
+// ones where local 00:00 does not exist on the transition day, so a naive
+// "end of local day" computation can normalize backwards and leave
+// splitToViewerDays' loop boundary never advancing while it keeps appending.
+// GET /campaigns/:id/availability/overlay takes an arbitrary ?tz= from any
+// Player, so this is reachable unauthenticated, not just twice a year for
+// viewers in an affected zone.
 //
-// Before the fix, buildWeekOverlay could not RETURN for a viewer in one of
-// those zones on the transition week: splitToViewerDays computed the end of the
-// local day as `time.Date(y,mo,d,0,0,0,0,loc).AddDate(0,0,1)`, Go normalised the
-// nonexistent midnight backwards to 23:00 of the previous day, AddDate landed on
-// 23:00 of the SAME day, and the loop's only advance (`cur = segEnd`) assigned
-// cur the value it already held — while appending a LaneSegment every iteration.
-//
-// Reachability was not theoretical: GET /campaigns/:id/availability/overlay
-// takes an arbitrary ?tz= from any Player, and the Bench / /schedule project in
-// the viewer's own stored profile zone, so it also fired by accident twice a
-// year for Cuban, Chilean and Azorean tables. Measured live at 41 MB → 2.6 GB
-// RSS in ten seconds, still climbing after the client disconnected.
-//
-// EVERY TEST HERE RUNS THE PROJECTION UNDER A DEADLINE. A plain call would hang
-// the test binary instead of failing it, and a suite that hangs gets its
-// timeout raised, not its bug fixed.
+// EVERY TEST HERE RUNS THE PROJECTION UNDER A DEADLINE, so a regression here
+// fails the test rather than hanging the test binary.
 
 // dstMidnightZones are the zones (in the shipped tzdata) whose DST transition
 // lands on midnight in the 2026-2028 window, plus the ordinary zones that must

@@ -1,19 +1,15 @@
-// pagination_total_order_test.go — C-SWEEP-R3 / backend/entity-pagination-
-// nondeterministic-order.
+// pagination_total_order_test.go pins that every LIMIT ? OFFSET ? query in
+// this plugin sorts on a total order. The leading sort columns (name,
+// updated_at, created_at, sort_order) are all non-unique — only
+// uq_entities_campaign_slug is — so tied rows come back in whatever order
+// the chosen plan emits, and that choice is not stable across the
+// statements of one paged walk (MariaDB can pick a priority-queue sort for
+// a small LIMIT+OFFSET and a full filesort past some threshold, and the two
+// disagree about the tied window, producing duplicate and skipped rows
+// across pages). Appending the primary key to the ORDER BY fixes it.
 //
-// Every LIMIT ? OFFSET ? query in this plugin must sort on a total order.
-// The leading sort columns (name, updated_at, created_at, sort_order) are all
-// non-unique — only uq_entities_campaign_slug is — so tied rows come back in
-// whatever order the chosen plan emits, and that choice is not stable across
-// the statements of one walk. Measured on MariaDB 10.11 with 50,000 entities
-// sharing one updated_at: page-by-page `ORDER BY e.updated_at DESC LIMIT 100
-// OFFSET n` returned 563 entities twice and 563 not at all (the server used a
-// priority-queue sort while LIMIT+OFFSET was small and a full filesort once it
-// was not, and the two disagree about the tied window). Appending the primary
-// key drove that to 0 dup / 0 miss.
-//
-// Both tests below are source/pure-unit level so they run under `-short` with
-// no database — an integration test would need a 50k-row seed and a MariaDB.
+// Both tests below are source/pure-unit level so they run under `-short`
+// with no database.
 
 package entities
 

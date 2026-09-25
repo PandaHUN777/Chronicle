@@ -15,8 +15,8 @@ import (
 
 // EntityGate is the narrow cross-plugin seam the posts widget uses to honor
 // entity visibility + campaign binding without importing the entities repo
-// (plugin-isolation). Implemented by an adapter over the entity service, wired
-// in app/routes.go. See cordinator/dispatches/chronicle/C-PUBLIC-VIEW-FIX-R2.md.
+// (plugin isolation). Implemented by an adapter over the entity service,
+// wired in app/routes.go.
 type EntityGate interface {
 	// ResolveViewableEntity returns the entity's owning campaign ID and whether
 	// the viewer (role, userID) may view it. A missing entity returns a
@@ -64,8 +64,8 @@ func (h *Handler) ListPosts(c echo.Context) error {
 		// Fail closed: a missing gate must never serve ungated posts.
 		return apperror.NewInternal(errors.New("posts: entity gate not configured"))
 	}
-	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
-	// cc.MemberRole. includeDMOnly just below already checks cc.IsDmGranted
+	// Use cc.VisibilityRole(), not the raw cc.MemberRole (ADR-057):
+	// includeDMOnly just below already checks cc.IsDmGranted
 	// directly for dm_only post content, but this gate used to 404 a Co-DM
 	// before that branch could ever run.
 	campaignID, canView, err := h.entityGate.ResolveViewableEntity(

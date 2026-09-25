@@ -18,13 +18,12 @@ import (
 // hiddenIDs marks entities that should appear dimmed for owners.
 //
 // typeID is the drilled category's own entity type (the sidebar URL's ?type=),
-// NOT a per-row type. It drives data-entity-type-id, which sidebar_tree.js reads
-// when creating an empty folder (a sidebar_nodes row). The category listing rolls
-// up sub-type entities (expandTypeIDsForListing), so results[0].EntityTypeID may
-// be a SUB-type; scoping a new folder node to that sub-type made it invisible on
-// refresh (SearchAPI reloads nodes via ListByType(categoryTypeID), an exact
-// match) and silently orphaned the dropped entities — the "creating a folder does
-// nothing" bug. Anchoring on the category typeID keeps create and reload in sync.
+// NOT a per-row type. It drives data-entity-type-id, which sidebar_tree.js
+// reads when creating an empty folder (a sidebar_nodes row). The category
+// listing rolls up sub-type entities (expandTypeIDsForListing), so
+// results[0].EntityTypeID may be a SUB-type; a new folder node must anchor on
+// the category typeID, not a row's sub-type, or SearchAPI's exact-match
+// reload (ListByType(categoryTypeID)) can't find it on refresh.
 templ SidebarEntityList(results []Entity, nodes []SidebarNode, total int, typeID int, cc *campaigns.CampaignContext, hiddenIDs map[string]bool) {
 	if len(results) == 0 && len(nodes) == 0 {
 		<div class="px-4 py-6 text-center">

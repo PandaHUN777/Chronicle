@@ -1,10 +1,13 @@
 # layout_editor.js -- Unified Layout Editor Widget
 
 ## Purpose
-Single drag-and-drop layout editor that replaces both `dashboard_editor.js` and
-`template_editor.js`. Used by the Layout Studio (`layout_studio.js`) to edit
-campaign dashboards, owner dashboards, category dashboards, and page templates
-through one consistent UI.
+Drag-and-drop layout editor used for campaign dashboards, owner dashboards,
+and category dashboards (`data-context="dashboard"`). Mounted by the Layout
+Studio (`layout_studio.js`) and by `customize.templ` / `entity_type_config.templ`
+directly via `data-widget="layout-editor"`. Page templates still use the
+separate `template_editor.js` widget (`data-context="template"` features in
+this file describe that other widget's config surface, listed here for
+comparison, not for this one).
 
 ## Mount
 ```html
@@ -82,7 +85,8 @@ layout_editor.js
 ## Relationship to Other Files
 - **layout_studio.js**: Orchestrator that mounts layout-editor with appropriate
   context/features for each navigation selection
-- **dashboard_editor.js**: Deprecated predecessor (dashboard context only)
-- **template_editor.js**: Deprecated predecessor (template context only)
+- **template_editor.js**: Separate widget for page templates (`data-widget="template-editor"`,
+  loaded directly in `base.templ`); layout_editor.js currently mounts only with
+  `data-context="dashboard"`
 - **block_registry.go**: Server-side source of truth for block types + config fields
 - **block_registry_core.go**: Registers core blocks with contexts + config fields

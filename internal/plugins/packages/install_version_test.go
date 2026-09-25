@@ -189,13 +189,10 @@ func (h *recordingHook) AfterInstall(ctx context.Context, _ *Package, _, _, _ st
 	return nil
 }
 
-// TestInstallVersion_HookRunsBeforeDBUpdate pins the success-path half of
-// the fail-loud ordering contract (the failure half is covered by
-// TestInstallVersion_HookFailureLeavesDBUntouched): the PostInstallHook
+// TestInstallVersion_HookRunsBeforeDBUpdate pins that the PostInstallHook
 // dispatch loop runs BEFORE UpdatePackage, so a hook that reads the catalog
-// still observes the previous installed version. This is the behavior the
-// comment above installVersion's system branch documents — pinning it keeps
-// that comment from silently going stale again.
+// still observes the previous installed version. Failure-path ordering is
+// covered by TestInstallVersion_HookFailureLeavesDBUntouched.
 func TestInstallVersion_HookRunsBeforeDBUpdate(t *testing.T) {
 	svc, repo, _ := installTestEnv(t, buildZip(t, map[string]string{"manifest.json": validManifest}))
 	SetManifestValidator(svc, func(string) error { return nil })

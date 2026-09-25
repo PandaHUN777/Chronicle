@@ -9,18 +9,13 @@ import (
 
 // --- Mocks ---
 //
-// TEST HONESTY (see internal/app/error_handler_api_type_test.go's header,
-// and internal/app/armory_npcs_visibility_leak_test.go): these mocks stub
-// away the REPOSITORY's SQL and the entities plugin's real visibility
-// predicate, so nothing here proves the real SQL enforces visibility — that
-// is what the real-database test in internal/app proves, against the real
-// entities repository. What IS legitimately unit-testable here, without a
-// database, is the SERVICE's own orchestration: does it call the visibility
-// filter for the right roles, does it fail closed with no filter wired, and
-// do ListNPCs/CountNPCs agree with each other for the same inputs. These
-// tests are the ones that would NOT have caught the original leak (a mock of
-// the predicate is exactly as trustworthy as the mock says it is) — they
-// only guard the code that decides WHEN to consult the real predicate.
+// TEST HONESTY: these mocks stub away the repository's SQL and the entities
+// plugin's real visibility predicate, so nothing here proves the real SQL
+// enforces visibility — that is internal/app/armory_npcs_visibility_leak_test.go,
+// against the real entities repository. What these tests do check, without a
+// database, is the service's own orchestration: whether it calls the
+// visibility filter for the right roles, fails closed with no filter wired,
+// and keeps ListNPCs/CountNPCs in agreement.
 
 type mockNPCRepo struct {
 	listIDsFn    func(ctx context.Context, campaignID string, characterTypeID int, opts NPCListOptions) ([]string, error)
@@ -137,7 +132,7 @@ func TestCountNPCs(t *testing.T) {
 			return ids, nil
 		},
 	}
-	// role=3 (Owner) bypasses the filter entirely — unchanged pre-fix behaviour.
+	// role=3 (Owner) bypasses the filter entirely.
 	svc := NewNPCService(repo, &mockTypeFinder{typeID: 10}, nil)
 
 	count, err := svc.CountNPCs(context.Background(), "campaign-1", permissions.RoleOwner, "owner-1")
@@ -234,25 +229,15 @@ func (m *mockToggler) TogglePrivate(_ context.Context, _ string) (bool, error) {
 	return m.newPrivate, m.err
 }
 
-// --- Visibility orchestration tests (finding 2 regression coverage) ---
+// --- Visibility orchestration tests ---
 
-// TestVisibleNPCIDs_OnlyOwnerBypassesFilter pins the bypass at OWNER, and the
-// history matters. The fix for finding 2 originally bypassed at Scribe, on the
-// reading that Scribe behaviour was out of scope. It is not the same question:
-// the out-of-scope item is whether a co-DM should be PROMOTED in these plugins
-// (booked in .ai/todo.md), and a co-DM arrives here as RolePlayer, below both
-// thresholds either way.
-//
-// Scribe must go through the filter because the canonical policy says so.
-// visibilityFilter (entities/repository.go:1177) returns an empty predicate
-// only for role >= RoleOwner; for a Scribe it still evaluates, and its custom
-// branch requires a matching grant. So a visibility='custom' entity is NOT
-// automatically visible to a Scribe. Bypassing here would have left the
-// gallery showing a Scribe the name and artwork of a page they cannot open --
-// the same disagreement finding 2 was about, in a narrower audience.
-//
-// A Scribe still sees every is_private page, because the filter's default
-// branch admits role >= 2. Only custom-without-grant is withheld.
+// TestVisibleNPCIDs_OnlyOwnerBypassesFilter pins the bypass at OWNER, not
+// Scribe: visibilityFilter (entities/repository.go) returns an empty
+// predicate only for role >= RoleOwner. A Scribe still goes through the
+// filter, whose custom branch requires a matching grant, so a
+// visibility='custom' entity is not automatically visible to a Scribe. A
+// Scribe still sees every is_private page, since the filter's default
+// branch admits role >= 2 — only custom-without-grant is withheld.
 func TestVisibleNPCIDs_OnlyOwnerBypassesFilter(t *testing.T) {
 	t.Run("owner bypasses entirely", func(t *testing.T) {
 		repo := &mockNPCRepo{
@@ -342,8 +327,7 @@ func TestVisibleNPCIDs_PlayerAndAnonymousUseCanonicalFilter(t *testing.T) {
 
 // TestVisibleNPCIDs_FailsClosedWithNoFilterWired is the defense-in-depth
 // case: if the visibility gate is somehow not wired for a Player/anonymous
-// viewer, the result must be EMPTY, never "everything" — the opposite of the
-// pre-fix bug's failure direction.
+// viewer, the result must be EMPTY, never "everything".
 func TestVisibleNPCIDs_FailsClosedWithNoFilterWired(t *testing.T) {
 	repo := &mockNPCRepo{
 		listIDsFn: func(_ context.Context, _ string, _ int, _ NPCListOptions) ([]string, error) {
@@ -361,8 +345,8 @@ func TestVisibleNPCIDs_FailsClosedWithNoFilterWired(t *testing.T) {
 }
 
 // TestListAndCountNPCs_NeverDisagree drives ListNPCs and CountNPCs off the
-// same fixture and requires their totals to match, for every role — the
-// "an inflated count is itself a leak" half of finding 2.
+// same fixture and requires their totals to match, for every role: an
+// inflated count is itself a visibility leak (ADR-055 rule 3).
 func TestListAndCountNPCs_NeverDisagree(t *testing.T) {
 	candidateIDs := []string{"public-npc", "restricted-npc"}
 
@@ -400,9 +384,9 @@ func TestListAndCountNPCs_NeverDisagree(t *testing.T) {
 }
 
 // TestListNPCs_PaginatesTheFilteredSet proves pagination is applied AFTER
-// visibility narrowing, not before — the pre-fix pagination happened in SQL
-// against the unfiltered set, which is exactly the shape that let a
-// restricted row occupy a page slot a visible row should have had.
+// visibility narrowing, not before — pagination against the unfiltered set
+// would let a restricted row occupy a page slot a visible row should have
+// had.
 func TestListNPCs_PaginatesTheFilteredSet(t *testing.T) {
 	repo := &mockNPCRepo{
 		listIDsFn: func(_ context.Context, _ string, _ int, _ NPCListOptions) ([]string, error) {

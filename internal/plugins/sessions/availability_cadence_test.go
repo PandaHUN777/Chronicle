@@ -13,11 +13,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/timeutil"
 )
 
-// C-RSVP-P9 — alternating-week availability.
-//
-// The whole feature rests on one question: does a block stored against "week A"
-// fall on the right real dates? Everything else is plumbing. These tests pin the
-// answer against real calendar dates rather than against the implementation.
+// Alternating-week availability: does a block stored against "week A" fall on
+// the right real dates? These tests pin the answer against real calendar
+// dates rather than against the implementation.
 
 func cd(y int, m time.Month, d int) timeutil.CivilDate {
 	return timeutil.CivilDate{Year: y, Month: m, Day: d}
@@ -419,11 +417,10 @@ func TestGetMyAvailability_LabelsAreDerivedInTheMembersZone(t *testing.T) {
 
 // --- the nudge's permission gate -------------------------------------------
 //
-// The nudge is the ONE availability action that writes into other people's
-// notification lists, so an ungated version is a campaign-wide broadcast handed
-// to anyone who can reach the URL. The route is Player+ (this group decides
-// entitlement by role in a handler, not by route), which makes the handler's own
-// check the only thing standing between a player and everybody's bell.
+// The nudge is the one availability action that writes into other people's
+// notification lists. The route is Player+ (entitlement is decided by role in
+// the handler, not by route), so the handler's own check is the only thing
+// standing between a player and everybody's bell.
 
 func nudgeRequest(t *testing.T, h *Handler, role campaigns.Role, isCoDM bool) int {
 	t.Helper()

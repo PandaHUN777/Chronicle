@@ -72,12 +72,11 @@ func (h *Handler) Index(c echo.Context) error {
 	}
 
 	userID := auth.GetUserID(c)
-	// VisibilityRole() promotes a DM-granted co-DM to Owner for visibility
-	// purposes (operator ruling, .ai/todo.md 2026-09-12: the co-DM promotion
-	// crosses plugin lines) — same promotion every entity path already
-	// applies, so a co-DM sees dm_only/custom-restricted armory items too.
-	// This is a SEEING change only: Purchase and CanUserActAsBuyer stay on
-	// the raw MemberRole because those gate an economic/edit action.
+	// VisibilityRole() promotes a DM-granted co-DM to Owner for visibility,
+	// the same promotion every entity path applies, so a co-DM sees
+	// dm_only/custom-restricted armory items too. This is a SEEING change
+	// only: Purchase and CanUserActAsBuyer stay on the raw MemberRole
+	// because those gate an economic/edit action.
 	cards, total, err := h.svc.ListItems(c.Request().Context(), cc.Campaign.ID, cc.VisibilityRole(), userID, opts)
 	if err != nil {
 		return apperror.NewInternal(err)

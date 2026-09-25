@@ -1,11 +1,7 @@
-// anon_access_test.go — C-PUBLIC-VIEW-FIX-R2 content-level coverage.
-//
-// The per-entity tag read (GET /campaigns/:id/entities/:eid/tags) was found in
-// Step-0 to be the same class of anon leak as posts/relations: it served an
-// entity's (often spoilery) tag names to anonymous visitors without checking
-// entity privacy or campaign binding. These tests drive real anonymous requests
-// through the public middleware chain and assert the gate: private entity → not
-// served; foreign-campaign entity → rejected (IDOR); public entity → unchanged.
+// anon_access_test.go pins the anonymous-access gate on the per-entity tag
+// read (GET /campaigns/:id/entities/:eid/tags): a private entity's tags must
+// not be served, a foreign-campaign entity must be rejected (IDOR), and a
+// public entity's tags must be served unchanged.
 package tags
 
 import (
@@ -101,11 +97,8 @@ func TestGetEntityTags_AnonEntityPrivacyGate(t *testing.T) {
 	})
 }
 
-// TestGetEntityTags_NilGateFailsClosed pins the fail-closed contract (currently
-// unexercised): a handler wired WITHOUT its EntityGate must never serve an
-// entity's tags. The missing-gate guard returns apperror.NewInternal → 5xx, not
-// a 200 leak, so a wiring mistake fails loud instead of silently exposing every
-// entity's (often spoilery) tag names. (C-ENTITY-VIS-PARITY 4b)
+// TestGetEntityTags_NilGateFailsClosed pins fail-closed behavior: a handler
+// wired without its EntityGate must return 5xx, never serve tags.
 func TestGetEntityTags_NilGateFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/campaigns/camp-1/entities/any-ent/tags", nil)

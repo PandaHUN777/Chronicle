@@ -1,24 +1,13 @@
-// Tests for the C-FMC-7 per-campaign zip-rewrite path. The load-
-// bearing contract: when the download endpoint streams a zip, the
-// embedded module.json carries the per-campaign Chronicle URLs —
-// NOT the upstream GitHub URLs from the source zip. Foundry's
-// update checks read this on-disk module.json forever after
-// extraction, so getting these bytes right is the difference
-// between update checks hitting Chronicle vs. hitting GitHub.
+// Tests for the per-campaign zip-rewrite path. The load-bearing
+// contract: when the download endpoint streams a zip, the embedded
+// module.json carries the per-campaign Chronicle URLs, not the
+// upstream GitHub URLs from the source zip — Foundry's update checks
+// read this on-disk module.json forever after extraction.
 //
-// Coverage:
-//
-//   1. zipDirToWriterWithRewrite replaces the descriptor-declared
-//      module.json with the rewritten bytes; every other file
-//      copies byte-for-byte.
-//   2. chronicle-package.json is excluded from the zip output.
-//   3. Nested moduleJSONPath ("dist/module.json") works.
-//   4. Path normalization: descriptor variants like "./module.json"
-//      still match.
-//
-// The end-to-end "BuildDownloadParams returns per-campaign URLs"
-// path is covered by the existing manifest-rewrite tests since
-// both paths share resolveCampaignManifest.
+// Coverage: zipDirToWriterWithRewrite replaces the descriptor-declared
+// module.json (byte-for-byte for everything else); excludes
+// chronicle-package.json from the output; handles a nested
+// moduleJSONPath and descriptor path variants like "./module.json".
 package foundry_vtt
 
 import (
@@ -81,12 +70,9 @@ func TestZipDirToWriterWithRewrite_ReplacesModuleJSON(t *testing.T) {
 	}
 }
 
-// TestZipDirToWriterWithRewrite_ExcludesDescriptor — the
-// chronicle-package.json file in the install dir should NOT appear
-// in the streamed zip. Foundry has no use for it; leaking it into
-// the client filesystem is a small information disclosure (the
-// descriptor schema becomes visible to anyone who downloads the
-// module) but mainly it's clutter.
+// TestZipDirToWriterWithRewrite_ExcludesDescriptor: chronicle-package.json
+// must not appear in the streamed zip. Foundry has no use for it, and
+// leaking it is a small information disclosure of the descriptor schema.
 func TestZipDirToWriterWithRewrite_ExcludesDescriptor(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "module.json", `{"id":"x"}`)

@@ -1,14 +1,12 @@
-// backlinks_scope_test.go — C-SWEEP-R3.
-//
-// GET /campaigns/:id/entities/:eid/backlinks is a PUBLIC-CAPABLE read route
-// (routes.go: AllowPublicCampaignAccess + RequireViewAccess). Those two
-// middlewares only resolve/authorize the CAMPAIGN — neither looks at :eid — so
-// the handler owns the entity-side check, exactly like Show / PreviewAPI /
-// GetAliasesAPI. Before this fix it had neither the campaign-match 404 nor
-// CheckEntityAccess, and the repository query had no campaign predicate, so an
+// backlinks_scope_test.go pins that GET /campaigns/:id/entities/:eid/backlinks,
+// a PUBLIC-CAPABLE read route (routes.go: AllowPublicCampaignAccess +
+// RequireViewAccess), is safe against a cross-campaign IDOR: those two
+// middlewares only resolve/authorize the CAMPAIGN — neither looks at :eid —
+// so the handler must own the entity-side check (campaign-match 404 +
+// CheckEntityAccess) and the repository query must scope by campaign, or an
 // anonymous visitor to ANY public campaign could name a private campaign's
-// entity id and receive that campaign's referencing entities in full
-// (including their entry_html). These pin both halves.
+// entity id and receive its referencing entities in full (including
+// entry_html). These pin both halves.
 package entities
 
 import (

@@ -1,18 +1,16 @@
 // Package prompt builds the "Copy AI Prompt" output for the AI
 // Workspace settings tab. Operator picks schema bits + content bits +
-// custom instruction; this package assembles them into a single
-// markdown document via the verbatim template from
-// reports/chronicle/2026-05-26-c-ai-workspace-scoping.md §3.5.
+// a custom instruction; this package assembles them into a single
+// markdown document via the template in template.go.
 //
 // Reuses internal/plugins/ai_workspace/aiexport.Service.Generate for
 // the optional "Existing world context" section — same renderer that
-// powers the AI Export tab, same privacy modes, same SEC-6-AMENDED
-// egress sanitization. Don't duplicate privacy logic.
+// powers the AI Export tab, same privacy modes, same SEC-6 egress
+// sanitization. Don't duplicate privacy logic.
 //
 // The prompt template is a Go text/template (not html/template) — AI
-// tools consume markdown, not HTML; we never need template-side
-// escaping. The `join` helper is registered for the Subcategories
-// list inline-render.
+// tools consume markdown, not HTML, so no template-side escaping is
+// needed. The `join` helper is registered for the Subcategories list.
 package prompt
 
 import (
@@ -29,16 +27,16 @@ import (
 
 // EntityLister is the narrow contract the prompt builder needs from
 // the entities service. Mirrors aiexport.EntityLister minus the
-// per-entity-row Tags batch — V1 prompt builder doesn't need tags
+// per-entity-row Tags batch — the prompt builder doesn't need tags
 // inline on the schema list.
 type EntityLister interface {
 	GetEntityTypes(ctx context.Context, campaignID string) ([]entities.EntityType, error)
 	List(ctx context.Context, campaignID string, typeID int, role int, userID string, opts entities.ListOptions) ([]entities.Entity, int, error)
 }
 
-// TagLister is the narrow contract for the (deferred-to-V2) Tags
-// vocabulary section. Kept in the interface for future-proofing;
-// V1's BuildPrompt doesn't call it.
+// TagLister is the narrow contract for the Tags vocabulary section.
+// Kept in the interface for future-proofing; BuildPrompt doesn't call
+// it yet.
 type TagLister interface {
 	ListByCampaign(ctx context.Context, campaignID string, includeDmOnly bool) ([]tags.Tag, error)
 }
@@ -53,13 +51,13 @@ type Exporter interface {
 // with the same plugin Services that back the aiexport renderer.
 type Service struct {
 	Entities EntityLister
-	Tags     TagLister // optional; V1 doesn't use it
+	Tags     TagLister // optional; unused for now
 	Exporter Exporter
 }
 
 // NewService constructs the prompt builder. Exporter is required;
 // Entities is required if the picker enables any schema bits;
-// Tags can be nil in V1.
+// Tags can be nil.
 func NewService(ents EntityLister, tg TagLister, exp Exporter) *Service {
 	return &Service{Entities: ents, Tags: tg, Exporter: exp}
 }
@@ -76,9 +74,7 @@ type Input struct {
 	IncludeFrontMatterExample bool
 
 	// IncludeSampleEntity + IncludeTagsVocabulary are template-
-	// supported but deferred to V2. The picker UI doesn't expose
-	// the toggles; the fields stay here so a future PR can wire
-	// them without changing the API.
+	// supported but not yet exposed by the picker UI.
 	IncludeSampleEntity   bool
 	IncludeTagsVocabulary bool
 
@@ -99,13 +95,12 @@ type Input struct {
 }
 
 // Build assembles the prompt markdown by combining the schema fetch
-// (Entities + optional Tags) + the content fetch (via Exporter, only
-// when ContentMode != "none") + the operator instruction, then
-// rendering through the verbatim §3.5 template.
+// (Entities + optional Tags), the content fetch (via Exporter, only
+// when ContentMode != "none"), and the operator instruction, then
+// rendering through the template.
 //
 // Errors from the schema/content fetch abort the build — better to
-// surface the failure than ship a half-prompt the operator pastes
-// into an AI tool without realising chunks are missing.
+// surface the failure than ship a half-prompt missing chunks.
 func (s *Service) Build(
 	ctx context.Context,
 	campaignName, ownerID, campaignID string,
@@ -194,15 +189,15 @@ func mapEntityTypes(types []entities.EntityType) []entityTypeView {
 	return out
 }
 
-// categoriesInUse builds the §3.5 "Categories currently in use"
-// rows: per entity type, the distinct TypeLabel values + entity
-// count. Pages WITHOUT a TypeLabel show as `(uncategorised)` in the
-// rendered prompt so the operator can see uncategorised volume.
+// categoriesInUse builds the "Categories currently in use" rows: per
+// entity type, the distinct TypeLabel values + entity count. Pages
+// without a TypeLabel show as `(uncategorised)` in the rendered
+// prompt so the operator can see uncategorised volume.
 //
-// Volume: a single List call per type pages through up to 1000
-// entities (scoping report estimates 100-300 per typical campaign).
-// V2 should add a dedicated repo method that returns DISTINCT
-// TypeLabel + count without loading bodies; for V1 this is fine.
+// A single List call per type pages through up to 1000 entities. A
+// dedicated repo method returning DISTINCT TypeLabel + count without
+// loading bodies would be more efficient, but this is fine at current
+// campaign sizes.
 func (s *Service) categoriesInUse(
 	ctx context.Context,
 	campaignID string,

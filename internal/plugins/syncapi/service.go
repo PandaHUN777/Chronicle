@@ -80,8 +80,7 @@ type SyncAPIService interface {
 	// WebSocket authentication.
 	AuthenticateKeyForWS(ctx context.Context, rawKey string) (campaignID, userID string, role int, err error)
 
-	// Calendar date beacon (C-SYNC-DATE-BEACON, extended by
-	// C-SYNC-APPLIED-BEACON).
+	// Calendar date beacon.
 	RecordCalendarDateBeacon(ctx context.Context, campaignID string, year, month, day int) error
 	GetCalendarDateBeacon(ctx context.Context, campaignID string) (*CalendarDateBeacon, error)
 	ConfirmCalendarDate(ctx context.Context, campaignID string, year, month, day int) error
@@ -196,20 +195,13 @@ func (s *syncAPIService) CreateKey(ctx context.Context, userID string, input Cre
 	)
 
 	// Minting a Bearer token for an outside client IS the affirmative act of
-	// turning external access on, and the campaign_addons row is the only
-	// record this system keeps of that. Without this, a campaign that mints
-	// its first key while the addon is off gets a token that is dead by
-	// construction and only starts working after the next server restart
-	// picks it up in ReconcileAddonEnablement — a "restart the server to
-	// make your new key work" behaviour that is worse than the bug this
-	// change closes. So the create path records the decision immediately and
-	// the reconciler stays what it is: a one-time heal for keys minted before
-	// the gate existed.
-	//
-	// This does re-enable a toggle the owner may have switched off. That is
-	// deliberate and it is logged: the owner is, right now, on the API keys
-	// screen asking for an external credential. Nothing else re-enables it —
-	// switching it off after the fact stays off until another key is created.
+	// turning external access on, so the create path enables the Sync API
+	// addon immediately rather than leaving the new key dead until
+	// ReconcileAddonEnablement's next pass. This does re-enable a toggle the
+	// owner may have switched off; that's deliberate (they're on the API
+	// keys screen asking for a credential right now) and logged. Nothing
+	// else re-enables it — switching it off after the fact stays off until
+	// another key is created.
 	//
 	// Best-effort on failure: the key row is already committed and its
 	// plaintext is shown exactly once, so returning an error here would
@@ -257,8 +249,8 @@ func (s *syncAPIService) ListCampaignIDsWithKeys(ctx context.Context) ([]string,
 	return s.repo.ListCampaignIDsWithKeys(ctx)
 }
 
-// maxListLimit caps admin list pagination so a caller can't force a huge query
-// / allocation via an oversized limit (audit-R2 Finding 3).
+// maxListLimit caps admin list pagination so a caller can't force a huge
+// query/allocation via an oversized limit.
 const maxListLimit = 200
 
 // ListAllKeys returns all API keys with pagination (admin).
@@ -582,12 +574,12 @@ func (s *syncAPIService) AuthenticateKeyForWS(ctx context.Context, rawKey string
 	return key.CampaignID, key.UserID, 3, nil
 }
 
-// --- Calendar Date Beacon (C-SYNC-DATE-BEACON) ---
+// --- Calendar Date Beacon ---
 
 // calendarDateBeaconThrottle is the minimum gap between beacon writes for
-// an unchanged date. GetCurrentDate is polled repeatedly (every push per
-// FM-REALTIME-DATE-SIGNAL, plus on sync); without throttling, a live
-// Foundry session would write this row on nearly every poll.
+// an unchanged date. GetCurrentDate is polled repeatedly (every push, plus
+// on sync); without throttling, a live Foundry session would write this row
+// on nearly every poll.
 const calendarDateBeaconThrottle = 60 * time.Second
 
 // RecordCalendarDateBeacon records the date a Bearer-authed module read via
@@ -622,20 +614,18 @@ func (s *syncAPIService) RecordCalendarDateBeacon(ctx context.Context, campaignI
 }
 
 // GetCalendarDateBeacon returns the campaign's served-date beacon (nil, nil
-// if none recorded yet). Read side of the member-read beacon endpoint the
-// sky strip's sync chip polls — no auth restriction here beyond whatever
-// the caller's route already enforces (member-read, per the dispatch).
+// if none recorded yet). No auth restriction here beyond whatever the
+// caller's route already enforces (member-read).
 func (s *syncAPIService) GetCalendarDateBeacon(ctx context.Context, campaignID string) (*CalendarDateBeacon, error) {
 	return s.repo.GetCalendarDateBeacon(ctx, campaignID)
 }
 
 // ConfirmCalendarDate records the date a Bearer-authed module actually
-// APPLIED to its own calendar (C-SYNC-APPLIED-BEACON, POST
-// /calendar/date/confirm) — upgrading the beacon from "saw" (#548's
-// served-date write above) to "applied". Unlike RecordCalendarDateBeacon
-// this is never throttled: a confirm is a deliberate, one-shot module
-// action (not a value read on every poll), so there's no hot-path
-// write-amplification concern to guard against.
+// APPLIED to its own calendar (POST /calendar/date/confirm), upgrading the
+// beacon from "saw" (RecordCalendarDateBeacon's served-date write) to
+// "applied". Unlike RecordCalendarDateBeacon this is never throttled: a
+// confirm is a deliberate, one-shot module action, not a value read on
+// every poll.
 //
 // Callers MUST verify the caller is a real Bearer-authed module (API key
 // ID != synthKeySessionID) before calling this — see

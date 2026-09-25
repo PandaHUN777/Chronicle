@@ -3,49 +3,40 @@
 #
 # DEAD WIDGET MOUNT RATCHET.
 #
-# THE RULE, AND WHY IT IS A RULE. A widget in Chronicle is a `data-widget="name"`
-# div in a templ plus a JS module that calls `Chronicle.register('name', …)`.
-# static/js/boot.js binds the two at DOMContentLoaded — and when it finds a mount
-# whose name is not in its registry it RETURNS SILENTLY (mountElement: `var impl =
-# widgets[name]; if (!impl) { return; }`). There is no lazy loader: boot.js never
-# injects a script tag, never dynamic-imports, never fetches
-# /static/js/widgets/<name>.js. There is no bundler either — the only esbuild call
-# in the Makefile builds the tiptap vendor bundle.
+# A widget in Chronicle is a `data-widget="name"` div in a templ plus a JS
+# module that calls `Chronicle.register('name', …)`. static/js/boot.js binds
+# the two at DOMContentLoaded, and when it finds a mount whose name is not in
+# its registry it returns silently. There is no lazy loader and no bundler
+# for widget scripts, so a widget whose JS file is in no `<script src>`
+# anywhere renders as an empty div forever, with an empty console and no
+# network error.
 #
-# So a widget whose JS file is in NO `<script src>` anywhere renders as an empty
-# div, forever, on every page that mounts it — with an empty console, no network
-# error, and a page that looks finished. That is how `aliases`, `inventory` and
-# `transaction_log` shipped: complete table + repo + service + REST routes + a
-# working 170-to-380-line widget each, mounted on real entity pages, permanently
-# blank. `aliases` sat inside the `title` CORE block, i.e. effectively every
-# entity page in the product.
-#
-# THE FIX IS ALWAYS ONE OF TWO. Add the file to the layout's script list
+# The fix is always one of two: add the file to the layout's script list
 # (internal/templates/layouts/base.templ), which emits outside the hx-boost
 # swapped region; or, for a plugin-owned script, contribute it to the plugin
-# BODY-SCRIPT REGISTRY (internal/app/routes.go's `pluginBodyScripts`). Do NOT put
-# it in a page templ — tools/check-page-scripts.sh explains at length why that
-# loads on a typed URL and not through the sidebar.
+# body-script registry (internal/app/routes.go's `pluginBodyScripts`). Do NOT
+# put it in a page templ — see tools/check-page-scripts.sh for why that loads
+# on a typed URL and not through the sidebar.
 #
-# WHAT COUNTS AS A LOAD PATH. A `<script src=` line naming `<file>.js` in any
-# *.templ, or any mention of it in internal/app/routes.go (the body-script
-# registry). Mount names are kebab-case in the DOM and snake_case on disk
-# (`data-widget="tag-picker"` → tag_picker.js), so the name is translated before
-# the lookup. A mount whose `data-widget` value is a templ EXPRESSION rather than
-# a literal (blockExtWidget's `data-widget={ widgetSlug }`) is out of scope by
-# construction: extension widgets ship their own scripts per campaign.
+# A load path is a `<script src=` line naming `<file>.js` in any *.templ, or
+# any mention of it in internal/app/routes.go (the body-script registry).
+# Mount names are kebab-case in the DOM and snake_case on disk
+# (`data-widget="tag-picker"` → tag_picker.js), so the name is translated
+# before the lookup. A mount whose `data-widget` value is a templ expression
+# rather than a literal (blockExtWidget's `data-widget={ widgetSlug }`) is out
+# of scope by construction: extension widgets ship their own scripts per
+# campaign.
 #
-# THIS GUARD IS A RATCHET, NOT AN AUDIT — same shape as check-page-scripts.sh.
-# tools/widget-mount-allowlist.txt names the mounts that are known-dead and NOT
-# fixable by a script tag alone. The set may only shrink: a name in the tree but
-# not the allowlist fails, and a name in the allowlist that no longer has a dead
-# mount ALSO fails, because a stale entry is a hole a dead mount can be put back
-# through.
+# This guard is a RATCHET, not an audit — same shape as check-page-scripts.sh.
+# tools/widget-mount-allowlist.txt names the mounts that are known-dead and
+# not fixable by a script tag alone. The set may only shrink: a name in the
+# tree but not the allowlist fails, and a name in the allowlist that no
+# longer has a dead mount also fails, since a stale entry is a hole a dead
+# mount can be put back through.
 #
 # SELF-TEST: every run first executes the resolver and the comparison against
-# fixtures in a temp dir, so "OK" always means the rule can actually fire — a
-# guard that cannot fail is worse than no guard, because it reads as coverage.
-# Run just the self-test with: --self-test-only
+# fixtures in a temp dir, so "OK" always means the rule can actually fire. Run
+# just the self-test with: --self-test-only
 #
 # Exit codes:
 #   0 — every literal widget mount in the tree has a load path (or is allowlisted)

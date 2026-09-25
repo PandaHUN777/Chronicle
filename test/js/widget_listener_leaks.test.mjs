@@ -1,16 +1,13 @@
-// widget_listener_leaks.test.mjs — pins the document-listener-leak bug class
-// (cordinator#39 findings 1+2). Two widgets had ANONYMOUS document click
-// listeners added in their render path; destroy() cleared innerHTML but could
-// not remove them, so every HTMX navigation leaked one handler holding a
-// detached DOM tree. The contract this guards, for each widget that takes a
-// document-level listener:
-//   1. No ANONYMOUS document listeners — the handler must be a named/stored
+// widget_listener_leaks.test.mjs — pins the contract for any widget that
+// takes a document-level listener, so an HTMX navigation cannot leak one
+// holding a detached DOM tree:
+//   1. No anonymous document listeners — the handler must be a named/stored
 //      reference (so it can be removed).
 //   2. Every document.addEventListener(evt, ref) has a matching
 //      document.removeEventListener(evt, ref).
 //   3. destroy() participates in document-listener cleanup.
-// tag_picker.js is included as the canonical-correct control (the pattern the
-// fixes mirror) so the guard proves it passes on already-correct code.
+// tag_picker.js is included as the canonical-correct control, so the guard
+// proves it passes on already-correct code.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

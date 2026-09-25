@@ -6,25 +6,22 @@ import (
 	"strings"
 )
 
-// This file closes the DS-SEC-AUDIT-R1 CRITICAL: statblock_json was stored
-// and served verbatim, and bestiary widgets interpolate statblock string
-// fields (organization, role, size, ...) into innerHTML — so any
-// authenticated user could publish a creature whose fields carry HTML and
-// have it execute in every other user's browser (cross-campaign, zero-click:
-// the bestiary browser renders community cards on open).
+// This file defends against stored XSS: bestiary widgets interpolate
+// statblock string fields (organization, role, size, ...) into innerHTML, so
+// an unsanitized statblock lets any authenticated user publish a creature
+// whose fields execute HTML in every other user's browser.
 //
-// Defense here is server-side and belongs to the publish path (server =
-// authority): every string in the statblock — keys and values, at any
-// nesting depth — has the HTML metacharacters '<' and '>' removed. Angle
-// brackets have no legitimate meaning in Draw Steel statblock text, and
-// STRIPPING (unlike escaping) is idempotent, which lets the same pass run
-// safely on write, on read, and over already-stored rows without
-// double-mangling anything.
+// Defense is server-side, on the publish path (server = authority): every
+// string in the statblock — keys and values, at any nesting depth — has the
+// HTML metacharacters '<' and '>' removed. Angle brackets have no legitimate
+// meaning in Draw Steel statblock text, and stripping (unlike escaping) is
+// idempotent, so the same pass is safe on write, on read, and over
+// already-stored rows.
 //
-// Attribute-context injection (quotes) is deliberately NOT handled here:
+// Attribute-context injection (quotes) is deliberately not handled here:
 // quotes are legitimate in creature text ("The GM's ally"), and neutralizing
 // attribute breakout is the rendering side's job (Chronicle.escapeAttr /
-// escapeHtml in the widgets — dispatched as DS-SEC-FIXES-R1).
+// escapeHtml in the widgets).
 
 // stripAngles removes '<' and '>' from a string. Idempotent.
 func stripAngles(s string) string {

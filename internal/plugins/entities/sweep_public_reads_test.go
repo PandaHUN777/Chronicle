@@ -1,9 +1,9 @@
-// sweep_public_reads_test.go — C-SWEEP-FIXES-R1 / cordinator#39 findings 3 + 5.
-//   - The entity aliases read is reachable anonymously on a PUBLIC campaign and
-//     bounces to /login on a PRIVATE one (finding 3); the handler's IDOR +
-//     entity-privacy gate is also exercised.
-//   - The "Player Notes" (entity_notes) block is not mounted for a viewer with
-//     no authenticated identity (finding 5).
+// sweep_public_reads_test.go pins two access rules:
+//   - The entity aliases read is reachable anonymously on a public campaign
+//     and bounces to /login on a private one; the handler's IDOR and
+//     entity-privacy gate are also exercised.
+//   - The "Player Notes" (entity_notes) block is not mounted for a viewer
+//     with no authenticated identity.
 package entities
 
 import (
@@ -91,11 +91,9 @@ func TestAliasesAnonymousAccess_PublicVsPrivate(t *testing.T) {
 		})
 	}
 
-	// Privacy gate: a private entity's aliases are NOT returned to an anonymous
-	// viewer on a public campaign (RolePlayer < Scribe). The handler returns
-	// apperror.NewNotFound (→ 404 under the app's error handler; the default
-	// Echo handler used here surfaces it as a non-200 error), so the contract is
-	// simply: never a 200 alias payload.
+	// Privacy gate: a private entity's aliases are not returned to an
+	// anonymous viewer on a public campaign (RolePlayer < Scribe); the
+	// contract is simply never a 200 alias payload.
 	t.Run("private entity not leaked to player", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		newRouter(true, true).ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))

@@ -10,10 +10,10 @@ import (
 // --- Mocks ---
 
 type mockTransactionRepo struct {
-	createFn        func(ctx context.Context, tx *Transaction) error
+	createFn         func(ctx context.Context, tx *Transaction) error
 	listByCampaignFn func(ctx context.Context, campaignID string, opts TransactionListOptions) ([]Transaction, int, error)
-	listByShopFn    func(ctx context.Context, campaignID, shopEntityID string, opts TransactionListOptions) ([]Transaction, int, error)
-	listByBuyerFn   func(ctx context.Context, buyerEntityID string, opts TransactionListOptions) ([]Transaction, int, error)
+	listByShopFn     func(ctx context.Context, campaignID, shopEntityID string, opts TransactionListOptions) ([]Transaction, int, error)
+	listByBuyerFn    func(ctx context.Context, buyerEntityID string, opts TransactionListOptions) ([]Transaction, int, error)
 }
 
 func (m *mockTransactionRepo) Create(ctx context.Context, tx *Transaction) error {
@@ -350,9 +350,8 @@ func TestPurchase_BuyerAccessAllowed(t *testing.T) {
 }
 
 // TestPurchase_BuyerAccessDenied pins the spoofing-defence path: the
-// transaction service must reject Purchase when the access checker says no,
-// without writing a transaction or decrementing stock. This is the test
-// that pins the C-Phase-2 ownership cross-check.
+// transaction service must reject Purchase when the access checker says
+// no, without writing a transaction or decrementing stock.
 func TestPurchase_BuyerAccessDenied(t *testing.T) {
 	createCalled := false
 	repo := &mockTransactionRepo{createFn: func(_ context.Context, _ *Transaction) error {

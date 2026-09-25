@@ -1,17 +1,13 @@
-// codm_visibility_test.go pins the operator's 2026-09-12 ruling (.ai/todo.md,
-// "RULED 2026-09-12 by the operator: YES, the co-DM promotion crosses plugin
-// lines"): a co-DM (MemberRole=Player, IsDmGranted=true) must be handed to
-// the Armory service as a promoted viewer — cc.VisibilityRole(), the same
-// promotion campaigns.CampaignContext already applies on entity paths — not
-// the raw int(cc.MemberRole).
+// codm_visibility_test.go pins that a co-DM (MemberRole=Player,
+// IsDmGranted=true) must be handed to the Armory service as a
+// promoted viewer via cc.VisibilityRole() — the same promotion
+// campaigns.CampaignContext applies on entity paths — not the raw
+// int(cc.MemberRole).
 //
-// TEST HONESTY (matches the note atop service_test.go): this is a handler
-// unit test with a fake ArmoryService. It does not prove the real SQL/entity
-// visibility predicate honours a co-DM — that is armory/service.go's
-// visibleItemIDs and the entities plugin's own predicate. What this DOES
-// prove, without a database, is the one thing that was actually wrong: which
-// role integer Handler.Index / Handler.CountAPI hand to the service. A mock
-// service is exactly as trustworthy as this comment says it is.
+// This is a handler unit test with a fake ArmoryService: it proves
+// which role integer Handler.Index / Handler.CountAPI hand to the
+// service, not that the real SQL/entity visibility predicate (armory/
+// service.go's visibleItemIDs) honours a co-DM.
 package armory
 
 import (
@@ -91,12 +87,11 @@ func newArmoryTestContext(cc *campaigns.CampaignContext, method, path string) (e
 	return c, rec
 }
 
-// TestListItems_CoDMIsPromotedToOwnerForVisibility is the RED/GREEN case for
-// finding 1: a co-DM must reach the service as permissions.RoleOwner (via
-// cc.VisibilityRole()), matching what visibleItemIDs treats as "unrestricted"
-// (service.go: "Only an OWNER is unrestricted here"). Before the fix, Index
-// passed int(cc.MemberRole) == RolePlayer, so a co-DM was narrowed exactly
-// like a plain Player and never saw a dm_only / custom-restricted item.
+// TestListItems_CoDMIsPromotedToOwnerForVisibility: a co-DM must reach
+// the service as permissions.RoleOwner (via cc.VisibilityRole()),
+// matching what visibleItemIDs treats as unrestricted — otherwise a
+// co-DM is narrowed like a plain Player and misses dm_only / custom-
+// restricted items.
 func TestListItems_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 	svc := &fakeRoleCapturingService{}
 	h := NewHandler(svc)

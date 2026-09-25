@@ -1,11 +1,8 @@
-// dm_grant_visibility_test.go — ADR-057 slice 2 (P1FIX dispatch, review
-// finding on the slice-1 commit).
-//
-// EntityHistory's IDOR + visibility guard passed the raw int(cc.MemberRole)
-// to ResolveEntityView instead of the promoted cc.VisibilityRole() — so a
-// Co-DM (Player + DM grant) allowed onto a dm_only entity's page by the
-// entities plugin's Show handler (already fixed in ADR-057 slice 1) still
-// got 404'd loading that same entity's History panel.
+// dm_grant_visibility_test.go pins that EntityHistory's IDOR/visibility
+// guard passes the promoted cc.VisibilityRole(), not the raw
+// int(cc.MemberRole), to ResolveEntityView — otherwise a Co-DM (Player +
+// DM grant) allowed onto a dm_only entity's page gets 404'd loading that
+// same entity's History panel.
 //
 // auditDmGrantGuard mirrors the real adapter's behavior (entities'
 // CheckEntityAccess via ResolveEntityView): a dm_only (private) entity

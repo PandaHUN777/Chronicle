@@ -1,6 +1,5 @@
-// calendar_recurrence_test.go — the recurrence expansion predicate
-// (C-CAL-EDITOR-EXPANSION PR2). Event.OccursOn is the single source of truth
-// every grid/list projection routes through, so it is table-tested here across
+// calendar_recurrence_test.go tests Event.OccursOn, the single recurrence
+// expansion predicate every grid/list projection routes through, across
 // month + year boundaries and the monthly leap rule (cal.MonthDays).
 package calendar
 
@@ -140,22 +139,12 @@ func TestRecurrenceMigration_AddsAndDropsColumn(t *testing.T) {
 	}
 }
 
-// --- C-SWEEP-R4 stage 22: monthly honours recurrence_interval ----------------
-
-// TestEventOccursOn_MonthlyHonoursInterval is the regression for
-// backlog/occurson-monthly-ignores-interval.
-//
-// The monthly branch used to check the day-of-month and the occurrence cap and
-// return, so a stored "every N months" fired EVERY month — the operator's rule
-// was accepted, persisted, and then not applied. The week-based branch has
-// always applied its interval; this asserts monthly now does the same, counted
-// in months.
+// TestEventOccursOn_MonthlyHonoursInterval pins that a monthly event honours
+// recurrence_interval, counted in months, the way the week-based branch
+// applies its interval in weeks.
 //
 // The `interval 1 / 0 / absent / negative` rows are as load-bearing as the
-// positive ones: they are the proof that no stored row moves except the ones
-// that were being mis-expanded. Every existing monthly event in an operator's
-// database has one of those four intervals, because the shipped editor sends 0
-// for the month unit (calendar_daycard.js recurrenceBody).
+// positive ones: they pin that those four intervals still expand every month.
 func TestEventOccursOn_MonthlyHonoursInterval(t *testing.T) {
 	cal := recurrenceCal()
 
@@ -206,15 +195,9 @@ func TestEventOccursOn_MonthlyHonoursInterval(t *testing.T) {
 	}
 }
 
-// TestEventOccursOn_MonthlyIntervalRespectsMax pins the half that was booked as
-// un-fixable until the interval fork was settled: RecurrenceMaxOccurrences on a
-// monthly event counted MONTHS, not occurrences.
-//
-// "Every 3 months, 4 times" means occurrences at +0, +3, +6 and +9 months. The
-// old code compared the raw month offset against the cap, so it stopped after
-// month +3 — i.e. after the SECOND occurrence, delivering half the series the
-// operator asked for. n/step is the 0-based occurrence index, the same quantity
-// `diff/stride` is on the week-based branch.
+// TestEventOccursOn_MonthlyIntervalRespectsMax pins that
+// RecurrenceMaxOccurrences on a monthly event counts occurrences, not months:
+// "every 3 months, 4 times" means occurrences at +0, +3, +6 and +9 months.
 func TestEventOccursOn_MonthlyIntervalRespectsMax(t *testing.T) {
 	cal := recurrenceCal()
 	ev := recurEvent(RecurrenceMonthly, 1, 1, 15)

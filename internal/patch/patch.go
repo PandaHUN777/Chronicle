@@ -1,9 +1,5 @@
 // Package patch provides three-state JSON fields for partial-update
-// requests.
-//
-// The contract it encodes — ruled by the coordinator on 2026-08-07 for
-// sweep R4, extending the C-SIDEBAR-REORDER-RESCUE PR1 step 1 booking and
-// the C-CAL-NULL-PRESERVE precedent to the whole partial-write class:
+// requests:
 //
 //	an ABSENT key preserves the stored value;
 //	an EXPLICIT null clears it;

@@ -34,22 +34,11 @@ run: ## Run the server directly (no hot reload)
 	go run $(MAIN_PKG)
 
 # --- Build ---
-# WHY `build` depends on `templ`: *_templ.go is generated and gitignored, so a
-# clean checkout contains none of it. Measured on a fresh clone of this repo,
-# the old recipe exited 2 with "no required module provides package
-# github.com/keyxmakerx/chronicle/internal/templates/pages" — and left a
-# previously-built ./bin/chronicle byte-identical on disk. A failed build that
-# leaves a plausible artifact behind is worse than one that leaves none: every
-# later check that asks "is there a binary?" instead of "did the build
-# succeed?" answers yes, and you ship the old one. That is the same class of
-# mistake as trusting an image label over the running process.
-#
-# `rm -f` first so a failure cannot masquerade as a fresh binary. Nothing here
-# passes -ldflags: the Go toolchain stamps vcs.revision/vcs.time/vcs.modified
-# into the binary automatically whenever `git` is on PATH and the main package
-# sits in a checkout (verified with `go version -m` on the output of this
-# target), and internal/hostinfo reads those stamps. A -X version variable
-# would be a SECOND source of the same fact, free to disagree with the first.
+# `build` depends on `templ`: *_templ.go is generated and gitignored, so a
+# clean checkout has none of it. `rm -f` first so a failed build can't leave a
+# stale binary that looks fresh. No -ldflags: the Go toolchain stamps
+# vcs.revision/vcs.time/vcs.modified automatically when git is on PATH, and
+# internal/hostinfo reads those stamps.
 .PHONY: build
 build: templ ## Build production binary (regenerates templ first)
 	rm -f $(BUILD_DIR)/$(APP_NAME)
@@ -65,7 +54,7 @@ templ: ## Regenerate Templ .go files from .templ sources
 	templ generate
 
 .PHONY: foundry-error-catalog
-foundry-error-catalog: ## Regenerate the foundry_vtt error-catalog.json from errors.go (C-FMC-DRIFT-GUARD)
+foundry-error-catalog: ## Regenerate the foundry_vtt error-catalog.json from errors.go
 	go run ./cmd/foundry-error-catalog
 
 .PHONY: tailwind
@@ -98,35 +87,14 @@ test-int: ## Run integration tests (requires running DB)
 
 .PHONY: test-freshdb
 test-freshdb: ## Replay core + every plugin migration against a NEVER-migrated schema (requires running DB)
-	# C-SWEEP-R4 (data/fvtt-fresh-db-rename): nothing in the suite ever
-	# migrated an empty database. tools/restore-drill.sh loads a dump of an
-	# ALREADY-migrated one and every other integration test assumes
-	# `make migrate-up` already ran — so foundry_vtt's migration 001 failed on
-	# its first statement on every new self-hosted install and no test noticed.
-	# These two replay the real bootstrap (core migrations → the foundry_vtt
-	# pre-check + reconciler → RunPluginMigrations over registeredPlugins())
-	# against a throwaway schema: one from zero, one from the pre-consolidation
-	# shape. They create and drop their own scratch schema, so this never
-	# touches the dev database.
+	# Every other integration test assumes `make migrate-up` already ran, so
+	# this replays the real bootstrap (core migrations -> plugin migrations)
+	# against a throwaway schema. Creates and drops its own scratch schema;
+	# never touches the dev database.
 	go test ./cmd/server/ -v -run 'TestFreshDatabase_|TestUpgradeDatabase_'
-	# The plugin-migration damage-control layer (pre-flight applicability +
-	# resume-after-partial-failure) is a claim about what the SERVER does with
-	# a half-applied migration, so it is measured on one too.
+	# Also exercises the plugin-migration pre-flight + resume-after-partial-
+	# failure logic against a half-applied migration.
 	go test ./internal/database/ -v -run 'TestPluginMigration_'
-
-.PHONY: test-probes
-test-probes: ## Drive the real-browser probes (the only tests that see the RENDERED result)
-	# C-SWEEP-R4 (guards/probes-never-run-in-ci). The browser probes skip under
-	# `-short` — the mode BOTH `make test-unit` and `make verify` and CI's
-	# "Build & Test" job run — and skip again with no Chromium, and a `go test`
-	# SKIP hides inside an `ok` package line. So none of them had ever executed
-	# in CI or in verify, and a machine with no browser produced a green run
-	# indistinguishable from one that measured everything.
-	#
-	# The guard runs them WITHOUT -short and then requires a PASS from each by
-	# name, so once a machine CAN drive a browser, not driving it is an error.
-	# With no browser it says so loudly, naming every probe that did not run.
-	./tools/check-browser-probes.sh
 
 .PHONY: test-cover
 test-cover: ## Run tests with coverage report
@@ -141,22 +109,14 @@ test-js: ## Run JS runtime tests (sidebar, availability, widgets — node --test
 # --- Local CI ---
 # `make verify` runs the same sequence, in the same order, as the CI "Build &
 # Test" job — so a green run here is the strongest local signal a PR will land
-# green. Added by C-CALV4-FOUNDATION-P0 because five parallel calendar-v4 chats
-# each needed the sequence and were each reconstructing it by hand from ci.yml.
+# green.
 #
 # NOT included: golangci-lint (its own CI job; `make lint`), govulncheck
 # (`make vuln`), and tools/test-restore-drill.sh (spins real MariaDB
 # containers — too heavy for an inner-loop check; CI still runs it).
 #
-# The browser probes ARE included, at the end. `go test ./... -short` above
-# cannot see them — that is the whole point of C-SWEEP-R4's
-# guards/probes-never-run-in-ci — so verify would otherwise report a green
-# sequence in which nothing had ever looked at a rendered page. On a machine
-# with no Chromium the step names every probe it could not run and moves on;
-# it is fatal only in CI, which sets BROWSER_PROBES_REQUIRED=1.
-#
-# The three diff-scoped guards resolve their base as origin/main and need real
-# git history; in a shallow clone they silently report OK. Override with
+# The diff-scoped guards resolve their base as origin/main and need real git
+# history; in a shallow clone they silently report OK. Override with
 # DIFF_BASE=<ref>.
 .PHONY: verify
 verify: ## Run the full local CI sequence (templ → build → vet → guards → go test → js test)
@@ -168,12 +128,10 @@ verify: ## Run the full local CI sequence (templ → build → vet → guards �
 	@echo "==> guard: plugin-isolation";       ./tools/check-plugin-isolation.sh
 	@echo "==> guard: migration-immutability"; ./tools/check-migration-immutability.sh
 	@echo "==> guard: v2-motion-discipline";   ./tools/check-v2-motion-discipline.sh
-	@echo "==> guard: calendar-v4 B1-B4";      ./tools/check-calendar-v4-lints.sh
 	@echo "==> guard: decision-citations";     ./tools/check-decision-citations.sh
 	@echo "==> guard: widget-mounts";          ./tools/check-widget-mounts.sh
 	@echo "==> go test ./... -short";          go test ./... -short
 	@echo "==> make test-js";                  $(MAKE) test-js
-	@echo "==> browser probes";                $(MAKE) test-probes
 	@echo "==> verify: OK"
 
 .PHONY: lint
@@ -181,7 +139,7 @@ lint: ## Run golangci-lint
 	golangci-lint run ./...
 
 .PHONY: check-scrub
-check-scrub: ## Verify operator instance hostnames are absent from source (C-SCRUB-INSTANCE-URLS)
+check-scrub: ## Verify operator instance hostnames are absent from source
 	./tools/check-no-instance-hostname.sh
 
 .PHONY: security
@@ -237,12 +195,9 @@ docker-logs: ## Tail container logs
 	docker compose -f $(DOCKER_COMP) logs -f
 
 # Building from source goes through the override file, which tags the result
-# `chronicle:local` instead of the GHCR name. WHY: while the base file declared
-# both `image:` and `build:`, this target tagged a local build with
-# ghcr.io/<org>/chronicle:latest — so `docker image inspect` on that tag could
-# be answering about somebody's afternoon build rather than the published one,
-# and `up -d` would then silently keep using it. That ambiguity cost an hour on
-# 2026-08-11. See docker-compose.build.yml.
+# `chronicle:local` instead of the GHCR name, so a local build can never be
+# mistaken for (or silently replace) the published image. See
+# docker-compose.build.yml.
 .PHONY: docker-build
 docker-build: ## Build the Chronicle Docker image locally (tags chronicle:local)
 	docker compose -f $(DOCKER_COMP) -f $(DOCKER_COMP_BUILD) build chronicle

@@ -28,11 +28,10 @@ func roleFor(p PrivacyMode) int {
 	return permissions.RoleOwner
 }
 
-// estimateTokens returns a rough token count for a markdown string.
-// We use an OpenAI-ish 4 chars/token heuristic — accurate enough for
-// the modal header line ("**Estimated tokens:** ~12,400") that helps
-// owners gauge whether the export fits a target AI context window.
-// Per operator decision 2026-05-26 (AskUserQuestion answer 3 = YES).
+// estimateTokens returns a rough token count for a markdown string, using an
+// OpenAI-ish 4 chars/token heuristic — accurate enough for the modal header
+// line that helps owners gauge whether the export fits a target AI's
+// context window.
 func estimateTokens(markdown string) int {
 	if markdown == "" {
 		return 0
@@ -105,10 +104,9 @@ func substituteTokenCount(doc string, count int) string {
 // ----------------------------------------------------------------------------
 
 // RenderEntities renders the Entities section: groups by EntityType,
-// renders each entity's EntryHTML (via htmlToMarkdown), inlines tags
-// and relations. Bidirectional relations are listed on BOTH endpoints
-// per operator decision (2026-05-26 AskUserQuestion answer 2 = both
-// endpoints; AI-consumer clarity wins over mild duplication).
+// renders each entity's EntryHTML (via htmlToMarkdown), inlines tags and
+// relations. Bidirectional relations are listed on BOTH endpoints — AI-
+// consumer clarity wins over the mild duplication.
 //
 // Inputs:
 //   - ents: already-filtered slice (caller applied PrivacyMode via the
@@ -215,10 +213,9 @@ func renderEntity(
 	}
 
 	// Body — SEC-6-AMENDED invariant: EntryHTML through sanitize.HTMLPtr
-	// before the converter. htmlToMarkdown enforces this. A conversion
+	// before the converter (enforced by htmlToMarkdown). A conversion
 	// failure skips just this field (bodyOrSkip) rather than aborting the
-	// whole export — the differentiator behind the "export everything →
-	// error" bug, since private/owner-only bodies only render here.
+	// whole export.
 	body, err := htmlToMarkdown(e.EntryHTML)
 	body = bodyOrSkip("entity body", e.Name, body, err)
 	if body != "" {
@@ -282,14 +279,14 @@ func renderEntity(
 // Notes
 // ----------------------------------------------------------------------------
 
-// RenderNotes renders the Notes section: folder-aware via ParentID
-// chains, owner-scoped (caller passes the result of
-// notes.NoteService.ListByUserAndCampaign which already applies the
-// owner + shared filter). Per-note: Title + privacy markers + body.
+// RenderNotes renders the Notes section: folder-aware via ParentID chains,
+// owner-scoped (caller passes the already owner+shared-filtered result of
+// notes.NoteService.ListByUserAndCampaign). Per-note: Title + privacy
+// markers + body.
 //
-// The folder traversal is two-pass: build parent → children map,
-// recurse from top-level (ParentID == nil) folders + notes. Cycles
-// guarded via a visited set (notes.Note's ParentID is user-controlled).
+// Folder traversal is two-pass: build parent → children map, recurse from
+// top-level (ParentID == nil). A visited set guards cycles, since
+// notes.Note's ParentID is user-controlled.
 func RenderNotes(ctx context.Context, list []notes.Note, opts Options) (string, error) {
 	if len(list) == 0 {
 		return "", nil
@@ -401,17 +398,10 @@ func renderNoteTree(
 // Calendar events
 // ----------------------------------------------------------------------------
 //
-// CALV5-PLACEHOLDER: RenderCalendarEvents + renderCalendarEvent stood here.
-// They grouped calendar.Event rows by in-world month, labelled each group with
-// the calendar's own month name and matching era ("Highsummer 1247 AR", never
-// "Month 4, Year 1247"), and dropped dm_only events in Safe mode as
-// defence-in-depth because ListAllEventsForCalendar deliberately bypassed role
-// filtering.
-//
-// The calendar is being rebuilt (V5) and its tables are dropped, so there is
-// nothing to render; service.go's CategoryCalendarEvents says so in the export.
-// When V5 restores this, KEEP the Safe-mode dm_only drop: the listing layer it
-// defended against is exactly the kind of bypass that gets rebuilt too.
+// CALV5-PLACEHOLDER: V5 must restore RenderCalendarEvents +
+// renderCalendarEvent, grouping calendar.Event rows by in-world month/era
+// name, and MUST keep the Safe-mode dm_only drop as defence-in-depth since
+// ListAllEventsForCalendar deliberately bypasses role filtering.
 
 // ----------------------------------------------------------------------------
 // Sessions
@@ -552,15 +542,13 @@ func renderSession(
 // ----------------------------------------------------------------------------
 
 // RenderTimelines renders the Timelines section: one ## heading per
-// Timeline, then ### per event in chronological order. Events come
-// from the EventLink join shape which carries both calendar-linked
-// and standalone events under a unified schema (per
-// internal/plugins/timeline/model.go:97).
+// Timeline, then ### per event in chronological order. Events come from the
+// EventLink join shape, which carries both calendar-linked and standalone
+// events under a unified schema.
 //
-// Privacy filter is handled at the lister layer (ListTimelines /
-// ListTimelineEvents take role + userID); renderer trusts the input.
-// Safe mode additionally drops Visibility=="dm_only" rows as
-// defense-in-depth.
+// Privacy filtering happens at the lister layer (ListTimelines /
+// ListTimelineEvents take role + userID); renderer trusts the input. Safe
+// mode additionally drops Visibility=="dm_only" rows as defense-in-depth.
 func RenderTimelines(
 	ctx context.Context,
 	timelines []timeline.Timeline,

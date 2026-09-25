@@ -1,15 +1,13 @@
-// codm_visibility_test.go pins the operator's 2026-09-12 ruling (.ai/todo.md,
-// "RULED 2026-09-12 by the operator: YES, the co-DM promotion crosses plugin
-// lines"): a co-DM (MemberRole=Player, IsDmGranted=true) must reach the NPC
-// service as cc.VisibilityRole() (promoted to Owner), not the raw
-// int(cc.MemberRole) — both from NPCSection (the Characters-page NPC/Monsters
-// block) and from CountAPI (the sidebar badge), which the handler.go:60
-// comment says are deliberately kept in agreement.
+// codm_visibility_test.go pins that a co-DM (MemberRole=Player,
+// IsDmGranted=true) reaches the NPC service as cc.VisibilityRole() (promoted
+// to Owner), not the raw int(cc.MemberRole) — from both NPCSection (the
+// Characters-page NPC/Monsters block) and CountAPI (the sidebar badge),
+// which must stay in agreement.
 //
-// TEST HONESTY (matches service_test.go / armory's twin test): a handler
-// unit test with a fake NPCService proves which role integer the handler
-// forwards, not that the real SQL/entity-visibility predicate honours it —
-// that is visibleNPCIDs and the entities plugin's own predicate.
+// TEST HONESTY: a handler unit test with a fake NPCService proves which role
+// integer the handler forwards, not that the real SQL/entity-visibility
+// predicate honours it — that is visibleNPCIDs and the entities plugin's own
+// predicate.
 package npcs
 
 import (
@@ -88,8 +86,7 @@ func TestNPCSection_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 }
 
 // TestCountNPCs_CoDMIsPromotedToOwnerForVisibility covers handler.go's
-// CountAPI (the sidebar badge) — the "gallery" side of the pairing the
-// handler.go:60 comment describes.
+// CountAPI (the sidebar badge).
 func TestCountNPCs_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 	svc := &fakeRoleCapturingNPCService{}
 	h := NewHandler(svc)
@@ -112,10 +109,8 @@ func TestCountNPCs_CoDMIsPromotedToOwnerForVisibility(t *testing.T) {
 	}
 }
 
-// TestNPCSectionAndCountAPI_AgreeForCoDM is the explicit "still agree
-// afterwards" check the task asked for: NPCSection and CountAPI must land on
-// the SAME promoted role for the same co-DM viewer, preserving the
-// handler.go:60 invariant now that both sides promote.
+// TestNPCSectionAndCountAPI_AgreeForCoDM checks that NPCSection and CountAPI
+// land on the same promoted role for the same co-DM viewer.
 func TestNPCSectionAndCountAPI_AgreeForCoDM(t *testing.T) {
 	cc := coDMContext()
 
@@ -143,7 +138,7 @@ func TestNPCSectionAndCountAPI_AgreeForCoDM(t *testing.T) {
 
 // TestNPCSection_PlainPlayerIsNotPromoted and its CountAPI twin are the
 // negative controls: a Player with no DM grant must still reach the service
-// at RolePlayer. These must pass before AND after the fix.
+// at RolePlayer.
 func TestNPCSection_PlainPlayerIsNotPromoted(t *testing.T) {
 	svc := &fakeRoleCapturingNPCService{}
 	h := NewHandler(svc)

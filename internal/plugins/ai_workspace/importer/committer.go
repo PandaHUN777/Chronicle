@@ -1,22 +1,17 @@
-// committer.go is the Phase 5 entity-creation orchestrator. Takes
-// the parser+classifier output PLUS the per-row operator decisions
-// from the review screen, then creates entity types (for new
-// categories) + entities (for each included row).
+// committer.go is the entity-creation orchestrator. It takes the
+// parser+classifier output plus the per-row operator decisions from
+// the review screen, then creates entity types (for new categories)
+// and entities (for each included row).
 //
 // Per-row autonomy: row N failure does NOT abort N+1..M. Each row's
 // outcome lives independently on RowOutcome; the operator sees the
 // per-row result in the import_result templ.
 //
-// SEC-6-AMENDED mirror: every entity body is routed through
-// MarkdownToHTML (markdown_html.go) → htmlconv.Convert before being
-// handed to the entity service. The AST structural pin in
-// committer_sanitize_test.go fails pinpointed (line number on the
-// unprotected call site) if any future refactor adds a code path
-// that calls EntityCreator.UpdateEntry / Create / Update WITHOUT
-// the MarkdownToHTML funnel.
-//
-// Per cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §4 Phase 5 + §5 acceptance invariants.
+// SEC-6: every entity body is routed through MarkdownToHTML
+// (markdown_html.go) → htmlconv.Convert before being handed to the
+// entity service. The AST structural pin in committer_sanitize_test.go
+// fails if a future refactor adds a code path that calls
+// EntityCreator.UpdateEntry / Create / Update without that funnel.
 
 package importer
 
@@ -38,13 +33,6 @@ var _ = fmt.Errorf
 
 // EntityCreator is the narrow contract the Committer needs. The
 // concrete entities.EntityService implements every method.
-//
-// Per C-AI-WORKSPACE-V1-G (V1.5 verb-set extension), Delete is added
-// alongside Create / Update. The destructive-scoping audit
-// (cordinator/reports/chronicle/2026-05-28-c-ai-workspace-destructive-
-// scoping.md §2.1) verified entities.EntityService.Delete exists at
-// entities/service.go:36; this is a narrow-interface widening, not
-// new entity-service work.
 type EntityCreator interface {
 	CreateEntityType(ctx context.Context, campaignID string, input entities.CreateEntityTypeInput) (*entities.EntityType, error)
 	Create(ctx context.Context, campaignID, userID string, input entities.CreateEntityInput) (*entities.Entity, error)
@@ -91,49 +79,33 @@ type RowDecision struct {
 	// per-row editing.
 	Subcategory string
 
-	// Visibility is the enum value. It maps to IsPrivate at commit
-	// time (private / dm_only → private; public → public) and to
-	// NOTHING ELSE.
-	//
-	// The comment that stood here claimed "Visibility=dm_only is
-	// preserved on the entity's Visibility field via Update". That was
-	// never true: UpdateEntityInput has no Visibility member, the
-	// entities service never assigns entity.Visibility on update, and
-	// the UPDATE statement has no visibility column. Entity.Visibility
-	// is a different concept entirely — the default/custom visibility
-	// MODE switch — and nothing in this plugin touches it. So dm_only
-	// and private are indistinguishable once committed; both land as
-	// IsPrivate=true. Audit finding 8, 2026-09-12.
-	//
-	// On an UPDATE this value is only honored when the markdown carried
-	// an explicit `visibility:` key — see commitUpdate.
+	// Visibility is the enum value. It maps to IsPrivate at commit time
+	// (private / dm_only → private; public → public) and to NOTHING
+	// ELSE — Entity.Visibility is a separate default/custom MODE
+	// switch this plugin never touches, so dm_only and private are
+	// indistinguishable once committed. On an UPDATE this value is
+	// only honored when the markdown carried an explicit `visibility:`
+	// key — see commitUpdate.
 	Visibility string
 
 	// ConflictMode is "skip" | "rename" | "update". Honored only when
 	// the action is "create" (or empty) AND the corresponding entity
 	// slug exists in the campaign. Ignored for action=update /
 	// action=delete (those actions encode operator intent directly).
-	//
-	// V1.5 (C-AI-WORKSPACE-V1-G) renames the "overwrite" value to
-	// "update" for vocabulary consistency with the new front-matter
-	// action verb. The commit handler accepts "overwrite" as a
-	// backward-compat alias for one release (remove in V2).
+	// "overwrite" is accepted as a backward-compat alias for "update".
 	ConflictMode string
 
-	// Action (V1.5 / C-AI-WORKSPACE-V1-G) is the operator-confirmed
-	// action verb for this row, normally inherited from the AI's
-	// front-matter `action:` field but operator-overridable in the
-	// review screen. Empty defaults to "create" so legacy form
-	// submissions without the field continue to work. Values:
-	// "create" | "update" | "delete".
+	// Action is the operator-confirmed action verb for this row,
+	// normally inherited from the AI's front-matter `action:` field
+	// but operator-overridable in the review screen. Empty defaults
+	// to "create". Values: "create" | "update" | "delete".
 	Action string
 
-	// DeleteConfirmed (V1.5 / C-AI-WORKSPACE-V1-G) is the per-row
-	// confirmation flag for Action=delete rows. The review screen
-	// gates Submit on this being true for every Delete row;
-	// committer treats a Delete row without DeleteConfirmed as
-	// StatusFailed with an explicit reason (belt-and-suspenders
-	// against any client-side bypass of the gate).
+	// DeleteConfirmed is the per-row confirmation flag for
+	// Action=delete rows. The review screen gates Submit on this
+	// being true for every Delete row; the committer treats a Delete
+	// row without it as StatusFailed (belt-and-suspenders against a
+	// client-side bypass of the gate).
 	DeleteConfirmed bool
 }
 
@@ -155,10 +127,7 @@ type RowOutcome struct {
 	Reason   string // human-readable reason for skip/failed; empty otherwise
 }
 
-// RowStatus enumerates the per-row commit outcomes. V1.5 renames
-// StatusOverwrote to StatusUpdated for vocabulary consistency with
-// the new front-matter `action: update` verb (C-AI-WORKSPACE-V1-G);
-// adds StatusDeleted for action=delete completions.
+// RowStatus enumerates the per-row commit outcomes.
 type RowStatus string
 
 const (
@@ -170,10 +139,8 @@ const (
 	StatusFailed  RowStatus = "failed"
 )
 
-// CommitResult is the aggregate returned to the handler. V1.5 renames
-// the `Overwrote` count to `Updated` + adds `Deleted` for the new
-// action verb. Audit-log payload keys mirror these field names
-// verbatim (V1-E counts-only discipline preserved).
+// CommitResult is the aggregate returned to the handler. Audit-log
+// payload keys mirror these field names verbatim.
 type CommitResult struct {
 	Rows                 []RowOutcome
 	Created              int
@@ -186,21 +153,16 @@ type CommitResult struct {
 	NewCategoriesFailed  []string // slugs that failed to create
 }
 
-// Commit runs the orchestration. Two phases:
+// Commit runs the orchestration in two phases: (1) create each unique
+// "new:<slug>" entity type once, building a slug → ID map (a failed
+// category creation marks all rows referencing it as Failed); (2) for
+// each included row, sanitize the body via MarkdownToHTML (see the
+// SEC-6 funnel pin in committer_sanitize_test.go), convert to
+// ProseMirror JSON, then Create/Update via the entity service.
 //
-//  1. Category-creation phase: derive the set of unique "new:<slug>"
-//     specs across decisions; create each entity-type ONCE; build a
-//     slug → ID map. Failed category creation marks ALL rows that
-//     referenced that slug as Failed.
-//  2. Per-row phase: for each Include=true row, sanitize the body
-//     via MarkdownToHTML (LOAD-BEARING — the AST pin in
-//     committer_sanitize_test.go enforces this funnel), convert to
-//     ProseMirror JSON, then Create / Update via the entity service.
-//
-// Per-row autonomy: errors on one row don't abort subsequent rows.
-// Returned error is reserved for fatal infrastructure failures
-// (e.g. the entity-types pre-fetch barfing); per-row failures
-// surface via Status=StatusFailed + Reason.
+// Per-row autonomy: one row's error doesn't abort the rest. The
+// returned error is reserved for fatal infrastructure failures;
+// per-row failures surface via Status=StatusFailed + Reason.
 func (c *Committer) Commit(ctx context.Context, campaignID string, in CommitInput) (CommitResult, error) {
 	result := CommitResult{Rows: make([]RowOutcome, len(in.Pages))}
 
@@ -250,14 +212,11 @@ func (c *Committer) Commit(ctx context.Context, campaignID string, in CommitInpu
 	return result, nil
 }
 
-// createNewCategories scans the decisions for "new:<slug>" specs +
-// creates each unique entity type ONCE. Returns:
+// createNewCategories scans the decisions for "new:<slug>" specs and
+// creates each unique entity type ONCE per batch (multiple rows can
+// reference the same new category). Returns:
 //   - created: slug → new EntityType.ID
 //   - failed: slugs whose CreateEntityType call returned an error
-//
-// Per scoping §3.8: per-batch dedup is non-negotiable (multiple
-// rows can reference the same new category; we don't want to
-// create "warrior" three times).
 func (c *Committer) createNewCategories(
 	ctx context.Context,
 	campaignID string,
@@ -310,22 +269,12 @@ func parseNewCategorySpec(spec string) (string, bool) {
 // commitRow is the per-row orchestrator. Returns a populated
 // RowOutcome regardless of success/failure (per-row autonomy).
 //
-// This function is the LOAD-BEARING SEC-6 mirror site. The AST pin
-// in committer_sanitize_test.go asserts that every function in this
-// file calling EntityCreator.UpdateEntry / Create / Update also
-// contains MarkdownToHTML(. Two-step funnel:
-//
-//  1. MarkdownToHTML(page.Body)  — goldmark + sanitize.HTML
-//  2. htmlconv.Convert(html)     — HTML → ProseMirror JSON
-//  3. creator.Create / Update    — entity service (which also
-//     calls sanitize.HTML internally
-//     → belt-and-suspenders)
-//  4. creator.UpdateEntry(entryJSON, entryHTML)
-//
-// Future maintenance: keep this function as the SINGLE place that
-// invokes EntityCreator.UpdateEntry. If you add another call site,
-// the AST pin will fail unless that site ALSO funnels through
-// MarkdownToHTML — that's the point of the pin.
+// LOAD-BEARING: committer_sanitize_test.go's AST pin asserts every
+// function in this file calling EntityCreator.UpdateEntry / Create /
+// Update also calls MarkdownToHTML first (goldmark + sanitize.HTML),
+// then htmlconv.Convert to ProseMirror JSON, before handing off to
+// the entity service. Any new call site must follow the same funnel
+// or the pin fails.
 func (c *Committer) commitRow(
 	ctx context.Context,
 	campaignID, ownerID string,
@@ -353,16 +302,14 @@ func (c *Committer) commitRow(
 		return out
 	}
 
-	// V1.5 action dispatch (C-AI-WORKSPACE-V1-G). Default is "create"
-	// when Action is empty so V1-era form submissions without the
-	// new field route through the original path.
+	// Action dispatch; empty Action defaults to "create".
 	switch dec.Action {
 	case ActionDelete:
 		return c.commitDelete(ctx, campaignID, page, dec, idx)
 	case ActionUpdate:
 		return c.commitUpdateExplicit(ctx, campaignID, page, dec, typesBySlug, newTypeIDs, failedNewTypes, idx)
 	}
-	// Fall-through: ActionCreate (or empty). Existing V1 path.
+	// Fall-through: ActionCreate (or empty).
 
 	// Resolve entity type.
 	typeID, ok := resolveTypeID(dec.CategorySpec, typesBySlug, newTypeIDs)
@@ -415,10 +362,7 @@ func (c *Committer) commitRow(
 			out.Status = StatusSkipped
 			out.Reason = "Skipped: name conflicts with " + strconv.Quote(existing.Name)
 			return out
-		case "update", "overwrite":
-			// V1.5 renames "overwrite" → "update" for vocabulary
-			// consistency with the action verb. Accept both labels
-			// for one release; remove "overwrite" alias in V2.
+		case "update", "overwrite": // "overwrite" is a back-compat alias for "update"
 			return c.commitUpdate(ctx, existing, page, dec, typeID, bodyJSON, bodyHTML, isPrivate, idx)
 		default: // "rename" (default mode)
 			finalName = c.suffixUntilFree(ctx, campaignID, finalName)
@@ -459,14 +403,11 @@ func (c *Committer) commitRow(
 	return out
 }
 
-// commitUpdate (renamed from overwriteExisting per V1.5 vocabulary
-// alignment) handles the Update conflict mode + the action=update
+// commitUpdate handles the Update conflict mode + the action=update
 // path: load the existing entity by slug, run Update with the new
-// metadata, then UpdateEntry with the new body. Same SEC-6 funnel
-// applies — body is already sanitized before this call. The AST pin
-// at committer_sanitize_test.go exempts this function with the same
-// reason that previously exempted overwriteExisting — caller's
-// responsibility to sanitize before invoking.
+// metadata, then UpdateEntry with the new body. Body must already be
+// sanitized by the caller — committer_sanitize_test.go's AST pin
+// exempts this function on that basis.
 func (c *Committer) commitUpdate(
 	ctx context.Context,
 	existing *entities.Entity,
@@ -479,23 +420,16 @@ func (c *Committer) commitUpdate(
 ) RowOutcome {
 	out := RowOutcome{Index: idx, Name: existing.Name, Slug: existing.Slug, EntityID: existing.ID}
 
-	// ParentID is deliberately ABSENT, which now means "preserve" (sweep R4):
-	// an import that re-commits an existing page must not flatten it out of
-	// the entity hierarchy, which is exactly what this call used to do.
-	//
-	// IsPrivate, TypeLabel and FieldsData now follow the same rule, for the
-	// same reason (audit findings 6 and 7, 2026-09-12). An update targets a
-	// page that ALREADY EXISTS and whose current state nobody reviewed: the
-	// review row's Visibility dropdown is pre-filled from the INCOMING front
-	// matter, never from the entity, so an operator leaving it alone is not
-	// consent to change the page. Only an explicit `visibility:` key in the
-	// markdown is an instruction about visibility. Everything else preserves.
-	//
-	// This matters because the markdown is the one input on this path that
-	// Chronicle did not author — it is pasted back from an external AI tool,
-	// which in turn read campaign text a player may have written. Re-deciding
-	// an existing page's privacy from that text is how a hidden page gets
-	// published by a commit the operator approved for an unrelated reason.
+	// ParentID, IsPrivate, TypeLabel and FieldsData are absent unless
+	// explicitly set, meaning "preserve": an update must not flatten
+	// an existing page out of the hierarchy or reset its state. The
+	// review row's Visibility dropdown is pre-filled from the
+	// INCOMING front matter, not the entity, so leaving it alone is
+	// not consent to change it — only an explicit `visibility:` key
+	// in the markdown changes IsPrivate. The markdown here is pasted
+	// back from an external AI tool that read campaign text a player
+	// may have written; re-deciding privacy from that text is how a
+	// hidden page gets published by an unrelated commit.
 	var isPrivateField *bool
 	if page.FrontMatter.Visibility != "" {
 		isPrivateField = &isPrivate
@@ -513,15 +447,9 @@ func (c *Committer) commitUpdate(
 		Name:      patch.Of(existing.Name), // update keeps the existing name
 		TypeLabel: typeLabel,
 		IsPrivate: isPrivateField,
-		// FieldsData is ABSENT (nil), never an empty map. The importer has no
-		// source of structured field data — front matter carries no key for
-		// it — so the empty map was not "nothing to write here", it was
-		// "delete every field on this page". The service replaces on any
-		// non-nil map (entities/service.go).
-		//
-		// Entry + EntryHTML on UpdateEntityInput would also work,
-		// but we use UpdateEntry below to mirror the create path
-		// + go through service.go's sanitize.HTML for symmetry.
+		// FieldsData is ABSENT (nil), never an empty map: the service
+		// replaces all fields on any non-nil map, and the importer has
+		// no source of structured field data to replace them with.
 	}); err != nil {
 		out.Status = StatusFailed
 		out.Reason = "Could not update the existing page's settings. The original page is unchanged."
@@ -537,18 +465,11 @@ func (c *Committer) commitUpdate(
 }
 
 // commitUpdateExplicit handles action=update — the AI explicitly
-// requested an update via front-matter. Mirrors the conflict-mode
-// update path but with stricter expectations: the target MUST exist
-// (classifier should have filtered ActionMismatch already, but we
-// re-check defensively because the commit handler races against any
-// concurrent entity-delete elsewhere). Type resolution + sanitize
-// funnel match the create path so all entity-mutation writes still
-// route through MarkdownToHTML.
-//
-// SEC-6 pin: this function calls c.creator.Update via commitUpdate.
-// commitUpdate itself is exempted in committer_sanitize_test.go;
-// commitUpdateExplicit funnels through MarkdownToHTML before calling
-// it, so the pin's invariant holds.
+// requested an update via front-matter. The target must exist; the
+// classifier already filters ActionMismatch rows, but this re-checks
+// defensively against a concurrent delete. Sanitizes via
+// MarkdownToHTML before delegating to commitUpdate, satisfying the
+// SEC-6 funnel pin in committer_sanitize_test.go.
 func (c *Committer) commitUpdateExplicit(
 	ctx context.Context,
 	campaignID string,
@@ -614,13 +535,11 @@ func (c *Committer) commitUpdateExplicit(
 
 // commitDelete handles action=delete: load the existing entity by
 // slug, verify the DeleteConfirmed gate (belt-and-suspenders against
-// client-side bypass of the review-screen confirmation checkbox),
-// and call entities.EntityService.Delete. NO body sanitization
-// needed; the SEC-6 pin doesn't fire because Delete isn't in the
-// pin's mutators map (audit §7.2 verified this).
+// a client-side bypass of the review-screen confirmation checkbox),
+// and call entities.EntityService.Delete. No body sanitization is
+// needed since Delete isn't in the SEC-6 pin's mutators map.
 //
-// Hard-delete vs soft-delete is delegated to the entities plugin's
-// Delete implementation — AI Workspace doesn't make that decision.
+// Hard- vs soft-delete is delegated to the entities plugin.
 func (c *Committer) commitDelete(
 	ctx context.Context,
 	campaignID string,
@@ -701,10 +620,9 @@ func resolveTypeID(
 	return 0, false
 }
 
-// cases_title is a small lowercase-first-letter capitalize helper.
-// Stand-in for the deprecated strings.Title; the input is already
-// lowercase ASCII (an entity-type slug) so we don't need unicode
-// edge handling.
+// cases_title is a lowercase-first-letter capitalize helper, standing
+// in for the deprecated strings.Title. Input is always a lowercase
+// ASCII entity-type slug, so no unicode handling is needed.
 func cases_title(s string) string {
 	if s == "" {
 		return s

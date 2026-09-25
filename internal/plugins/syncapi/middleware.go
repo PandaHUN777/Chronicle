@@ -62,30 +62,21 @@ func permissionsForCampaignRole(role campaigns.Role) []APIKeyPermission {
 }
 
 // RequireAuthOrAPIKey authenticates /api/v1/* requests by EITHER a session
-// cookie OR an Authorization: Bearer API key. This is the single source of
-// truth for "who is the caller?" on the public API: in-app browser widgets
-// authenticate by the same session cookie they already carry for the web UI,
-// and external REST / Foundry VTT clients continue to use Bearer tokens.
-//
-// Flow:
-//  1. If a chronicle_session cookie is present AND validates, look up the
-//     caller's membership in the campaign named by the :id URL parameter.
-//     Synthesise an APIKey whose CampaignID, UserID, and Permissions match
-//     the session + campaign role, and expose it on the context under the
-//     same apiKeyContextKey that the Bearer path uses. Downstream middleware
-//     (RequireCampaignMatch, RequirePermission) then works uniformly.
-//  2. Otherwise, delegate to RequireAPIKey for the traditional Bearer path.
+// cookie OR an Authorization: Bearer API key. If a chronicle_session cookie
+// validates, it synthesises an APIKey from the caller's campaign membership
+// (CampaignID, UserID, Permissions) and sets it under apiKeyContextKey so
+// downstream middleware works uniformly; otherwise it delegates to
+// RequireAPIKey for the Bearer path.
 //
 // Security notes:
 //   - The session cookie is SameSite=Lax (see auth.setSessionCookie), so a
-//     cross-origin POST will NOT include it. Explicit CSRF tokens are
-//     therefore not required here — the cookie attribute already provides
-//     the CSRF defense for the multi-auth flow.
+//     cross-origin POST will NOT include it — that cookie attribute is the
+//     CSRF defense here, no separate token is needed.
 //   - Synthesised keys carry ID == synthKeySessionID so the rate limiter and
 //     LogRequest path can distinguish session callers from real API keys.
 //   - IP blocklist / IP allowlist / device fingerprint enforcement run only
-//     on the Bearer path. Session auth trusts the upstream auth service's
-//     session validation (cookie rotation, expiry, IP rate limits on login).
+//     on the Bearer path; session auth trusts the upstream auth service's
+//     own session validation.
 //
 // Must be wired in place of RequireAPIKey on the /api/v1 group.
 func RequireAuthOrAPIKey(authSvc auth.AuthService, campaignSvc campaigns.CampaignService, syncSvc SyncAPIService) echo.MiddlewareFunc {
@@ -349,8 +340,6 @@ func RequireCampaignMatch() echo.MiddlewareFunc {
 // Mounts on the /api/v1/* JSON group only. The single multipart
 // endpoint (POST /api/v1/campaigns/:id/media) is registered on a
 // parallel sub-group that omits this middleware — see RegisterAPIRoutes.
-// Closes FM-SEC C-4 / Chronicle audit M-3 per operator decision
-// D-C3.1 (sub-group skip).
 func RequireJSONContentType() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -521,46 +510,21 @@ type AddonChecker interface {
 // RequireSyncAPIAddon enforces the campaign's "Sync API" toggle against
 // EXTERNAL Bearer clients on /api/v1/*.
 //
-// THE BUG IT CLOSES. The toggle was decorative. `RequireAuthOrAPIKey` →
-// `RequireAPIKey` → `AuthenticateKey` validates prefix, bcrypt hash,
-// IsActive and expiry, and never looks at campaign_addons; the /api/v1
-// group carried no addon gate at all. An owner who switched Sync API off
-// kept every issued Bearer token fully live against ~50 campaign-scoped
-// endpoints. Only calGroup and mapGroup were ever gated (RequireAddonAPI,
-// "calendar" / "maps") — the pattern existed and was simply never applied
-// to the addon that governs the API itself.
+// Passes synthetic session identities (ID == synthKeySessionID) through
+// untouched: "Sync API" is an INTEGRATION toggle, so an owner disabling it
+// revokes outside access, not Chronicle's own UI. Unlike RequireAddonAPI,
+// this answers 403 ("sync_api_disabled"), not 404 — a 404 here would make
+// the Foundry module take its version-compatibility path and hide the real
+// reason. The key is authentic and the campaign real; what's missing is
+// authorization.
 //
-// WHY NOT RequireAddonAPI. Two reasons, and both are the whole design:
-//
-//  1. It gates EVERY caller, and /api/v1/* is not only for external
-//     clients. First-party browser widgets authenticate on these same
-//     routes by session cookie (static/js/widgets/layout_editor.js reads
-//     /entity-types and /maps that way) and receive a synthetic APIKey
-//     with ID == synthKeySessionID. "Sync API" is an INTEGRATION toggle —
-//     an owner switching it off is revoking outside access, not asking
-//     Chronicle's own UI to stop working. So this middleware passes
-//     synthetic session identities through untouched, and a disabled
-//     addon is invisible to the app's own pages. (calendar/maps are
-//     FEATURE addons; gating their web callers too is correct for them
-//     and wrong here.)
-//  2. It answers 404. Chronicle's own Foundry module reads a 404 on an
-//     API route as "this Chronicle is too old to have that endpoint" and
-//     takes its version-compatibility path, which would bury the real
-//     reason under a wrong one — the same trap that made the calendar
-//     blackout answer 503 instead of 404 on purpose. The key here is
-//     authentic and the campaign is real; what is missing is
-//     authorization. That is a 403, carrying the machine-readable type
-//     "sync_api_disabled" so a client can say what actually happened
-//     instead of guessing from prose.
-//
-// Mounted on the /api/v1 groups rather than on the campaign sub-group so
-// a route added later cannot quietly land outside the gate, and it reads
-// the campaign from the KEY (key.CampaignID) rather than from c.Param("id")
-// so a future route without an :id segment is still covered.
+// Mounted on the /api/v1 groups rather than on the campaign sub-group so a
+// route added later cannot quietly land outside the gate, and it reads the
+// campaign from the KEY (key.CampaignID) rather than c.Param("id") so a
+// future route without an :id segment is still covered.
 //
 // Fails closed on every uncertainty: no key, no campaign on the key, or an
-// unreadable addon state all refuse the request. Over-refusing an
-// integration costs one toggle; under-refusing is the bug being fixed.
+// unreadable addon state all refuse the request.
 func RequireSyncAPIAddon(addonChecker AddonChecker) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {

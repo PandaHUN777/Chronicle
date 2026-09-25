@@ -1,17 +1,16 @@
 /*
- * availability.js — availability scheduler client (C-SCHED-P1).
+ * availability.js — availability scheduler client.
  *
  * Renders two views on the availability page shell:
- *   1. "My availability" paint grid — a 7-day × 24-hour recurring pattern the
+ *   1. "My availability" paint grid — a 7-day x 24-hour recurring pattern the
  *      member paints (available / preferred / erase), saved zone-local.
- *   2. "Group availability / Team heatmap" overlay — the signed encoding:
- *      a green DENSITY UNDERLAY per hour (deeper = more free), a COUNT gutter
- *      (n / N, ★ = full house AND all prefer), and — for the DM only — slim
- *      OPAQUE per-member lanes so identity never blends into the wash. Rendered
- *      in the DM's zone with an explicit zone label.
+ *   2. "Group availability / Team heatmap" overlay — a green density underlay
+ *      per hour, a count gutter (n / N, star = full house and all prefer),
+ *      and, for the DM only, opaque per-member lanes. Rendered in the DM's
+ *      zone with an explicit zone label.
  *
  * ES5 style (var + function expressions, no arrow/template literals) to match
- * static/js/boot.js. Uses Chronicle.apiFetch / Chronicle.escapeHtml.
+ * static/js/boot.js.
  */
 (function () {
   'use strict';
@@ -23,13 +22,11 @@
   var STATE_AVAIL = 'available';
   var STATE_PREFER = 'preferred';
 
-  // The curated IANA list for the member's zone selector is no longer
-  // hand-rolled here — it is server-embedded from the ONE canonical list
-  // (internal/timeutil, C-TZ-CONSOLIDATION) as JSON on the page root's
-  // data-common-tz attribute, so this file never drifts from the other
-  // curated-list surfaces (account settings, calendar real-time anchor).
-  // The member's stored zone and the browser-detected zone are still merged
-  // in at render time (see renderMine).
+  // The curated IANA list is server-embedded (internal/timeutil, the single
+  // source shared with account settings and the calendar real-time anchor)
+  // as JSON on data-common-tz, so this file never keeps its own copy. The
+  // stored zone and the browser-detected zone are merged at render time
+  // (see renderMine).
   function loadCommonTZ(root) {
     try {
       var raw = root.getAttribute('data-common-tz');
@@ -114,10 +111,9 @@
       '.avail-chip .dot{width:9px;height:9px;border-radius:999px}' +
       '.avail-legend{display:inline-flex;align-items:center;gap:6px 12px;font:600 11.5px/1 inherit;color:var(--color-text-secondary,#6b7280);flex-wrap:wrap}' +
       '.avail-note{font-size:12.5px;color:var(--color-text-secondary,#6b7280);margin:10px 2px 0}' +
-      // Alternating weeks + the answered banner (C-RSVP-P9). A cell that is
-      // painted on the EVERY-WEEK layer shows through as a hatch while an
-      // alternating track is being edited, so a member can see what is already
-      // in force underneath instead of painting blind over it.
+      // A cell painted on the every-week layer shows through as a hatch while
+      // an alternating track is being edited, so a member can see what is
+      // already in force underneath instead of painting blind over it.
       '.avail-cell[data-base="1"]:not([data-state])' +
       '{background:repeating-linear-gradient(135deg,rgba(34,163,90,.16) 0 3px,transparent 3px 6px)}' +
       '.avail-unanswered{display:flex;align-items:flex-start;gap:9px;margin:0 0 12px;padding:10px 12px;' +
@@ -127,10 +123,9 @@
       '.avail-unanswered b{color:var(--color-text-primary,#111)}' +
       '.avail-silent{font:600 10.5px/1 inherit;color:var(--gold,#d69e0a);' +
       'border:1px solid var(--gold,#d69e0a);border-radius:999px;padding:3px 7px;white-space:nowrap}' +
-      // "Out this week" quick action (C-SCHED-OUT-THIS-WEEK): a one-click week
-      // mark-out + the 7-day strip that repaints to show it. Sits in the normal
-      // toolbar flow (always visible at rest, no hover-reveal) so it reads on
-      // touch the same as desktop.
+      // "Out this week": a one-click week mark-out + the 7-day strip that
+      // repaints to show it. Sits in the normal toolbar flow (always visible
+      // at rest, no hover-reveal) so it reads on touch the same as desktop.
       '.owt-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;margin:4px 0 14px}' +
       '.owt-status{font-size:12.5px;color:var(--color-text-secondary,#6b7280)}' +
       '.owt-strip{display:flex;gap:4px;flex-wrap:wrap}' +
@@ -163,12 +158,10 @@
       '.ov-sel{position:absolute;left:1px;right:1px;background:rgba(99,102,241,.28);border:1.5px solid var(--color-accent,#6366f1);border-radius:4px;pointer-events:none}' +
       '.ov-slotchip{display:inline-flex;align-items:center;gap:8px;background:var(--color-bg-secondary,#fff);border:1px solid var(--color-border,#e5e7eb);border-radius:8px;padding:5px 10px;font:600 12px/1 inherit}' +
       '.ov-slotchip button{border:0;background:none;color:var(--color-text-muted,#9ca3af);cursor:pointer;font-size:13px}' +
-      // Responsive (C-CAL-BETA-RESCUE #1): month + week grids stay usable at phone
-      // widths by scrolling horizontally INSIDE their own container (like
-      // calendar_v2.templ's bounded/overflow scroll) instead of crushing columns to
-      // an unreadable smear or forcing the whole page sideways. A min-width keeps the
-      // signed heatmap encoding legible; below it the grid scrolls. Encoding itself
-      // is untouched — this is layout/containment only.
+      // Month + week grids stay usable at phone widths by scrolling
+      // horizontally inside their own container instead of crushing columns
+      // to an unreadable smear. A min-width keeps the signed heatmap encoding
+      // legible; below it the grid scrolls.
       '.avail-scroll{overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch}' +
       '@media (max-width:640px){' +
       '.avail-toolbar{gap:8px 10px}' +
@@ -192,11 +185,10 @@
     this.live = $('[data-avail-live]', root);
     // grid[displayCol 0..6][hour 0..23] = '' | 'available' | 'preferred'
     //
-    // THREE LAYERS, ONE VISIBLE (C-RSVP-P9). grids[0] is the every-week
-    // pattern; grids[1] and grids[2] are the two alternating tracks. `grid`
-    // always points AT the layer currently being edited, so every existing
-    // paint/read path below keeps working unchanged and only the track switch
-    // has to know layers exist.
+    // Three layers, one visible: grids[0] is the every-week pattern;
+    // grids[1] and grids[2] are the two alternating tracks. `grid` always
+    // points at the layer currently being edited, so paint/read paths below
+    // don't need to know layers exist.
     this.grids = [[], [], []];
     this.cadence = 0;
     this.cadenceLabels = { 1: '', 2: '' };   // YYYY-MM-DD, filled by loadMine
@@ -208,18 +200,16 @@
     this.weekStart = mondayOf(todayUTC());
     this.overlayData = null;
     this.excluded = {};
-    // Month↔week + slot builder (C-SCHED-P2).
+    // Month/week + slot builder.
     this.scale = 'week';                       // 'week' | 'month'
     this.monthAnchor = firstOfMonth(todayUTC());
     this.weekCache = {};                       // weekStartISO -> overlay payload
     this.building = false;                     // DM slot-builder active
     this.selectedSlots = [];                   // [{date, startMinute, endMinute}]
-    this._morphTimer = null;                   // pending month↔week morph cleanup (C-CAL-BETA-RESCUE #2)
-    // "Out this week" quick action (C-SCHED-OUT-THIS-WEEK). In-memory only —
-    // matches this file's existing non-persisted UI state (excluded/
-    // selectedSlots/building): a reload drops the one-click Undo affordance,
-    // but the underlying exceptions stay saved and remain editable via the
-    // per-date editor either way.
+    this._morphTimer = null;                   // pending month/week morph cleanup
+    // "Out this week": in-memory only, like the other non-persisted UI state
+    // above. A reload drops the one-click Undo affordance, but the
+    // underlying exceptions stay saved and editable via the per-date editor.
     this.outWeek = null;                       // null | {weekStart, created:[{id,onDate}], skippedDates:[iso,...]}
     this.outWeekBusy = false;
   }
@@ -366,7 +356,7 @@
     panel.appendChild(note);
     this.updateCadenceNote();
 
-    // One-off exceptions (C-SCHED-P2 0c) live below the recurring grid.
+    // One-off exceptions live below the recurring grid.
     var excHost = el('div'); excHost.setAttribute('data-exc-host', ''); excHost.style.marginTop = '18px';
     panel.appendChild(excHost);
 
@@ -645,14 +635,11 @@
     var monthView = $('[data-ov-monthview]', this.root), weekView = $('[data-ov-weekview]', this.root);
     var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    // Re-entrancy guard (C-CAL-BETA-RESCUE #2). Each morph schedules a 340ms
-    // cleanup timer that adds `hidden` to the OUTGOING view. Clicking a month-grid
-    // day fires setScale('week') while a prior month↔week morph's cleanup timer is
-    // still pending — and because the current week is cached the month grid renders
-    // instantly, so this window is hit routinely. That stale timer would then hide
-    // the view we're now showing, leaving a blank calendar. Cancel any pending
-    // cleanup and clear both views' transient transition classes so this transition
-    // starts from a clean baseline (incoming shown, only the outgoing hidden).
+    // Re-entrancy guard. Each morph schedules a 340ms cleanup timer that adds
+    // `hidden` to the outgoing view; a morph triggered while a prior one's
+    // timer is still pending would otherwise have that stale timer hide the
+    // view we're now showing. Cancel any pending cleanup and clear both
+    // views' transient transition classes before starting a new morph.
     if (this._morphTimer) { clearTimeout(this._morphTimer); this._morphTimer = null; }
     monthView.classList.remove('leave'); monthView.classList.remove('enter');
     weekView.classList.remove('leave'); weekView.classList.remove('enter');
@@ -718,19 +705,16 @@
       var on = !self.excluded[m.userId];
       var b = el('button', 'avail-chip'); b.type = 'button'; b.setAttribute('aria-pressed', on ? 'true' : 'false');
       var dot = el('span', 'dot'); dot.style.background = m.color; b.appendChild(dot);
-      // ONE ROLE VOCABULARY (C-CALV4-RSVP-P8 / WG-4). This read used to be
-      // `m.role === 'DM'`, against a server-side roleLabel(isOwner) that
-      // returned "DM" | "player" and IGNORED the co-DM grant — so a co-DM was
-      // labelled a plain player here while receiving full per-member detail.
-      // m.role is now campaigns.Role.DisplayName() (Owner | Scribe | Player)
-      // and m.isCoDm carries the grant separately.
+      // m.role is campaigns.Role.DisplayName() (Owner | Scribe | Player);
+      // m.isCoDm carries the co-DM grant separately, since a co-DM's role
+      // label alone doesn't say they have full per-member detail access.
       var role = m.role || '';
       if (m.isCoDm) role = role ? role + ' · co-DM' : 'co-DM';
       var name = el('span'); name.textContent = m.name + (role ? ' (' + role + ')' : ''); b.appendChild(name);
       // "Not answered" is a DIFFERENT fact from "no hours painted", and the
       // chip is where the Director looks. Without this badge an empty lane
       // reads as a considered "I can never play", and a week nobody has
-      // answered reads as a week nobody can make (C-RSVP-P9).
+      // answered reads as a week nobody can make.
       if (m.hasAnswered === false) {
         var badge = el('span', 'avail-silent'); badge.textContent = 'not answered';
         badge.title = m.name + ' has never saved an availability pattern, so the heatmap ' +
@@ -810,7 +794,7 @@
     if (total < 1) total = data.totalMembers || 1;
 
     var hpx = 26;
-    var grid = el('div', 'ov-weekgrid'); // class drives the mobile min-width (C-CAL-BETA-RESCUE #1)
+    var grid = el('div', 'ov-weekgrid'); // class drives the mobile min-width
     grid.style.display = 'grid';
     grid.style.gridTemplateColumns = '56px repeat(7,1fr)';
     grid.style.border = '1px solid var(--color-border,#e5e7eb)';
@@ -1085,9 +1069,9 @@
   };
 
   // ---------------- EXCEPTIONS (one-off, compose-the-day) ----------------
-  // C-SCHED-P2 0c: exceptions REPLACE the whole day in storage, so the editor
-  // COMPOSES the day — it pre-fills from the recurring pattern, so marking one
-  // hour busy re-sends the rest instead of erasing it.
+  // Exceptions REPLACE the whole day in storage, so the editor COMPOSES the
+  // day: it pre-fills from the recurring pattern, so marking one hour busy
+  // re-sends the rest instead of erasing it.
 
   // recurringDayState returns the recurring grid state for a real date's weekday
   // as a 24-entry array ('' | available | preferred).
@@ -1119,10 +1103,9 @@
     head.appendChild(picker);
     host.appendChild(head);
 
-    // "Out this week" quick action (C-SCHED-OUT-THIS-WEEK): one click marks
-    // every day of the current real week unavailable, skipping any date that
-    // already has a hand-authored exception. The strip repaints per-day state
-    // and the button becomes Undo once at least one day was actually written.
+    // "Out this week": one click marks every day of the current real week
+    // unavailable, skipping any date with a hand-authored exception. The
+    // button becomes Undo once at least one day was actually written.
     var owtRow = el('div', 'owt-row');
     var owtBtn = el('button', 'btn-secondary text-sm'); owtBtn.type = 'button';
     owtBtn.setAttribute('data-owt-btn', '');
@@ -1300,20 +1283,16 @@
   };
 
   // ---------------- OUT THIS WEEK (one-click quick action) ----------------
-  // C-SCHED-OUT-THIS-WEEK: writes the current real week's 7 dates as full-day
-  // 'unavailable' exceptions (one row per day, 0–1440), one PUT per day that
-  // does NOT already carry an exception. A date with ANY existing exception
-  // (hand-authored) is left untouched — the key pin. The action re-fetches
-  // after writing to learn the exact row IDs it created, so Undo can DELETE
-  // precisely those rows and nothing else, even if the player later hand-
-  // edits one of them through the existing per-date editor (reconcileOutWeek
-  // drops any tracked row that no longer matches what this action wrote).
+  // Writes the current real week's 7 dates as full-day 'unavailable'
+  // exceptions, one PUT per day that does NOT already carry an exception —
+  // a date with any existing exception is left untouched. Re-fetches after
+  // writing to learn the created row IDs, so Undo deletes exactly those rows
+  // even if the player later hand-edits one via the per-date editor
+  // (reconcileOutWeek drops any tracked row that no longer matches).
   //
-  // Wire choice (dispatch Step-0): loops the EXISTING per-date endpoints
-  // (GET/PUT/DELETE .../availability/exceptions) client-side rather than
-  // adding a batch route. Each PUT independently re-checks the per-user cap
-  // (C-SCHED-P2 0d) against the live count, so the cap holds across the week
-  // for free — no new caps logic needed. No routes_snapshot change.
+  // Loops the existing per-date endpoints client-side rather than adding a
+  // batch route; each PUT independently re-checks the per-user cap against
+  // the live count, so the cap holds across the week for free.
 
   AvailabilityApp.prototype.onOutWeekClick = function (btn) {
     if (this.outWeekBusy) return;

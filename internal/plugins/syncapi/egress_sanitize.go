@@ -1,23 +1,14 @@
 // egress_sanitize.go — defense-in-depth sanitization on /api/v1/*
-// response payloads. Per C-SEC-CHUNK-6-AMENDED + operator decision
-// D-C6.1 (redirect to syncapi handlers), the entity, note, and
-// calendar-event GET handlers re-sanitize HTML fields before
-// serialization. INGRESS sanitization (write path in each
-// plugin's service.go) is the primary defense; these helpers cover
-// historical rows or tooling-inserted rows that slipped past
+// response payloads. The entity, note, and calendar-event GET handlers
+// re-sanitize HTML fields before serialization. INGRESS sanitization
+// (write path in each plugin's service.go) is the primary defense; these
+// helpers cover historical rows or tooling-inserted rows that slipped past
 // ingress, on Foundry-consumer surfaces.
 //
-// Scope: ONLY the /api/v1/* group handlers. The backup/restore
-// path (export_adapters.go / ExportCampaign / POST import) is
-// deliberately NOT re-sanitized — operator decision D4=(c) carves
-// it out as lossless. Touching either would silently mutate user
-// content during round-trip; don't.
-//
-// Cites: cordinator/decisions/2026-05-21-core-tenets.md §T-B1;
-// cordinator/reports/chronicle/2026-05-22-c-security-audit.md §M-4,
-// §0.5 D4=(c); cordinator/decisions/2026-05-26-chronicle-production-
-// safety-system.md; cordinator/dispatches/chronicle/C-SEC-CHUNK-6-
-// AMENDED.md.
+// Scope: ONLY the /api/v1/* group handlers. The backup/restore path
+// (export_adapters.go / ExportCampaign / POST import) is deliberately NOT
+// re-sanitized: it is carved out as lossless. Touching it would silently
+// mutate user content during round-trip; don't.
 package syncapi
 
 import (
@@ -65,32 +56,24 @@ func sanitizeNotesHTMLForEgress(ns []notes.Note) {
 	}
 }
 
-// CALV5-PLACEHOLDER: sanitizeCalendarEventHTMLForEgress and its slice variant
-// stood here. They re-sanitized Event.DescriptionHTML on the response copy
-// before it left for Foundry (C-SEC-CHUNK-6-AMENDED: every /api/v1/* GET that
-// emits HTML re-sanitizes at the edge, because stored HTML is only as trusted
-// as the day it was stored).
-//
-// The calendar routes emit no HTML while the calendar is rebuilt (V5) — they
-// answer 503. RESTORE THESE WITH THE HANDLERS, in the same change: the pin in
-// egress_sanitize_test.go fires the moment GetEvent/ListEvents stop being
-// placeholders, and it is there to make that impossible to forget.
+// CALV5-PLACEHOLDER: V5 must restore sanitizeCalendarEventHTMLForEgress (+
+// slice variant), re-sanitizing Event.DescriptionHTML before it leaves for
+// Foundry, in the same change as the GetEvent/ListEvents handlers — pinned
+// by egress_sanitize_test.go.
 
-// --- Inline-secret redaction (P0: DM-secret egress) ---
+// --- Inline-secret redaction (DM-secret egress) ---
 //
 // Inline GM secrets are authored as <span data-secret> in the rendered
-// HTML and a "secret"-marked text node in the ProseMirror JSON. The
-// documented contract (static/js/widgets/editor_secret.js) is that they
-// are stripped server-side so players never receive the secret content.
-// The web honors this in entities/handler.go (GetEntry / GetPlayerNotes)
-// for MemberRole < RoleScribe; the /api/v1/* read path must mirror it or
-// a player-role caller reads raw GM prose off entry_html / entry /
-// player_notes — a confirmed launch-blocker leak.
+// HTML and a "secret"-marked text node in the ProseMirror JSON. They must
+// be stripped server-side so players never receive the secret content; the
+// web enforces this in entities/handler.go (GetEntry / GetPlayerNotes) for
+// MemberRole < RoleScribe, and the /api/v1/* read path must mirror it or a
+// player-role caller reads raw GM prose off entry_html / entry /
+// player_notes.
 //
-// This is a ROLE-AWARE transform, distinct from the role-agnostic
-// XSS sanitize above: Owners and Scribes see secrets (with a visual
-// indicator client-side), so we only strip below the RoleScribe bar.
-// The threshold mirrors the web verbatim (campaigns.RoleScribe), so the
+// This is a ROLE-AWARE transform, distinct from the role-agnostic XSS
+// sanitize above: Owners and Scribes see secrets, so only the caller below
+// RoleScribe gets stripped. The threshold mirrors the web verbatim so the
 // two paths can't drift on who sees secrets.
 
 // stripEntitySecretsForEgress removes inline GM secrets from an entity
@@ -130,15 +113,13 @@ func stripEntitiesSecretsForEgress(es []entities.Entity, role int) {
 
 // stripEntityFieldsForEgress removes GM-only and owner-only field VALUES from
 // a single entity's FieldsData for a caller who is neither GM-tier nor that
-// entity's claimed owner (audit M-1 / C-FIELDS-OWNER-FILTER). Unlike the
-// inline secret strip above (which only touches the HTML/JSON prose fields),
-// this scrubs the custom-field map, where a system marks fields gm_only (e.g.
-// Draw Steel's director gm_notes) or owner_only (e.g. Draw Steel's
-// backstory). resolveFields returns the entity type's declared field defs —
-// the source of both markers. No-op for GM/owner/Bearer callers (role >=
-// Scribe), so the Foundry lossless-sync contract is preserved by the
-// caller-privilege check, not by skipping the egress. FilterRestrictedFields
-// never mutates the input map (nil-safe).
+// entity's claimed owner. Unlike the inline secret strip above (which only
+// touches the HTML/JSON prose fields), this scrubs the custom-field map,
+// where a system marks fields gm_only (e.g. Draw Steel's director gm_notes)
+// or owner_only (e.g. Draw Steel's backstory). resolveFields returns the
+// entity type's declared field defs — the source of both markers. No-op for
+// GM/owner/Bearer callers (role >= Scribe). FilterRestrictedFields never
+// mutates the input map (nil-safe).
 func stripEntityFieldsForEgress(e *entities.Entity, role int, userID string, resolveFields func(typeID int) []entities.FieldDefinition) {
 	if e == nil || role >= int(campaigns.RoleScribe) {
 		return

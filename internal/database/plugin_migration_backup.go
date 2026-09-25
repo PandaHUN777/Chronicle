@@ -6,15 +6,11 @@ import (
 	"fmt"
 )
 
-// plugin_migration_backup.go closes the backup gap the CALV5 wipe exposed.
-//
-// MigrateWithBackup backs up ONLY when a CORE migration is pending. Plugin
-// migrations run afterwards (RunPluginMigrations) with no backup hook of any
-// kind — so a release that ships destructive PLUGIN migrations and zero core
-// migrations used to reach production with no automatic pre-wipe backup at
-// all, while the wipe's own down files told the operator that recovery is
-// "restoring the database backup taken before the wipe". The CALV5 branch
-// (calendar 019 + sessions 006 + timeline 002) is exactly that shape.
+// plugin_migration_backup.go backs up before PLUGIN migrations run, closing
+// the gap left by MigrateWithBackup, which only backs up when a CORE
+// migration is pending: without this, a release shipping destructive plugin
+// migrations and zero core migrations would reach production with no
+// automatic pre-wipe backup.
 //
 // PendingPluginMigrations is the detection half; main.go pairs it with
 // PreMigrationBackup under the same BACKUP_REQUIRED semantics as the core

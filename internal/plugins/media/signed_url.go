@@ -1,7 +1,5 @@
-// Package media -- signed_url.go implements HMAC-SHA256 signed media URLs.
-// Signed URLs prevent permanent, irrevocable access to media files by
-// requiring a time-limited cryptographic token. This mirrors the approach
-// used by AWS S3, Google Cloud Storage, and Cloudflare R2 presigned URLs.
+// Package media implements HMAC-SHA256 signed media URLs, giving time-limited
+// access to media files instead of permanent, irrevocable links.
 package media
 
 import (
@@ -33,60 +31,28 @@ func NewURLSigner(secret string) *URLSigner {
 }
 
 // SignedURLTTL bounds how long a signed media URL remains valid after
-// minting. Shortened (2026-09-13, ADR-058 decision 6 audit item) from the
-// previous 1 hour, which predated viewer binding: back when a signature was
-// a bare bearer token, TTL was the ONLY thing bounding how long a copied
-// link kept working for whoever held it, and an hour is a long time to
-// leave that open. Viewer binding (this file's Sign/Verify now embed WHO
-// the link is for, see ViewerSession/ViewerAPIKey/ViewerAnonymous below)
-// removes most of that risk, but shortening the TTL anyway costs nothing
-// real: a page's images -- thumbnails included -- finish loading within
-// seconds of render, and even a slow connection or a large gallery is well
-// inside 15 minutes. A tab left open past that window just needs a reload
-// to re-mint, the same "reload fixes it" posture mediaAccessCacheTTL
-// already assumes for the ADR-058 entity-visibility cache (60s).
+// minting (ADR-058 decision 6). Kept short since viewer binding (see below)
+// already limits a copied link to the viewer it was minted for; a tab left
+// open past this window just needs a reload to re-mint.
 const SignedURLTTL = 15 * time.Minute
 
 // --- Viewer binding (ADR-058 decision 6) ---
 //
-// Before this, Sign/SignThumb produced an HMAC over "fileID:expires" (or
-// "fileID:size:expires") alone -- a bearer token. Anyone holding the
-// (expires, sig) query pair could use it, for anyone, until it expired.
-// Folding a VIEWER identity into the signed payload means the signature
-// Verify computes for a DIFFERENT presented viewer will not match, so a
-// copied link is inert for anyone else. See Verify's doc comment for the
-// one deliberate exception (the Foundry cross-origin flow) and exactly why
-// it does not reopen the hole this closes.
-//
-// This is also why an old-format link (signed before this change) stops
-// working immediately rather than riding out its remaining TTL: the old
-// payload never included a viewer segment at all, so there is no way to
-// recompute a matching digest for it under the new scheme -- Verify simply
-// never finds a match. That is a deliberate choice, not an oversight: the
-// alternative (accepting the old two-field payload as an "anyone" grant
-// alongside the new one) would keep the exact bearer-token behavior this
-// decision exists to remove alive for up to an hour after every deploy.
-// Given the shortened TTL above, the cost is a handful of already-open
-// browser tabs or in-flight requests getting a broken image right at
-// deploy until they reload -- not a silent, hour-long window.
+// Sign/SignThumb fold a viewer identity into the signed payload, so Verify
+// only matches for the same presented viewer — a copied link is inert for
+// anyone else. See Verify's doc comment for the one deliberate exception
+// (the Foundry cross-origin flow).
 const (
 	// ViewerAnonymous marks a link minted for (or presented by) a request
-	// that carried no authenticated Chronicle session: an anonymous visitor
-	// to a public campaign page, or any cross-origin/cookieless request --
-	// a signed <img src> can never carry a session cookie, so every such
-	// request PRESENTS as this, regardless of what it was minted as.
+	// with no authenticated Chronicle session: a cookieless or
+	// cross-origin request always presents as this.
 	ViewerAnonymous = "anon"
 
 	// ViewerAPIKey marks a link minted by a Bearer-token-authenticated
-	// syncapi caller (Foundry VTT, or any other REST integration) rather
-	// than a browser session. It is a single fixed sentinel, not one value
-	// per API key or campaign: the request that will eventually PRESENT
-	// this link (Foundry's cross-origin <img> fetch) is cookieless by
-	// construction, so it can never present anything more specific than
-	// "anonymous" -- there is no header, cookie, or query param on an
-	// <img> GET a browser lets Foundry attach that could prove which key
-	// minted the link. Verify's fallback below exists for exactly this
-	// sentinel and no other.
+	// syncapi caller (e.g. Foundry VTT) rather than a browser session. A
+	// single fixed sentinel, not one per key or campaign, since the
+	// request that eventually presents the link (a cross-origin <img>
+	// fetch) is cookieless and can never present anything more specific.
 	ViewerAPIKey = "apikey"
 )
 
@@ -120,25 +86,17 @@ func (s *URLSigner) SignThumb(fileID, size, viewer string, ttl time.Duration) st
 }
 
 // Verify checks that a signature is valid, not expired, and was minted for
-// the PRESENTED viewer -- the caller's best determination of who is asking
-// right now (see media.currentViewerIdentity: a session's user id, or
-// ViewerAnonymous when the request carries none). Uses hmac.Equal for
-// constant-time comparison to prevent timing attacks.
+// the presented viewer (see media.currentViewerIdentity: a session's user
+// id, or ViewerAnonymous when the request carries none). Uses hmac.Equal
+// for constant-time comparison.
 //
 // The one deliberate exception: when the presented viewer is
-// ViewerAnonymous (a cookieless request -- there is nothing else it could
-// present), a signature minted for the fixed ViewerAPIKey sentinel ALSO
-// verifies. That is precisely, and only, the operator's Foundry
-// cross-origin <img> flow this must not break
-// (signed_url_trust_test.go: TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign)
-// -- syncapi.MediaAPIHandler.toAPIResponse mints every media URL it hands
-// to a Bearer-token caller with ViewerAPIKey, and that link is then fetched
-// by Foundry as a cross-origin <img>, which cannot carry Chronicle's
-// session cookie. It does NOT let a link minted for a specific session
+// ViewerAnonymous, a signature minted for the fixed ViewerAPIKey sentinel
+// also verifies — this is the Foundry cross-origin <img> flow, which is
+// cookieless by construction (see TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign).
+// It does not let a link minted for a specific session
 // (ViewerSession(userID)) be replayed cookielessly: that signature was
-// computed over "session:<id>", never over ViewerAPIKey, so it will not
-// match here either -- the fallback only ever accepts the ViewerAPIKey
-// digest specifically.
+// computed over "session:<id>", never over ViewerAPIKey.
 func (s *URLSigner) Verify(fileID, viewer, expiresStr, signature string) bool {
 	expires, err := strconv.ParseInt(expiresStr, 10, 64)
 	if err != nil {
@@ -230,35 +188,30 @@ const (
 	// switch to env-managed for production hygiene.
 	SecretGeneratedAndPersisted SigningSecretSource = "generated_and_persisted"
 
-	// SecretGeneratedInMemory — generated this boot, persistence
-	// failed (data dir not writable, or path empty). DANGER: every
-	// restart will silently invalidate every Foundry manifest
-	// token. This is the Issue #17 mode.
+	// SecretGeneratedInMemory — generated this boot, persistence failed
+	// (data dir not writable, or path empty). DANGER: every restart will
+	// silently invalidate every Foundry manifest token.
 	SecretGeneratedInMemory SigningSecretSource = "generated_in_memory"
 )
 
-// LoadOrInitSigningSecret resolves the HMAC signing secret used by
-// both the media URLSigner and the foundry_vtt TokenSigner.
-// Priority:
+// LoadOrInitSigningSecret resolves the HMAC signing secret used by both the
+// media URLSigner and the foundry_vtt TokenSigner. Priority:
 //
 //  1. envSecret if non-empty (operator set MEDIA_SIGNING_SECRET).
 //  2. The persisted file at path if it exists.
-//  3. A freshly generated secret, persisted to path. If persist
-//     fails, the secret is still returned but flagged in-memory.
+//  3. A freshly generated secret, persisted to path. If persist fails, the
+//     secret is still returned but flagged in-memory.
 //
-// Persistence is load-bearing: the foundry_vtt TokenSigner uses this
-// secret as its HMAC key, and Foundry stores manifest URLs (which
-// embed tokens signed with this secret) indefinitely. Without
-// persistence, restart → new secret → every outstanding manifest
-// token 403s — the symptom diagnosed in cordinator Issue #17.
+// Persistence is load-bearing: Foundry stores manifest URLs with embedded
+// tokens signed by this secret indefinitely, so a restart with no
+// persistence would 403 every outstanding manifest token.
 //
-// Pass path="" to disable persistence (test-only; production should
-// always pass a path).
+// Pass path="" to disable persistence (test-only; production should always
+// pass a path).
 //
-// Returns (secret, source, error). A non-nil error never means the
-// secret is unusable — it's a soft signal that something prevented
-// persistence (most often "data dir not writable"). The caller
-// should log the source + error to the operator either way.
+// Returns (secret, source, error). A non-nil error never means the secret
+// is unusable — it's a soft signal persistence failed (most often "data dir
+// not writable"); log source + error to the operator either way.
 func LoadOrInitSigningSecret(envSecret, path string) (string, SigningSecretSource, error) {
 	if envSecret != "" {
 		return envSecret, SecretFromEnv, nil

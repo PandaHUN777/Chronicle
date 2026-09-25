@@ -1,9 +1,8 @@
-// Tests for the entity_notes service. The ACL matrix is the hard
-// security surface, so the bulk of this file pins the read-filter
-// behavior (via a stub repo that captures the ViewerContext) and the
-// write-side audience checks. There are no real DB tests here —
-// SQL-level coverage is implicit in the repo contract and verified
-// manually against MariaDB during integration testing.
+// Tests for the entity_notes service. The ACL matrix is the hard security
+// surface, so the bulk of this file pins the read-filter behavior (via a
+// stub repo that captures the ViewerContext) and the write-side audience
+// checks. No real DB tests here — SQL-level coverage is implicit in the
+// repo contract.
 package entity_notes
 
 import (
@@ -452,11 +451,10 @@ func TestErrAudienceForbidden_IsExposed(t *testing.T) {
 
 // --- Headline read-side ACL: NotePassesACL matrix ---
 //
-// This is the load-bearing test for the whole feature. The repo's SQL
-// filter (noteACLFilter) and the Go helper (NotePassesACL) MUST tell
-// the same story. If a future refactor breaks one, this matrix
-// catches it. The headline invariant — "Owner cannot read another
-// user's private note" — is row 1.
+// The repo's SQL filter (noteACLFilter) and the Go helper (NotePassesACL)
+// must tell the same story; this matrix catches a refactor that breaks one.
+// The headline invariant — "Owner cannot read another user's private note"
+// — is row 1.
 func TestNotePassesACL_FullMatrix(t *testing.T) {
 	const (
 		alice = "u-alice"
@@ -623,17 +621,11 @@ func TestNotePassesACL_NilNoteDenies(t *testing.T) {
 
 // --- WebSocket notifier payload safety ---
 //
-// Pins concern #2 from the post-merge review: the WebSocket broadcast
-// must NEVER carry the note body. The Notifier signature gives us the
-// full *Note, so it's the wiring's job (in app/routes.go) to extract
-// only IDs. This test pins the function-typed contract: whatever the
-// Notifier does with the Note, the test confirms it received only
-// fields we're OK leaking, then the wiring test (separate file when
-// we add an integration suite) confirms the actual ws.Message payload.
-//
-// Until the integration test exists, this serves as the explicit
-// reminder that the *Note received here must NOT be serialized
-// wholesale onto the wire.
+// The WebSocket broadcast must never carry the note body. The Notifier
+// signature gives us the full *Note, so it's the wiring's job (app/routes.go)
+// to extract only IDs; this test pins the function-typed contract and is a
+// reminder that the *Note received here must not be serialized wholesale
+// onto the wire.
 func TestService_NotifierReceivesNoteButContractIsIDsOnly(t *testing.T) {
 	var seen *Note
 	notifier := func(_ string, n *Note, _ Audience) { seen = n }
@@ -655,16 +647,10 @@ func TestService_NotifierReceivesNoteButContractIsIDsOnly(t *testing.T) {
 	if seen.ID == "" || seen.EntityID == "" || seen.CampaignID == "" {
 		t.Error("notifier missing the 3 IDs the wiring is allowed to broadcast")
 	}
-	// The body fields are PRESENT in the *Note; the wiring is responsible
-	// for not putting them on the wire. We assert presence here so
-	// future readers see exactly what the wiring must filter.
+	// The body fields are present in the *Note; the wiring is responsible
+	// for not putting them on the wire. Asserted here so future readers see
+	// exactly what the wiring must filter.
 	if !strings.Contains(seen.BodyHTML, "TOP SECRET") {
-		// (We sanitized "TOP SECRET" out of the title in the test fixture,
-		// but the body should still carry it. Asserting it lands here so
-		// the contract — "wiring must drop body before broadcasting" — is
-		// visible from the test.)
-		// Note: seen.BodyHTML was sanitized but kept its <p> wrapper +
-		// text content. Don't fail loudly; this is a demonstrative assert.
 		t.Logf("note: body kept structure: %q", seen.BodyHTML)
 	}
 }

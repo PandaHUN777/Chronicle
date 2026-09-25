@@ -1,13 +1,11 @@
-// anon_access_test.go — C-PUBLIC-VIEW-FIX-R2 content-level coverage.
-//
-// Drives real anonymous HTTP requests through the public-campaign middleware
-// chain (auth.OptionalAuth + campaigns.AllowPublicCampaignAccess +
-// campaigns.RequireViewAccess) into ListPosts, asserting the entity-privacy gate:
-// a private entity's posts are never served to an anonymous visitor, and an
-// entity ID belonging to another campaign is rejected (cross-campaign IDOR). A
-// public entity is unchanged. Uses the default Echo error handler, so a denied
-// request surfaces as a non-200 (the app's real handler maps NotFound → 404); the
-// contract asserted here is "never a 200 posts payload".
+// anon_access_test.go drives real anonymous HTTP requests through the
+// public-campaign middleware chain (auth.OptionalAuth +
+// campaigns.AllowPublicCampaignAccess + campaigns.RequireViewAccess) into
+// ListPosts, asserting the entity-privacy gate: a private entity's posts are
+// never served to an anonymous visitor, and an entity ID belonging to another
+// campaign is rejected (cross-campaign IDOR). Uses the default Echo error
+// handler, so a denied request surfaces as a non-200; the contract asserted
+// here is "never a 200 posts payload".
 package posts
 
 import (
@@ -130,11 +128,10 @@ func TestListPosts_ViewerCanSeeIsServed(t *testing.T) {
 	}
 }
 
-// TestListPosts_NilGateFailsClosed pins the fail-closed contract (currently
-// unexercised): a handler wired WITHOUT its EntityGate must never serve posts.
-// The missing-gate guard returns apperror.NewInternal → 5xx, not a 200 leak, so
-// a wiring mistake fails loud instead of silently exposing every entity's posts.
-// (C-ENTITY-VIS-PARITY 4b)
+// TestListPosts_NilGateFailsClosed pins the fail-closed contract: a handler
+// wired without its EntityGate must never serve posts. The missing-gate guard
+// returns apperror.NewInternal → 5xx, not a 200 leak, so a wiring mistake
+// fails loud instead of silently exposing every entity's posts.
 func TestListPosts_NilGateFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/campaigns/camp-1/entities/any-ent/posts", nil)

@@ -1,37 +1,12 @@
-// entity_visibility_access_test.go pins ADR-058 decisions 1-3
-// (.ai/decisions.md): a media file inherits the visibility of the entity
-// pages that reference it, instead of being readable by ANY member of the
-// file's campaign at ANY role.
+// entity_visibility_access_test.go pins ADR-058 decisions 1-3: a media file
+// inherits the visibility of the entity pages that reference it, instead of
+// being readable by any member of the file's campaign at any role.
 //
-// WHAT THIS FILE PROVES, AND WHAT IT DOES NOT (TEST HONESTY):
-//
-// Every test here drives the REAL Handler.checkMediaAccess and the REAL
-// Handler.checkEntityScopedAccess — never a reimplementation of the rule.
-// That proves the handler:
-//   - asks for a file's references before falling back to plain membership;
-//   - denies when NO referencing entity is visible to the viewer, and
-//     allows when AT LEAST ONE is (ADR-058 decision 1, including the
-//     "shared between a hidden and a visible page" case decision 1 calls
-//     out by name);
-//   - promotes a co-DM to the DM's role (VisibilityRole()'s formula)
-//     before asking, not the raw membership role;
-//   - fails closed (denies) when the reference lookup or the visibility
-//     filter itself errors;
-//   - leaves the no-references path byte-for-byte unchanged (decision 3);
-//   - caches the has-references decision per (file, viewer) and never
-//     lets a cache outage grant MORE access than an uncached call would.
-//
-// It does NOT prove the entities plugin's own visibility SQL is correct —
-// FilterViewableEntityIDs is a fake here (fakeEntityVisibilityFilter), fed
-// canned answers per test. That predicate is exercised against a real
-// MariaDB, through the real entities repository, in
-// entity_visibility_access_integration_test.go — this file and that one
-// are meant to be read together. Likewise, the "a cover image behaves like
-// a main image" scenario here only proves checkMediaAccess treats
-// whatever FindReferences returns as a reference regardless of which
-// entity column produced it; the integration test is what proves
-// cover_image_path itself is actually in that query now (the step-1 fix
-// this ADR calls "not optional and not a later slice").
+// Every test drives the real Handler.checkMediaAccess and
+// Handler.checkEntityScopedAccess, with FilterViewableEntityIDs faked
+// (fakeEntityVisibilityFilter) — it does not prove the entities plugin's
+// own visibility SQL, which entity_visibility_access_integration_test.go
+// covers against a real MariaDB. Read the two files together.
 package media
 
 import (
@@ -80,8 +55,8 @@ func (f *fakeAccessMediaService) FilePath(file *MediaFile) string             { 
 func (f *fakeAccessMediaService) ThumbnailPath(file *MediaFile, size string) string {
 	return ""
 }
-func (f *fakeAccessMediaService) SetStorageLimiter(limiter StorageLimiter) {}
-func (f *fakeAccessMediaService) SetMemberChecker(checker MemberChecker)   {}
+func (f *fakeAccessMediaService) SetStorageLimiter(limiter StorageLimiter)           {}
+func (f *fakeAccessMediaService) SetMemberChecker(checker MemberChecker)             {}
 func (f *fakeAccessMediaService) SetEntityVisibilityFilter(v EntityVisibilityFilter) {}
 func (f *fakeAccessMediaService) ListCampaignMedia(ctx context.Context, campaignID string, page, perPage int) ([]MediaFile, int, error) {
 	return nil, 0, nil
@@ -242,13 +217,10 @@ func TestADR058_VisiblePage_PlayerAllowed(t *testing.T) {
 	mustAllow(t, err, "Player reading an image used by a page they can see")
 }
 
-// TestADR058_SharedHiddenAndVisible_ReadableAtAll is ADR-058 decision 1
-// asserted explicitly: "at least one page using it is visible" — NOT
-// "hidden if any page using it is hidden". An image referenced by BOTH a
-// dm_only entity and a visible one must stay readable. The ADR calls this
-// out by name as "the decision most likely to be 'corrected' into a
-// leak-by-dead-image later" — this test exists to make that regression
-// loud if anyone flips the OR to an AND.
+// TestADR058_SharedHiddenAndVisible_ReadableAtAll pins ADR-058 decision 1:
+// "at least one referencing page is visible", not "hidden if any page is
+// hidden". An image referenced by both a dm_only entity and a visible one
+// must stay readable — guards against the OR being flipped to an AND.
 func TestADR058_SharedHiddenAndVisible_ReadableAtAll(t *testing.T) {
 	findRefs := func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
 		return []MediaRef{
@@ -271,13 +243,12 @@ func TestADR058_SharedHiddenAndVisible_ReadableAtAll(t *testing.T) {
 	}
 }
 
-// TestADR058_CoverImage_BehavesLikeMainImage is the step-1 trap named in
-// the task: a cover-image-only reference must be treated exactly like a
-// main-image reference, not fall through to decision 3. This test proves
-// checkMediaAccess treats ANY reference FindReferences reports as a
-// reference regardless of ref_type; whether cover_image_path itself
-// actually reaches FindReferences's SQL is proven separately in
-// entity_visibility_access_integration_test.go.
+// TestADR058_CoverImage_BehavesLikeMainImage pins that a cover-image-only
+// reference is treated exactly like a main-image reference, not fallen
+// through to decision 3: checkMediaAccess treats any reference
+// FindReferences reports as a reference regardless of ref_type. Whether
+// cover_image_path itself reaches FindReferences's SQL is proven separately
+// in entity_visibility_access_integration_test.go.
 func TestADR058_CoverImage_BehavesLikeMainImage(t *testing.T) {
 	findRefs := func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
 		// A cover-image match: same ref_type as a main-image match
@@ -300,14 +271,10 @@ func TestADR058_CoverImage_BehavesLikeMainImage(t *testing.T) {
 
 // --- Co-DM promotion ---
 
-// TestADR058_CoDM_SeesWhatDMSees drives the SAME hidden-page fixture as
-// TestADR058_HiddenPageOnly_PlayerDenied, but for a co-DM (Player role +
-// a DM grant). The viewer must be promoted to Owner (VisibilityRole()'s
-// formula) BEFORE asking the filter — this test simulates the promotion
-// entirely inside checkEntityScopedAccess/viewerVisibilityRole (via the
-// stubbed MemberChecker) and confirms the promoted role, not the raw one,
-// reaches FilterViewableEntityIDs. Would fail if viewerVisibilityRole used
-// the raw MemberRole instead of the DM-granted promotion.
+// TestADR058_CoDM_SeesWhatDMSees drives the hidden-page fixture from
+// TestADR058_HiddenPageOnly_PlayerDenied, but for a co-DM (Player role + a
+// DM grant): the viewer must be promoted to Owner (VisibilityRole()'s
+// formula) before FilterViewableEntityIDs is asked.
 func TestADR058_CoDM_SeesWhatDMSees(t *testing.T) {
 	findRefs := func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
 		return []MediaRef{{EntityID: "ent-hidden", EntityName: "Secret Villain", RefType: "image"}}, nil
@@ -598,24 +565,10 @@ func TestADR058_Cache_Unavailable_FailsSafe(t *testing.T) {
 }
 
 // TestADR058_NilMemberChecker_Denies pins the unreferenced-file path's
-// fail-closed default.
-//
-// This branch handles files no entity references — avatars, campaign
-// backdrops, a file just uploaded — where campaign membership is the whole
-// decision. It used to read `h.memberChecker == nil || h.memberChecker...`,
-// so an unwired checker granted EVERY caller access to every such file.
-//
-// routes.go wires it unconditionally, so this was not reachable in
-// production, and that is exactly why it is worth a test rather than a
-// shrug: the value of a fail-closed default is that it holds on the day
-// somebody adds a second construction path and forgets the setter. ADR-053
-// named this defect class when the Sync API gate was built — a security
-// control that silently no-ops when its dependency is missing — and the
-// upload gate in this same file already refuses on nil. The two now agree.
-//
-// It asserts an ERROR, not merely a false: the caller renders the same
-// generic not-found either way, but a misconfiguration must be loud in the
-// logs rather than indistinguishable from an ordinary refusal.
+// fail-closed default: an unwired MemberChecker must deny, not grant, every
+// caller access to a file no entity references. It asserts an error, not
+// merely false, since a misconfiguration must be loud in the logs rather
+// than indistinguishable from an ordinary refusal.
 func TestADR058_NilMemberChecker_Denies(t *testing.T) {
 	h := &Handler{
 		signer:           NewURLSigner("test-secret"),

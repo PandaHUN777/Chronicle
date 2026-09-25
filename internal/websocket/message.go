@@ -53,19 +53,11 @@ const (
 	MsgCalendarWeatherChanged   MessageType = "calendar.weather.changed"
 	MsgCalendarStructureUpdated MessageType = "calendar.structure.updated"
 	MsgCalendarEraChanged       MessageType = "calendar.era.changed"
-	// Per C-CAL-WS-DOTTED (2026-05-19): cycle + festival mutations now
-	// fan out a sub-resource event in addition to the umbrella
-	// structure.updated. Foundry-side editor (FM-CAL-EDITOR) can
-	// subscribe at the granularity it needs.
-	MsgCalendarCycleChanged    MessageType = "calendar.cycle.changed"
-	MsgCalendarFestivalChanged MessageType = "calendar.festival.changed"
-	// C-CAL-WORLDSTATE-WIRE (2026-07-26): the world-state and weather-zone
-	// signals had emitters (worldstate_service.go SetWorldState,
-	// service.go SetWeatherZones) but no public MessageType and no case in
-	// calendarEventPublisherAdapter — so both hit its `default: return`
-	// and never reached a client. Meteors, eclipses and zone edits authored
-	// in Chronicle had literally never crossed the wire. Naming them here
-	// is the first half of that fix; the adapter cases are the second.
+	// Cycle + festival mutations fan out a sub-resource event in addition
+	// to the umbrella structure.updated, so a subscriber can act at the
+	// granularity it needs.
+	MsgCalendarCycleChanged        MessageType = "calendar.cycle.changed"
+	MsgCalendarFestivalChanged     MessageType = "calendar.festival.changed"
 	MsgCalendarWorldstateChanged   MessageType = "calendar.worldstate.changed"
 	MsgCalendarWeatherZonesChanged MessageType = "calendar.weather.zones.changed"
 )
@@ -162,30 +154,25 @@ type Message struct {
 
 	// RequiresDM marks a message that must only be delivered to clients
 	// with DM-equivalent visibility (campaign Owner or IsDmGranted=true).
-	// Set by emitters whose source row carries dm_only / hidden state
-	// (e.g. a marker with visibility="dm_only", a drawing flagged
-	// dm_only, a hidden token, or any fog event). The hub's broadcast
-	// loop drops the message for non-DM connections at delivery time —
-	// see hub.go. JSON-omitted by default so existing payloads are
-	// unaffected for non-sensitive events.
+	// Set by emitters whose source row carries dm_only / hidden state (a
+	// dm_only marker or drawing, a hidden token, any fog event). The hub's
+	// broadcast loop drops the message for non-DM connections at delivery
+	// time — see hub.go. JSON-omitted so unaffected payloads are unchanged.
 	RequiresDM bool `json:"requiresDm,omitempty"`
 
 	// AllowedUsers and DeniedUsers narrow a message's audience beyond the
 	// binary RequiresDM gate: the per-user visibility_rules a map marker
-	// or drawing can carry (S1, ADR-055 rule 3 applied to this channel).
-	// A "specific" visibility marker isn't dm_only — RequiresDM is false
-	// for it — but it must still only reach the users its rules admit.
+	// or drawing can carry (ADR-055 rule 3 applied to this channel). A
+	// "specific" visibility marker isn't dm_only — RequiresDM is false for
+	// it — but it must still only reach the users its rules admit.
 	//
-	// Populated by the emitter that holds the source row (see routes.go's
-	// mapEventPublisherAdapter, which parses maps.Marker/Drawing's
-	// VisibilityRules), consumed only by the hub's broadcast loop
-	// (hub.go), which drops the message per-recipient the same way it
-	// does for RequiresDM. `json:"-"`: this is server-side audience
-	// metadata, never client-facing payload — echoing back exactly which
-	// user IDs are denied would itself be evidence that hidden content
-	// exists, which is the thing rule 3 forbids. A recipient outside the
-	// audience gets nothing for this event: no message, not a redacted
-	// stub.
+	// Populated by the emitter that holds the source row (mapEventPublisherAdapter,
+	// which parses maps.Marker/Drawing's VisibilityRules), consumed only by
+	// the hub's broadcast loop, which drops the message per-recipient the
+	// same way it does for RequiresDM. `json:"-"`: this is server-side
+	// audience metadata, never client-facing — echoing back which user IDs
+	// are denied would itself be evidence that hidden content exists. A
+	// recipient outside the audience gets nothing: no message, no stub.
 	AllowedUsers []string `json:"-"`
 	DeniedUsers  []string `json:"-"`
 }

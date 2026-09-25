@@ -1,21 +1,13 @@
 package campaigns
 
-// dmgrant_revoke_test.go — C-PERM-DMGRANT-REVOKE.
-//
-// Removing a member never cleared their co-DM grant, and the middleware
-// honoured the grant without asking whether the user was still a member. On a
-// PUBLIC campaign those two compose into a live leak: a removed co-DM keeps
-// owner-level content visibility, because AllowPublicCampaignAccess admits an
-// authenticated non-member as RoleNone and then sets IsDmGranted anyway, and
-// VisibilityRole() returns RoleOwner for anyone carrying the grant.
-//
-// Private campaigns were never exposed — RequireCampaignAccess rejects a
-// non-member before any of this runs — so the blast radius was public
-// campaigns only. That is still a real hole, and these guards pin both halves
-// of the fix: the STORED state (the grant is dropped on removal) and the
-// HONOURED state (a grant is not obeyed for a non-member). Either alone leaves
-// a gap: clearing on removal does nothing for campaigns already carrying a
-// stale id, and gating at resolve time leaves wrong data for the next reader.
+// dmgrant_revoke_test.go pins that removing a member clears their co-DM
+// grant (STORED state) and that the grant is not honoured for a non-member
+// (HONOURED state). On a public campaign, either gap alone lets a removed
+// co-DM keep owner-level visibility via AllowPublicCampaignAccess +
+// VisibilityRole(); private campaigns are unaffected since
+// RequireCampaignAccess rejects a non-member first. Both halves are needed:
+// clearing on removal does nothing for campaigns already carrying a stale
+// id, and gating at resolve time alone leaves wrong stored data.
 
 import (
 	"context"

@@ -14,8 +14,7 @@ access to the host.
 It is also the operator-facing analogue of the campaign **AI-Export**: a catalog
 of named, targeted diagnostics you run one at a time and **paste back to an AI
 assistant**, so the assistant gets exactly the small slice of state it asked for
-rather than a giant dump. (The vision is captured in the debug-cockpit & AI-assist
-capability spec, §B.)
+rather than a giant dump.
 
 For interactive use there is also an **in-app AI Workspace**
 (`/admin/diagnostics/workspace`) that turns the catalog into a single
@@ -171,23 +170,17 @@ targeted diagnostic won't do.
 ### The `host.*` family — Chronicle fingerprinting ITSELF
 
 Every `system.*` and `packages.*` diagnostic below describes **what is being
-served**. None of them can tell you **which build is doing the serving**. Until
-2026-08-11 nothing could: Chronicle could fingerprint every installed system
-package down to the byte and was completely blind to its own binary, its assets,
-and its own recent errors.
+served**. None of them can tell you **which build is doing the serving** — that
+gap is what the `host.*` family closes, guarding against two specific
+misreadings:
 
-That blindness cost an hour of shell archaeology and produced two wrong
-conclusions, both of which the `host.*` family exists to make unreachable:
-
-1. **A Docker image label was read as the identity of a running process.** The
-   labels said `revision=33f4cb07` / `created=2026-02-19`, so the binary was
-   declared six months stale. It had been built minutes earlier. `docker inspect
-   <tag>` answers for whichever image holds that tag *now*, never for the image a
-   running container was created from — and the labels were perfectly accurate
-   about a February image still sitting in the deploy host's local image store.
-   **`host.build` reads the identity from inside the process instead**, where
-   nothing can have relabelled it.
-2. **An empty `grep /app/static` was read as missing code.** Chronicle serves its
+1. **A Docker image label read as the identity of a running process.**
+   `docker inspect <tag>` answers for whichever image holds that tag *now*,
+   never for the image a running container was created from — an image can sit
+   unused in the local store for months and still carry accurate, and
+   misleading, labels. **`host.build` reads the identity from inside the
+   process instead**, where nothing can have relabelled it.
+2. **An empty `grep /app/static` read as missing code.** Chronicle serves its
    front-end from **two storage mechanisms**: the on-disk static root, and each
    plugin's `//go:embed`-ed filesystem compiled *into the binary* and served at
    `/static/plugins/<slug>/`. Only the first is reachable by `ls` or `grep`, so an
@@ -267,7 +260,7 @@ diagnostic now supersedes says so in its own text rather than disappearing.
 
 | ID | Where | What it tells you |
 |----|-------|-------------------|
-| `image-digest`          | docker | **TRAP.** Which image the container RUNS vs which image the tag points at NOW. If those differ the labels describe something else entirely — this is the exact command that produced the wrong "six months stale" conclusion. Prefer `host.build`. |
+| `image-digest`          | docker | **TRAP.** Which image the container RUNS vs which image the tag points at NOW. If those differ, the labels describe a different artifact than the one running — this is the command that most often produces that wrong conclusion. Prefer `host.build`. |
 | `plugin-asset-grep`     | docker | **TRAP.** Grepping the container filesystem for a plugin's asset. It returns empty for every `//go:embed`-ed asset, which is most plugin front-end code. An empty result is not evidence. Prefer `host.embedded` / `host.embedded-contains`. |
 | `container-restart-time`| docker | Was the container ever recreated for this deploy? If `StartedAt` predates it, nothing was replaced — a new image changes nothing until something recreates the container. |
 | `binary-in-container`   | docker | Executable mtime + container clock, from outside the process — an independent cross-check of `host.build`, and the cheapest way to rule out clock skew (every age and uptime is computed against that clock). |
@@ -517,8 +510,8 @@ The loop has four steps, all on one page:
 - **Audited.** Every run is logged to the admin security/activity feed
   (`admin.diagnostics_batch_run`) with actor, IP, and counts (never the payload).
 
-> Not yet implemented: per-route **rate-limiting** (spec §C2). Lower priority
-> given the admin gate + bounded/deduped/capped toolset; a reasonable follow-up.
+> Not yet implemented: per-route **rate-limiting**. Lower priority given the
+> admin gate plus the bounded/deduped/capped toolset above.
 
 Routes (admin-gated, in `internal/plugins/admin/routes.go`): `GET
 /admin/diagnostics/workspace` (page), `POST /admin/diagnostics/workspace/parse`

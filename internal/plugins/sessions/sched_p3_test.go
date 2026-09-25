@@ -15,11 +15,11 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// sched_p3_test.go — C-SCHED-P3. Pins the item-0 security fixes (0a token
-// closed+membership recheck, 0b GET-confirm/POST-apply, 0c email HTML escaping)
-// and the P3-proper confirm-winner → session flow, the scheduled-time field, and
-// recurrence parity. Service-level where possible; the token routes are exercised
-// at the handler level (they carry no campaign middleware) with lightweight stubs.
+// Pins the scheduling-token security checks (closed+membership recheck on
+// token use, GET-confirm/POST-apply split, email HTML escaping), the
+// confirm-winner -> session flow, the scheduled-time field, and recurrence
+// parity. Service-level where possible; the token routes are exercised at the
+// handler level (they carry no campaign middleware) with lightweight stubs.
 
 // --- stubs for handler-level token tests ---
 
@@ -65,7 +65,7 @@ func TestFormatScheduledDate_LearnsTime(t *testing.T) {
 	}
 }
 
-// --- P3: confirm-winner flow ---
+// --- confirm-winner flow ---
 
 func TestConfirmProposalWinner_ClosesAndCreatesSession(t *testing.T) {
 	// Winning slot: 2026-07-18 23:00 UTC → America/New_York (EDT, UTC-4) = 19:00.
@@ -280,12 +280,10 @@ func TestRSVPToken_GetDoesNotApply(t *testing.T) {
 		},
 		updateAttendeeStatusFn: func(_ context.Context, _, _, _ string) error { applied = true; return nil },
 		markRSVPTokenUsedFn:    func(_ context.Context, _ string) error { return nil },
-		// FIXTURE GROWN, ASSERTIONS UNCHANGED. Both /rsvp/:token halves now
-		// re-check that the token's user is still on the roster (a link cannot
-		// outlive the access that justified it), which needs the token's session
-		// to resolve a campaign and a member lister to check it against. Without
-		// these the handler correctly fails closed and this test would be
-		// measuring the refusal, not the GET/POST split it exists to pin.
+		// Both /rsvp/:token halves recheck that the token's user is still on the
+		// roster (a link cannot outlive the access that justified it), which
+		// needs the token's session to resolve a campaign and a member lister
+		// to check it against.
 		findByIDFn: func(_ context.Context, id string) (*Session, error) {
 			return &Session{ID: id, CampaignID: "camp-1"}, nil
 		},
@@ -367,16 +365,10 @@ func TestRSVPEmail_EscapesSessionName(t *testing.T) {
 	}
 }
 
-// TestProposalEmail_NeverPrintsABlankZone pins the fix to a narrow but real
-// dishonesty: sendProposalEmail resolved the member's zone with only a nil
-// check, so a users.timezone stored as ” (not NULL) produced memberTZ="" and
-// the email printed "times in " with nothing after it, plus "Times shown in ."
-// in the plain body — while renderLocalSlotForTZ fell back to UTC for the actual
-// clock values and the confirm page the member lands on said UTC. Two surfaces
-// disagreeing about the same slot, one of them naming no zone at all.
-//
-// The zone now comes through tokenUserTZ, which is the same resolution the
-// confirm page uses and already rejects the empty string.
+// TestProposalEmail_NeverPrintsABlankZone pins that sendProposalEmail resolves
+// the member's zone through tokenUserTZ, which rejects an empty-string (not
+// NULL) users.timezone, matching the resolution the confirm page uses so both
+// surfaces agree on the same slot's zone.
 func TestProposalEmail_NeverPrintsABlankZone(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

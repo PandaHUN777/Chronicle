@@ -6,9 +6,9 @@ import (
 	"testing"
 )
 
-// TestUpdateAccentSurface covers the surface-pair save path (C-ACCENT-TRIO
-// rev 2): load-merge-write on settings JSON, slot routing, reset-to-inherit,
-// preservation of unrelated settings, and slot validation.
+// TestUpdateAccentSurface covers the surface-pair save path: load-merge-write
+// on settings JSON, slot routing, reset-to-inherit, preservation of
+// unrelated settings, and slot validation.
 func TestUpdateAccentSurface(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -101,8 +101,8 @@ func TestAccentHexValidation(t *testing.T) {
 			}
 		})
 	}
-	// C-ACCENT-SLOTS: the two new semantic slots share the exact same
-	// validation gate as the legacy slots above.
+	// The two semantic slots share the exact same validation gate as the
+	// legacy slots above.
 	for _, color := range bad {
 		t.Run("reject-action/"+color, func(t *testing.T) {
 			var wrote bool
@@ -146,7 +146,7 @@ func TestAccentHexValidation(t *testing.T) {
 	}
 }
 
-// TestUpdateAccentAction_And_UpdateAccentApp covers the C-ACCENT-SLOTS save
+// TestUpdateAccentAction_And_UpdateAccentApp covers the semantic-slot save
 // paths: load-merge-write on settings JSON, reset-to-inherit, and
 // preservation of unrelated settings (including the legacy trio fields).
 func TestUpdateAccentAction_And_UpdateAccentApp(t *testing.T) {

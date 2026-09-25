@@ -7,14 +7,11 @@ import (
 	"time"
 )
 
-// TestBuildFrom covers the parse, and covers the DEGRADED paths first because
-// they still ship: Go skips VCS stamping SILENTLY whenever the build ran
-// outside a checkout, without a VCS tool on PATH, or with -buildvcs=false, and
-// every `go test` binary is unstamped for the first of those reasons. (The
-// Docker builder was given git on 2026-08-11, so images from the current
-// Dockerfile take the stamped path — measured, `go version -m` reports
-// vcs.revision.) A test that only exercised the stamped path would pass forever
-// while a real binary reported nothing.
+// TestBuildFrom covers the parse, and covers the DEGRADED paths because they
+// still ship: Go skips VCS stamping SILENTLY whenever the build ran outside a
+// checkout, without a VCS tool on PATH, or with -buildvcs=false — including
+// every `go test` binary. A test that only exercised the stamped path would
+// pass forever while a real binary reported nothing.
 func TestBuildFrom(t *testing.T) {
 	tests := []struct {
 		name string
@@ -161,11 +158,10 @@ func TestShortRevision(t *testing.T) {
 	}
 }
 
-// TestVersionFrom pins the precedence chain that GET /api/version now follows.
-// This is the only place the STAMPED branch can be pinned at all: a `go test`
-// binary carries no vcs.* settings (measured — debug.ReadBuildInfo in a test
-// binary reports Main.Version "(devel)" and zero vcs keys), so the live
-// endpoint test can only ever reach the fallback.
+// TestVersionFrom pins the precedence chain GET /api/version follows. This is
+// the only place the STAMPED branch can be pinned at all: a `go test` binary
+// carries no vcs.* settings, so the live endpoint test can only reach the
+// fallback.
 func TestVersionFrom(t *testing.T) {
 	stamped := Build{InfoOK: true, Stamped: true, Revision: "84e31334d5b9ff78b940fe452efc502cbae8f707", MainVersion: "v0.0.0-20260810181157-84e31334d5b9"}
 	dirty := stamped

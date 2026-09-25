@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
 # check-plugin-isolation.sh — fail PRs introducing new plugin-name string
-# literals OUTSIDE the owning plugin directory.
+# literals OUTSIDE the owning plugin directory (T-B2, plugin isolation).
 #
-# Mechanism M-B2.1 per cordinator/decisions/2026-05-21-core-tenets.md §T-B2.
 # Diff-scoped FAIL: only checks lines INTRODUCED by the PR vs origin/main.
 # Existing violations in main are grandfathered — this guard only catches
-# NEW additions.
-#
-# Extended (M-B2.1-extend, 2026-06-21): now covers all plugin slugs, not
-# just foundry-vtt. Per cordinator/reports/chronicle/2026-06-20-plugin-
-# isolation-modularity-audit.md — each slug has a per-slug allowlist to
-# suppress English-word collisions, URL segments, PackageType enum values,
+# NEW additions. Covers all plugin slugs; each slug has a per-slug allowlist
+# to suppress English-word collisions, URL segments, PackageType enum values,
 # addon-slug lookups, and the @layer CSS reservation line.
 #
 # Forbidden tokens are reconstructed via fragment join so this script can
@@ -24,7 +19,7 @@ set -euo pipefail
 # so these literals never appear in this file and can't self-trigger.
 # ---------------------------------------------------------------------------
 
-# foundry_vtt tokens (original M-B2.1 set)
+# foundry_vtt tokens
 fv1="fou""ndry-vtt"
 fv2="fou""ndry-module"
 fv3="fou""ndry_vtt"
@@ -97,28 +92,17 @@ tl_prefix="internal/plugins/tim""eline/"
 # (e.g. the plugin registry, CI tools, docs)
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
-# Amendment HOSTDIAG-1 (host.* operator diagnostics, 2026-08-11) — the four
-# operator-diagnostic test files listed at the end of the array below.
+# The four operator-diagnostic test files listed at the end of the array below
+# are the unit tests for host.embedded / host.widgets / host.plugins /
+# host.deploy-check, whose whole job is to report on plugins: which
+# registered, which mounted an embedded static FS, and what is inside it.
+# Their fixtures carry plugin slugs ("calendar", "foundry-vtt") as data — a
+# URL segment, a map key, an expected output string — not as a cross-plugin
+# import, which is what this guard exists to stop.
 #
-# They are the unit tests for host.embedded / host.widgets / host.plugins /
-# host.deploy-check, whose whole job is to REPORT ON plugins: which registered,
-# which mounted an embedded static FS, and what is inside it. Their fixtures
-# therefore carry plugin slugs ("calendar", "foundry-vtt") as DATA — a URL
-# segment, a map key, an expected output string — which is exactly the "URL
-# segment in a test fixture" case this guard's own remedy text names as
-# legitimate. None of the four imports a plugin package or calls into one, so
-# there is no cross-plugin COUPLING here, which is what the guard exists to stop.
-#
-# Renaming the fixtures to neutral slugs was considered and rejected: the
-# 2026-08-11 incident these diagnostics exist to prevent was specifically a grep
-# for the CALENDAR plugin's assets returning empty, because those assets are
-# //go:embed-ed into the binary rather than on disk. A fixture called
-# "fakeplugin" would still exercise the code path but would stop documenting the
-# case it was built from.
-#
-# Listed as full filenames. Matching here is by PREFIX, so these are effectively
-# exact — deliberately not the directory, which would exempt every future test
-# in internal/systems.
+# Listed as full filenames. Matching here is by PREFIX, so these are
+# effectively exact — deliberately not the directory, which would exempt
+# every future test in internal/systems.
 # ---------------------------------------------------------------------------
 always_allowed_prefixes=(
   "internal/app/routes.go"
@@ -131,59 +115,47 @@ always_allowed_prefixes=(
   "internal/systems/operator_diag_deploy_test.go"
   "internal/systems/operator_diag_plugins_test.go"
   "internal/app/operator_diag_plugins_test.go"
-  # The campaign diagnostics' fixtures. Same allowance as the four test files
-  # above: these tests assert what `campaign.config` / `campaign.surfaces` print
-  # about the CALENDAR addon specifically — a disabled-addon row, and the sidebar
-  # item that links to it. Substituting a non-colliding slug would leave the test
-  # asserting nothing about the case it is named for.
+  # The campaign diagnostics' fixtures: these tests assert what
+  # `campaign.config` / `campaign.surfaces` print about the calendar addon
+  # specifically — a disabled-addon row, and the sidebar item that links to
+  # it — so a non-colliding slug would leave the test asserting nothing about
+  # the case it is named for.
   "internal/systems/operator_diag_campaign_test.go"
-  # The sessions plugin's real-MariaDB test harness. sessions/migrations/001
-  # carries `FOREIGN KEY (calendar_id) REFERENCES calendars(id)`, so a sessions
-  # row-level test cannot get a schema at all without the CALENDAR plugin's
-  # migrations applied first. It loads them OFF DISK with os.DirFS precisely to
-  # avoid the import edge — internal/wire/plugin_import_guard_test.go forbids a
-  # sessions→calendar import outright — so the slug here names a migrations
-  # DIRECTORY in a test fixture, not a runtime dependency. Substituting a
-  # non-colliding name would simply fail to find the migrations.
+  # sessions/migrations carries `FOREIGN KEY (calendar_id) REFERENCES
+  # calendars(id)`, so a sessions row-level test needs the calendar plugin's
+  # migrations applied first. It loads them off disk with os.DirFS to avoid a
+  # real sessions→calendar import (forbidden by
+  # internal/wire/plugin_import_guard_test.go), so the slug here names a
+  # migrations directory in a test fixture, not a runtime dependency.
   "internal/plugins/sessions/dbtest_support_test.go"
-  # The timeline plugin's real-MariaDB reachability harness, added 2026-09-13
-  # for the audit's timeline-search finding. Identical case to the sessions
-  # entry directly above: timeline/migrations carries
-  # `FOREIGN KEY (calendar_id) REFERENCES calendars(id)`, so the schema cannot
-  # be created at all without the CALENDAR plugin's migrations applied first.
-  # It loads them OFF DISK via os.DirFS for the same reason sessions does —
-  # internal/wire/plugin_import_guard_test.go forbids a timeline->calendar
-  # import outright — so the slug names a migrations DIRECTORY in a test
-  # fixture, not a runtime dependency.
+  # Same case as the sessions entry above: timeline/migrations carries the
+  # same calendar_id foreign key, so its real-MariaDB reachability harness
+  # loads the calendar plugin's migrations off disk via os.DirFS rather than
+  # importing the plugin.
   "internal/plugins/timeline/search_visibility_reachability_test.go"
 )
 
 # ---------------------------------------------------------------------------
-# Amendment R4-S26-A (sweep R4 stage 26) — const-registry files.
-#
-# STRICTLY NARROWER than always_allowed_prefixes, and the correct tool when a
-# file needs to DEFINE a colliding label rather than USE a plugin. Matching is
-# by EXACT path (not prefix), and inside a listed file only a bare
-# const-assignment line — `Name = "slug"` and nothing else on it — is exempt.
-# Every other added line in that file is checked exactly as if it were not
-# listed, so a `report.Fail("<slug>", …)` smuggled into a registry file still
-# fails, and so does a trailing-code line dressed up to look like an
-# assignment. Blanket-allowlisting the whole file would have exempted both.
+# const-registry files: strictly narrower than always_allowed_prefixes, and
+# the correct tool when a file needs to DEFINE a colliding label rather than
+# USE a plugin. Matching is by EXACT path (not prefix), and inside a listed
+# file only a bare const-assignment line — `Name = "slug"` and nothing else on
+# it — is exempt. Every other added line in that file is checked exactly as if
+# it were not listed, so a `report.Fail("<slug>", …)` smuggled into a registry
+# file still fails, and so does a trailing-code line dressed up to look like
+# an assignment.
 #
 # Listed:
 #   internal/plugins/campaigns/import_report.go — import-report section/kind
 #   vocabulary. Two report headings and two singular nouns happen to spell
 #   plugin slugs; see the const block there for why they are labels and not
-#   references. Introduced when sweep R4 stage 16 threaded ImportReport through
-#   the export adapters and left this guard red for nine commits.
+#   references.
 #
-#   internal/systems/operator_diag_campaign.go — one LAYOUT BLOCK TYPE that
+#   internal/systems/operator_diag_campaign.go — one layout block type that
 #   spells the calendar plugin's slug (`blockTypeCalendar`). The diagnostic
-#   annotates block types it is HANDED by the app layer; internal/systems may
+#   annotates block types it is handed by the app layer; internal/systems may
 #   not import a plugin, so it cannot borrow calendar.PluginSlug the way
-#   internal/app/operator_diag_campaign_adapter.go does. See the const block
-#   there. The app-layer half of the same diagnostic needs no exemption — it
-#   was fixed by aliasing the plugin's own const instead.
+#   internal/app/operator_diag_campaign_adapter.go does.
 #
 # Pinned by tools/test-plugin-isolation.sh, which mutation-tests the narrowness
 # in both directions (a const line passes; the same slug on any other line of

@@ -169,9 +169,9 @@
             menu.classList.toggle('hidden');
           });
           // Close the dropdown on outside click. Named + stored on el (and
-          // guarded against re-entry) so destroy() can remove it — mirrors
-          // tag_picker.js:260-264. Otherwise this anonymous document listener
-          // leaks one detached-DOM-holding handler per widget mount.
+          // guarded against re-entry) so destroy() can remove it — an
+          // anonymous document listener would leak one detached-DOM-holding
+          // handler per widget mount.
           if (el._graphMenuClose) {
             document.removeEventListener('click', el._graphMenuClose);
           }

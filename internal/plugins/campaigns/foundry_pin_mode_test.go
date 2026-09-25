@@ -1,16 +1,10 @@
-// foundry_pin_mode_test.go — round-trip tests for the new
-// SetFoundryModulePinMode / GetFoundryModulePinMode methods on the
-// campaigns service.
-//
-// Added in C-FMC-ADMIN-UX-AUDIT Chunk 1. These methods underpin
-// Chunks 2 (hook) + 3 (owner UI) + 6 (migration) by providing the
-// storage layer for the new pin_mode key in CampaignSettings.
-//
-// Three properties:
+// foundry_pin_mode_test.go round-trips SetFoundryModulePinMode /
+// GetFoundryModulePinMode, the storage layer for the pin_mode key in
+// CampaignSettings:
 //   1. Set writes pin_mode into the campaign's settings JSON.
 //   2. Get reads pin_mode back from the settings JSON.
-//   3. Empty pin_mode is preserved (the "not yet set" pre-backfill
-//      state Chunk 6's migration relies on detecting).
+//   3. Empty pin_mode is preserved (the "not yet set" state a migration
+//      relies on detecting).
 
 package campaigns
 

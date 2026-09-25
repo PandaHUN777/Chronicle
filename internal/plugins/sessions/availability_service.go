@@ -15,20 +15,20 @@ import (
 // an unbounded number of rows.
 const maxAvailabilityBlocks = 7 * 48
 
-// Exception caps (C-SCHED-P2 0d). maxExceptionsPerUser bounds the total override
-// rows one member can hold in a campaign; maxExceptionBlocksPerDay bounds a
-// single day's composed set (48 half-hour slots). exceptionDateWindowDays bounds
-// how far from today an exception may be dated, so on_date can't be used to
-// stuff far-future/far-past rows past the cap's practical reach.
+// Exception caps. maxExceptionsPerUser bounds the total override rows one
+// member can hold in a campaign; maxExceptionBlocksPerDay bounds a single
+// day's composed set (48 half-hour slots). exceptionDateWindowDays bounds how
+// far from today an exception may be dated, so on_date can't be used to stuff
+// far-future/far-past rows past the cap's practical reach.
 const (
 	maxExceptionsPerUser     = 500
 	maxExceptionBlocksPerDay = 48
 	exceptionDateWindowDays  = 366
 )
 
-// validateExceptionDate parses on_date and rejects dates outside today ±1 year
-// (C-SCHED-P2 0d). Mirrors the recurring-save validation style: a fixed, sane
-// bound rather than an open-ended date field.
+// validateExceptionDate parses on_date and rejects dates outside today ±1
+// year, mirroring the recurring-save validation style: a fixed bound rather
+// than an open-ended date field.
 func validateExceptionDate(onDate string) (time.Time, error) {
 	d, err := time.Parse("2006-01-02", onDate)
 	if err != nil {
@@ -73,11 +73,9 @@ func (s *sessionService) GetMyAvailability(ctx context.Context, campaignID, user
 
 	// The two alternating tracks are labelled by the next real Sunday that
 	// starts each one, so the picker offers dates rather than a convention.
-	//
-	// "Today" is resolved in the MEMBER'S OWN zone, not UTC. A member in UTC+13
-	// on a Sunday morning is still on Saturday by UTC, so a UTC "today" would
-	// hand them the previous week's Sunday and quietly swap which track their
-	// picker calls A — they would choose a date and get the other fortnight.
+	// "Today" is resolved in the member's own zone, not UTC: a UTC "today" can
+	// land on the wrong side of midnight for the member and swap which track
+	// the picker calls A.
 	loc := timeutil.LoadLocation(resp.TZ) // falls back to UTC on empty/unknown
 	now := time.Now().In(loc)
 	today := timeutil.CivilDate{Year: now.Year(), Month: now.Month(), Day: now.Day()}
@@ -97,10 +95,9 @@ func (s *sessionService) SaveMyAvailability(ctx context.Context, campaignID, use
 	}
 
 	// Validate + dedupe by (day, start, end, cadence); the unique key forbids
-	// exact duplicates, and deduping lets last-state-wins for an overlapping
-	// repaint. CADENCE IS PART OF THE KEY — the same Monday evening on week A
-	// and on week B are two different blocks, and collapsing them into one
-	// would silently discard whichever the client sent second.
+	// exact duplicates and lets last-state-wins for an overlapping repaint.
+	// Cadence is part of the key: the same Monday evening on week A and week B
+	// are two different blocks and must not collapse into one.
 	seen := make(map[[4]int]int, len(req.Blocks))
 	blocks := make([]AvailabilityBlock, 0, len(req.Blocks))
 	for _, b := range req.Blocks {
@@ -140,11 +137,9 @@ func (s *sessionService) SaveMyAvailability(ctx context.Context, campaignID, use
 }
 
 // AvailabilityAnswerStatuses reports, for each member the caller supplies,
-// whether they have answered the availability question and when.
-//
-// The roster is supplied by the handler (same shape as BuildOverlay's) so this
-// stays free of the campaigns import; order is preserved so the Director's list
-// matches every other roster in the product.
+// whether they have answered the availability question and when. The roster
+// is supplied by the handler (same shape as BuildOverlay's) so this stays
+// free of the campaigns import; order is preserved.
 func (s *sessionService) AvailabilityAnswerStatuses(ctx context.Context, campaignID string, members []overlayMemberInput) ([]AvailabilityAnswerStatus, error) {
 	answered, err := s.repo.ListAnsweredUserIDs(ctx, campaignID)
 	if err != nil {
@@ -163,16 +158,10 @@ func (s *sessionService) AvailabilityAnswerStatuses(ctx context.Context, campaig
 }
 
 // NudgeUnansweredAvailability writes a bell notification to every supplied
-// member who has NOT answered, and reports who was asked.
-//
-// NO TIMER, ON PURPOSE. There is no scheduled-job runner in this product, and
-// inventing one to power a reminder would be a large piece of infrastructure
-// justified by a small feature. The Director presses this when it is useful to
-// press — which also means nobody is ever nudged by a machine on a schedule
-// they did not agree to.
-//
-// Members who have already answered are counted, not messaged: a nudge that
-// pinged everyone would train the whole table to ignore the bell.
+// member who has NOT answered, and reports who was asked. This is manually
+// triggered by the Director, not scheduled — there is no job runner in this
+// product. Members who have already answered are counted, not messaged: a
+// nudge that pinged everyone would train the whole table to ignore the bell.
 func (s *sessionService) NudgeUnansweredAvailability(ctx context.Context, campaignID, link string, members []overlayMemberInput) (*NudgeResult, error) {
 	answered, err := s.repo.ListAnsweredUserIDs(ctx, campaignID)
 	if err != nil {
@@ -213,21 +202,12 @@ func (s *sessionService) ListMyExceptions(ctx context.Context, campaignID, userI
 // AddMyException marks ONE window of a date with an explicit state, KEEPING
 // the rest of that date as it already was.
 //
-// THE DEFECT THIS SHAPE EXISTS TO PREVENT: it used to insert a single row via
-// repo.AddException. Because exception rows fully REPLACE the recurring pattern
-// for their date (effectiveBlocks, availability_overlay.go), that one row became
-// the member's ENTIRE day. A member whose recurring Tuesday was 09:00–23:00 and
-// who posted "I'm ALSO free 07:00–08:00" came out of it available for one hour
-// at 7am and busy every evening — measured against MariaDB as free at 07:00 = 1,
-// free at 20:00 = 0. Their own grid still showed 09:00–23:00 for Tuesdays, so
-// nothing on any screen told them, and the Director's overlay and the derived
-// best-window silently lost fourteen hours.
-//
-// The compose-the-day rule that closes this was written for the RSVP-offer path
-// (AddMyAvailableWindows) and for the client-side day editor, but never applied
-// to this endpoint — which is a documented Player+ route. It is applied here
-// now, including the zone rule: the day is written in the zone its own rows were
-// authored in and the incoming window is converted, never the other way round.
+// Exception rows fully replace the recurring pattern for their date
+// (effectiveBlocks, availability_overlay.go), so a bare inserted row would
+// become the member's entire day. This composes the day first — the same
+// rule AddMyAvailableWindows and the client-side day editor use — including
+// the zone rule: the day is written in the zone its own rows were authored
+// in, and the incoming window is converted, never the other way round.
 //
 // The per-user cap and the date bound are re-checked by ReplaceMyDayExceptions,
 // which owns the accounting for a whole-day write; the date bound is also
@@ -291,10 +271,10 @@ func (s *sessionService) DeleteMyException(ctx context.Context, campaignID, user
 }
 
 // ReplaceMyDayExceptions atomically replaces the current user's overrides for
-// one date with a composed set (C-SCHED-P2 0c). Validation mirrors the
-// recurring-save path: a valid zone, a bounded date (today ±1 year, 0d), a
-// per-day block cap, and a per-user total cap so the compose flow can't be used
-// to blow past 0d's ceiling. An empty Blocks clears the day.
+// one date with a composed set. Validation mirrors the recurring-save path: a
+// valid zone, a bounded date (today ±1 year), a per-day block cap, and a
+// per-user total cap so the compose flow can't be used to exceed it. An empty
+// Blocks clears the day.
 func (s *sessionService) ReplaceMyDayExceptions(ctx context.Context, campaignID, userID string, req ReplaceDayExceptionsRequest) error {
 	if _, err := validateExceptionDate(req.OnDate); err != nil {
 		return err
@@ -323,10 +303,10 @@ func (s *sessionService) ReplaceMyDayExceptions(ctx context.Context, campaignID,
 		})
 	}
 
-	// Per-user cap (0d): count rows on OTHER dates and ensure the new day's set
-	// keeps the member under the ceiling. Counting excludes this date because a
-	// day-replace overwrites it — only the delta on other dates plus this day's
-	// new rows counts toward the total.
+	// Count rows on OTHER dates and ensure the new day's set keeps the member
+	// under the per-user cap. This date is excluded because a day-replace
+	// overwrites it — only the delta on other dates plus this day's new rows
+	// counts toward the total.
 	existing, err := s.repo.CountUserExceptions(ctx, campaignID, userID)
 	if err != nil {
 		return apperror.NewInternal(fmt.Errorf("counting exceptions: %w", err))
@@ -406,22 +386,13 @@ func (s *sessionService) BuildOverlay(ctx context.Context, campaignID string, me
 }
 
 // CampaignMemberZones returns the IANA zone each member set for THEMSELVES on
-// the availability page, keyed by user id. Members who never painted a grid are
-// absent from the map — absence is "not set here", never a UTC guess.
+// the availability page (member_availability.tz), keyed by user id. This is
+// distinct from users.timezone, which that page never writes — the two are
+// different questions. Members who never painted a grid are absent from the
+// map, since absence means "not set here", never a UTC guess.
 //
-// WHY THIS EXISTS: the availability page's control is literally labelled "Your
-// timezone", and saving writes it into member_availability.tz and NOWHERE ELSE
-// (static/js/availability.js sends {tz, blocks} to PUT /availability/mine; the
-// only writer of users.timezone is PUT /account/timezone, which that page never
-// calls). Every surface that reported a member's zone read users.timezone only,
-// so a player who set the control, painted their week and saved was still shown
-// as "zone not set" on the Director's Bench — with a repair chip inviting the
-// Director to chase them about it, forever, no matter how many times they set
-// it. The two columns are two different questions and the product asks the
-// wrong one.
-//
-// ONE READ FOR THE WHOLE ROSTER. The overlay renders per member; asking per
-// member would turn a roster render into an N+1 (WG-4).
+// One read for the whole roster: the overlay renders per member, and asking
+// per member would turn a roster render into an N+1.
 func (s *sessionService) CampaignMemberZones(ctx context.Context, campaignID string) (map[string]string, error) {
 	blocks, err := s.repo.ListCampaignAvailability(ctx, campaignID)
 	if err != nil {
@@ -439,7 +410,7 @@ func (s *sessionService) CampaignMemberZones(ctx context.Context, campaignID str
 	return out, nil
 }
 
-// --- Temporary offered availability (C-CAL-RSVP-P2) ---
+// --- Temporary offered availability ---
 
 // maxOfferedWindows bounds one "here's when I could do it" submission. Small on
 // purpose: this is an offer attached to a single event invite, not a pattern
@@ -449,33 +420,18 @@ const maxOfferedWindows = 8
 // AddMyAvailableWindows records TEMPORARY availability the member is offering
 // for specific real-world dates, WITHOUT touching their recurring weekly pattern.
 //
-// THE TRAP THIS EXISTS TO AVOID: exception rows fully REPLACE the recurring
-// pattern for a date (see effectiveBlocks in availability_overlay.go). So
-// writing the offered window on its own would silently ERASE the rest of that
-// day — a player answering "I could also do Tuesday 6–10pm" would come out of it
-// LESS available than before. This method therefore COMPOSES the day first —
-// existing exceptions for that date if any, otherwise the recurring pattern for
-// that weekday — paints the offered window on top, and writes the merged set.
-// It is the same compose-the-day rule the per-date editor uses client-side
-// (C-SCHED-P2 0c), enforced server-side because this write arrives from an email
-// link with no editor in front of it.
+// Exception rows fully replace the recurring pattern for a date (see
+// effectiveBlocks in availability_overlay.go), so writing the offered window
+// alone would erase the rest of that day. This composes the day first —
+// existing exceptions for that date if any, otherwise the recurring pattern
+// for that weekday — paints the offered window on top, and writes the merged
+// set, mirroring the compose-the-day rule the per-date editor uses
+// client-side, since this write arrives from an email link with no editor.
 //
-// THE SECOND TRAP: THE ZONE. A composed day is written back through
-// ReplaceMyDayExceptions, which stamps ONE zone on every row it writes. The
-// caller's zone is the OFFER's zone (users.timezone — "UTC" whenever the member
-// never set an account zone, which is the default), while the minutes already
-// on the canvas were authored in the member's OWN zone — the one the
-// availability page's "Your timezone" dropdown writes into member_availability.tz
-// and nowhere else. Writing the composed day in the caller's zone therefore
-// RELABELS the member's existing hours: same minute numbers, different zone, so
-// their stated evening silently moves in real time (four hours, for a New York
-// member with no account zone) in the Director's overlay and in the derived
-// best-window, with no edit by them and no signal that it happened.
-//
-// So the day is composed and written in the zone its SOURCE ROWS were authored
-// in, and it is the OFFER — a fresh input, the only thing here that is not
-// already stored data — that gets CONVERTED. Stored minutes are never
-// renumbered and never relabelled.
+// The composed day is written in the zone its SOURCE ROWS were authored in,
+// never the offer's own zone: relabelling already-stored minutes into a
+// different zone would silently move a member's stated hours in real time.
+// Only the offer itself — fresh input, not stored data — gets converted.
 //
 // SELF-WRITE ONLY: userID is supplied by the caller from a session or a redeemed
 // token, and every read/write below is scoped to (campaign, user).
@@ -537,11 +493,10 @@ type offeredDay struct {
 }
 
 // authoredZone reports the zone the member's OWN availability rows are stored
-// in, or "" when they have none. The recurring pattern wins: it is what the
-// availability page's "Your timezone" control writes, and it is the only zone
-// the member ever chose explicitly. Exception rows are the fallback because
-// some of them are written by machinery (the RSVP "Out this week" action)
-// carrying users.timezone rather than a member choice.
+// in, or "" when they have none. The recurring pattern wins, since it is the
+// only zone the member chose explicitly (via the "Your timezone" control);
+// exception rows are the fallback because some are written by machinery
+// (the RSVP "Out this week" action) carrying users.timezone, not a choice.
 func authoredZone(recurring []AvailabilityBlock, existing []AvailabilityException) string {
 	for _, b := range recurring {
 		if timeutil.IsValidLocation(b.TZ) {
@@ -560,18 +515,13 @@ func authoredZone(recurring []AvailabilityBlock, existing []AvailabilityExceptio
 // the zone each affected day must be written in, returning the per-date windows
 // plus a stable date order.
 //
-// The target zone for a date is that date's EXISTING exception rows' zone when
-// it has any — those rows are the day (they replace the recurring pattern), so
-// the day is already expressed in their zone and must stay that way — otherwise
-// the member's pattern zone, otherwise the offer's own zone (nothing stored to
-// preserve).
-//
-// The zone therefore depends on the date and the date depends on the zone, so
-// the resolution runs as a small bounded fixed point rather than a single pass:
-// project the offer with the pattern zone, and where a resolved date turns out
-// to be authored in some other zone, re-project with that zone and take the
-// dates that projection lands on. maxZoneRounds bounds it because an unbounded
-// loop here would be the same class of defect as the overlay's split loop.
+// The target zone for a date is that date's existing exception rows' zone if
+// any (those rows already are the day and must stay in their own zone),
+// otherwise the member's pattern zone, otherwise the offer's own zone. The
+// zone a date resolves to can itself depend on the zone used to project it,
+// so this runs as a small bounded fixed point (maxZoneRounds) rather than a
+// single pass: project with the pattern zone, and where a resolved date turns
+// out to be authored in another zone, re-project with that zone too.
 func resolveOfferedDays(windows []AvailabilityWindowDTO, offerTZ string,
 	recurring []AvailabilityBlock, existing []AvailabilityException) (map[string]offeredDay, []string, error) {
 
@@ -656,14 +606,9 @@ func resolveOfferedDays(windows []AvailabilityWindowDTO, offerTZ string,
 
 // composeOfferedDay builds the full replacement block set for one date: the
 // member's current effective day with the offered windows painted on as
-// `available`.
-//
-// Works on a minute-resolution canvas rather than interval arithmetic because
-// the offered window can overlap, abut, or straddle any number of existing
-// blocks; painting sidesteps every one of those edge cases. An existing
-// `preferred` minute is NOT downgraded — an explicit preference outranks a
-// generic offer — while an `unavailable` minute IS overwritten, since the member
-// is now explicitly saying they could make that time.
+// `available`. Painting on a minute canvas handles overlapping, abutting, or
+// straddling windows without interval arithmetic. An existing `preferred`
+// minute is kept, since an explicit preference outranks a generic offer.
 func composeOfferedDay(date string, offers []AvailabilityWindowDTO,
 	recurring []AvailabilityBlock, existing []AvailabilityException) ([]ExceptionBlockDTO, error) {
 	return composeDayWithState(date, offers, AvailAvailable, true, recurring, existing)
@@ -796,7 +741,7 @@ func validateExceptionState(state string) (string, error) {
 // mondayOf snaps a civil date back to the Monday of its week, so overlay
 // columns are always Mon..Sun regardless of the date the client requested.
 func mondayOf(d timeutil.CivilDate) timeutil.CivilDate {
-	// time.Weekday: Sunday=0..Saturday=6; Monday=1.
+	// time.Weekday: Sunday=0..Saturday=6, Monday=1.
 	offset := (int(d.Weekday()) - int(time.Monday) + 7) % 7
 	return d.AddDays(-offset)
 }

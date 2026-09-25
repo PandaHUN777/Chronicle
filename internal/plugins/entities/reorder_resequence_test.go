@@ -1,6 +1,6 @@
-// reorder_resequence_test.go — ReorderEntity must densely re-sequence the moved
-// entity's sibling set so the (sort_order, name) tiebreak in the tree render
-// can't snap a dragged entity back (cordinator#47, Bug 1 silent-revert).
+// reorder_resequence_test.go pins that ReorderEntity densely re-sequences
+// the moved entity's sibling set so the (sort_order, name) tiebreak in the
+// tree render can't snap a dragged entity back to its old position.
 package entities
 
 import (

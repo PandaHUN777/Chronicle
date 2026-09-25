@@ -26,19 +26,15 @@ never append dated entries or "recent work".
 | `conventions.md` | Code patterns with Go/Templ/SQL examples, CI guards, security rules, cross-plugin import discipline |
 | `decisions.md` | Architecture Decision Records. Append-only; code cites ADR numbers, so never renumber |
 | `tech-stack.md` | Technology versions, configs, and why each was chosen |
-| `data-model.md` | Schema reference. **Incomplete** (#742); the migrations are the source of truth |
-| `api-routes.md` | Route table. **Incomplete** (#742); `internal/wire/routes_snapshot.txt` is the source of truth |
+| `data-model.md` | Schema overview: every live table and what it holds. The migrations are the source of truth |
+| `api-routes.md` | Where to find routes: `internal/wire/routes_snapshot.txt` lists every route (CI-guarded) and `docs/api/openapi.yaml` describes the sync API |
 | `glossary.md` | TTRPG and Chronicle terminology |
 | `troubleshooting.md` | Non-obvious problems and their fixes, including the test-environment ones |
 | `plugin-development.md` | Building WASM extensions |
-| `designs/` | Designs. `2026-09-12-build-order.md` and `2026-09-12-header-and-nav.md` are approved and unbuilt (#739). `2026-09-13-media-renovation.md` is the media plan, waiting on four decisions (#730, #733). The rest are finished or superseded |
+| `designs/` | Designs. `2026-09-12-build-order.md` and `2026-09-12-header-and-nav.md` are approved and unbuilt (#739). `2026-09-13-media-renovation.md` is the media plan, waiting on four decisions (#730, #733). |
 
-`status.md` and `todo.md` are pointers to the issues now. `audit.md`,
-`competitive-gap-analysis.md`, `design-content-extensions.md`,
-`obsidian-notes-plan.md`, `phases.md`, `roadmap.md`,
-`security-audit-2026-06-19-pc-claiming.md`, `security-hardening-plan.md` and
-`archive/` are history, due to be moved out of this tree (#742). Don't treat
-them as current.
+`status.md` and `todo.md` are pointers to the issues now. Finished plans,
+audits and old designs were deleted; git history keeps them.
 
 ## Per-plugin and per-widget docs
 
@@ -59,7 +55,6 @@ business rules and footguns.
 - **Front-end scripts** (`static/js/`): `boot`, `sidebar_tag_filter`,
   `sidebar_tree`, and under `widgets/`: `dynamic_surface`, `entity_tooltip`,
   `image_upload`, `layout_editor`, `template_editor`, `timeline_viz`.
-  (`widgets/dashboard_editor.ai.md` describes a retired script; #742.)
 - **Examples:** `extensions/example-wasm-go/`, `extensions/example-wasm-rust/`.
 
 ## Templates

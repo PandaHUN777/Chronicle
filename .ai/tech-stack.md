@@ -15,15 +15,15 @@
 | Templ | latest | HTML templating | Type-safe, compiles to Go, component model |
 | HTMX | 2.x | Frontend interactivity | Server-driven partials, no SPA, no Node |
 | Alpine.js | 3.x | Client-side reactivity | Dropdowns, modals, toggles |
-| MariaDB | 10.11+ | Primary database | User infrastructure requirement |
-| Redis | 7.x | Sessions & cache | Session storage, rate limiting, caching |
+| MariaDB | latest (Docker image tag) | Primary database | User infrastructure requirement |
+| Redis | latest/alpine (Docker image tag) | Sessions & cache | Session storage, rate limiting, caching |
 | Tailwind CSS | 3.x (standalone CLI) | CSS framework | Utility-first, no Node needed |
 
 ## Frontend (Vendored, No Node.js)
 
 | Library | Version | Role |
 |---------|---------|------|
-| TipTap | 2.x | Rich text editor widget |
+| TipTap | 3.x | Rich text editor widget (bundled via esbuild, see `static/vendor/tiptap-bundle.src.js`) |
 | Leaflet.js | 1.9.x | Interactive maps (CDN-loaded per-page) |
 | Font Awesome | 6 Free | UI icons |
 | RPG Awesome | latest | TTRPG-themed icons |
@@ -39,10 +39,9 @@
 | `github.com/redis/go-redis/v9` | Redis client |
 | `github.com/google/uuid` | UUID generation |
 | `github.com/golang-migrate/migrate/v4` | DB migrations |
-| `github.com/alexedwards/argon2id` | Password hashing |
-| `github.com/vk-rv/pvx` | PASETO v4 tokens |
-| `github.com/go-playground/validator/v10` | Input validation |
+| `golang.org/x/crypto/argon2` | Password hashing (argon2id) |
 | `github.com/microcosm-cc/bluemonday` | HTML sanitization |
+| `github.com/extism/go-sdk` + `github.com/tetratelabs/wazero` | WASM plugin runtime (Extism host SDK on the wazero engine) |
 
 ## Dev Tools
 
@@ -60,19 +59,27 @@
 | Service | Image | Role |
 |---------|-------|------|
 | `chronicle` | Custom multi-stage | Go binary serves HTTP directly |
-| `chronicle-db` | `mariadb:10.11` | Database (persistent volume) |
-| `chronicle-redis` | `redis:7-alpine` | Cache/sessions (128MB, allkeys-lru) |
+| `chronicle-db` | `mariadb:latest` | Database (persistent volume) |
+| `chronicle-redis` | `redis:alpine` | Cache/sessions (128MB, allkeys-lru) |
 
 ## Environment Variables
 
+See `internal/config/config.go` (`Load()`) for the full, authoritative list.
+The ones most likely to need setting:
+
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `ENV` | `development` | `development` or `production`. Production enforces `SECRET_KEY` (32+ chars) and refuses the default `DB_PASSWORD`. |
 | `PORT` | `8080` | HTTP listen port |
-| `DATABASE_URL` | (required) | `user:pass@tcp(host:3306)/chronicle?parseTime=true` |
-| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
-| `SECRET_KEY` | (required) | PASETO signing key (32+ bytes, base64) |
 | `BASE_URL` | `http://localhost:8080` | Public URL |
-| `ENV` | `development` | `development` or `production` |
-| `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
-| `MAX_UPLOAD_SIZE` | `10MB` | Max file upload |
+| `LOG_LEVEL` | `debug` | `debug`, `info`, `warn`, `error` |
+| `DB_HOST` / `DB_USER` / `DB_PASSWORD` / `DB_NAME` | `localhost:3306` / `chronicle` / `chronicle` / `chronicle` | MariaDB connection pieces |
+| `DATABASE_URL` | (unset) | Overrides the `DB_*` pieces with a full DSN when set |
+| `REDIS_URL` | `redis://localhost:6379` | Redis connection |
+| `SECRET_KEY` | dev-only fallback | App secret (32+ chars in production). Encrypts stored SMTP passwords at rest. |
 | `SESSION_TTL` | `720h` | Session duration (30 days) |
+| `MAX_UPLOAD_SIZE` | `10485760` (10MB) | Max file upload, in bytes |
+| `MEDIA_PATH` | `./data/media` | Where uploaded media is stored on disk |
+| `MEDIA_SIGNING_SECRET` / `MEDIA_SIGNING_SECRET_FILE` | (unset) / `./data/.signing-secret` | HMAC secret for signed media URLs (see `.ai/conventions.md` §"Signed URLs") |
+| `EXTENSIONS_PATH` | `./extensions` | Where WASM extension bundles are loaded from |
+| `BACKUP_DIR` | `/app/data/backups` | Pre-migration backup destination |

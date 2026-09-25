@@ -1,5 +1,5 @@
 // settings_tab_sanitize_test.go pins the reflected-XSS guard on the
-// campaign Settings page (audit SEC-1; cordinator core-tenets §T-B1).
+// campaign Settings page.
 //
 // The Settings handler reads `?tab=` from the query string and hands it
 // to CampaignSettingsPage, which interpolates it into an Alpine.js

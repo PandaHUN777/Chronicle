@@ -1,22 +1,11 @@
 // export_adapter_wiring_test.go pins that every export/import section the
 // campaign export envelope declares is actually wired to an adapter in
-// app/routes.go.
-//
-// Fix id: promises/notes-never-exported.
-//
-// This exists because of the notes hole (sweep R4 stage 15): campaigns'
-// ExportImportService had SetNoteExporter / SetNoteImporter setters and an
-// envelope field for notes, but nothing ever called the setters. The
-// adapters simply weren't written, so `Export` skipped the nil exporter and
-// `Import` skipped the nil importer — a campaign backup omitted every shared
-// note in the campaign and reported success. Nothing failed, because a nil
-// adapter is silently a no-op by design (some sections legitimately depend
-// on optional plugins).
-//
-// The nil-adapter-skips-silently design is worth keeping; what was missing
-// is a place where "we meant to wire this" is written down. That is this
-// test: it walks the AST of app/routes.go and requires a call to every
-// setter named below. Adding a new export section means adding it here.
+// app/routes.go. A nil adapter is a silent no-op by design (some sections
+// legitimately depend on optional plugins), so `Export`/`Import` skip it
+// without error — this test is the place where "we meant to wire this" is
+// written down. It walks the AST of app/routes.go and requires a call to
+// every setter named below. Adding a new export section means adding it
+// here.
 package wire
 
 import (
@@ -32,14 +21,9 @@ import (
 // campaigns.CampaignExport that would otherwise be silently empty.
 var requiredExportSetters = []string{
 	"SetEntityExporter", "SetEntityImporter",
-	// CALV5-PLACEHOLDER: "SetCalendarExporter", "SetCalendarImporter" were
-	// listed here. They are deliberately unwired while the calendar is rebuilt,
-	// so a campaign backup carries no calendar section at all rather than an
-	// empty one.
-	//
-	// RESTORE BOTH WITH V5. The failure this guard catches is silent by
-	// definition — an export section that is never wired just is not in the
-	// file, and nobody notices until a restore comes back missing a feature.
+	// CALV5-PLACEHOLDER: V5 must re-add "SetCalendarExporter",
+	// "SetCalendarImporter" here once the calendar rebuild wires adapters
+	// again; until then a campaign backup carries no calendar section.
 	"SetTimelineExporter", "SetTimelineImporter",
 	"SetSessionExporter", "SetSessionImporter",
 	"SetMapExporter", "SetMapImporter",

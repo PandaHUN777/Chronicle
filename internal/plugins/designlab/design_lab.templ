@@ -8,10 +8,6 @@ import "github.com/keyxmakerx/chronicle/internal/templates/layouts"
 // by a sample "System" (static/js/widgets/surface_demo.js). It demonstrates the
 // box expand/collapse primitive, an action that pushes an overlay, and the
 // mini->full launch (container-transform). Admin-only via /admin/design-lab.
-//
-// This replaced the former static component showcase ("Demo Page") — that was a
-// catalogue of pre-styled mock components; the real, moving dynamic-surface
-// engine is the demo now.
 templ SurfaceDemoPage() {
 	@layouts.App("Surface Demo - Admin") {
 		<!-- Sample System consumer: registers the box renderers + mounts the sheet.

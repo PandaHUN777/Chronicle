@@ -5,19 +5,16 @@ import (
 	"time"
 )
 
-// TestStartOfCivilDay_MidnightJumpZones is the load-bearing case: zones whose
-// DST transition lands ON midnight, so local 00:00 does not exist that day.
-//
-// The naive `time.Date(y, m, d, 0, 0, 0, 0, loc)` normalises the nonexistent
-// wall clock BACKWARDS into the previous local day. Used as a day boundary that
-// produced a boundary EARLIER than the instant a splitting loop was holding,
-// which is how the availability overlay became a non-terminating allocation
-// loop that OOM-killed the server from one authenticated GET.
+// TestStartOfCivilDay_MidnightJumpZones covers zones whose DST transition
+// lands on midnight, so local 00:00 does not exist that day. The naive
+// `time.Date(y, m, d, 0, 0, 0, 0, loc)` normalises the nonexistent wall clock
+// backwards into the previous local day, which can make a day-boundary-based
+// splitting loop non-terminating.
 //
 // Two assertions per zone, and both matter:
-//   - the returned instant's LOCAL DATE is the requested date (the naive
+//   - the returned instant's local date is the requested date (the naive
 //     expression fails this outright), and
-//   - it is the EARLIEST such instant (one minute earlier is still yesterday).
+//   - it is the earliest such instant (one minute earlier is still yesterday).
 func TestStartOfCivilDay_MidnightJumpZones(t *testing.T) {
 	cases := []struct {
 		zone      string
@@ -60,13 +57,10 @@ func TestStartOfCivilDay_MidnightJumpZones(t *testing.T) {
 	}
 }
 
-// TestStartOfCivilDay_StrictlyIncreasing pins the property the overlay's
-// splitting loop depends on for TERMINATION: successive civil dates map to
-// strictly increasing instants, in every zone, across the transition.
-//
-// The naive expression violates this — in America/Havana the "start" of
-// 2026-03-08 computed naively is 2026-03-07 23:00, i.e. BEFORE the start of
-// 2026-03-07's own successor boundary.
+// TestStartOfCivilDay_StrictlyIncreasing pins the property a splitting loop
+// depends on for termination: successive civil dates map to strictly
+// increasing instants, in every zone, across a DST transition. The naive
+// `time.Date` expression violates this on a midnight-jump transition.
 func TestStartOfCivilDay_StrictlyIncreasing(t *testing.T) {
 	for _, zone := range []string{"America/Havana", "America/Santiago", "Atlantic/Azores", "America/New_York", "Pacific/Auckland"} {
 		loc, err := time.LoadLocation(zone)

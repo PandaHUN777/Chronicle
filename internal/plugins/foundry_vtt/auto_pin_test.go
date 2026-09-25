@@ -1,19 +1,16 @@
-// Tests for the C-FMC-6 auto-pin flows: install-hook + one-time
-// migration. Contracts pinned:
+// Tests for the auto-pin flows: install-hook + one-time migration.
+// Contracts pinned:
 //
 //   - AutoPinOnInstall is a no-op when previousVersion is empty
-//     (first-ever install — no prior state to preserve).
-//   - AutoPinOnInstall is a no-op when previousVersion == newVersion
-//     (re-install of the same version; defensive guard).
+//     (first-ever install) or equals newVersion (re-install guard).
 //   - AutoPinOnInstall pins every auto-tracking campaign to
-//     previousVersion + logs one EventModuleAutoPinOnInstall per
-//     campaign + one EventModuleAutoPinInstallSummary total.
+//     previousVersion, logging one EventModuleAutoPinOnInstall per
+//     campaign plus one EventModuleAutoPinInstallSummary.
 //   - Pin failures for individual campaigns don't abort the fan-out;
 //     the summary event still fires with the accurate affected count.
-//   - AutoPinMigrate is idempotent — second call returns immediately
-//     without re-running.
-//   - AutoPinMigrate is a no-op when no foundry-module package is
-//     registered (logs + returns nil; future boot retries).
+//   - AutoPinMigrate is idempotent (second call is a no-op) and skips
+//     when no foundry-module package is registered (logs + returns
+//     nil so a future boot retries).
 package foundry_vtt
 
 import (
@@ -79,12 +76,9 @@ func (s *recordingSettings) SetFoundryModulePin(_ context.Context, campaignID, v
 	return nil
 }
 
-// pin_mode stubs added in C-FMC-ADMIN-UX-AUDIT Chunk 1. Existing
-// auto_pin_test.go cases predate Chunk 2's hook behavior change, so
-// the stubs return zero/no-op values — the test cases don't exercise
-// pin_mode yet. New Chunk 1 tests (pin_mode_test.go) exercise the
-// settings adapter contract via a dedicated stub instead of reusing
-// this one.
+// pin_mode stubs return zero/no-op values; these test cases don't
+// exercise pin_mode. campaigns/foundry_pin_mode_test.go exercises the settings adapter
+// contract via a dedicated stub instead of reusing this one.
 func (s *recordingSettings) GetFoundryModulePinMode(_ context.Context, campaignID string) (string, error) {
 	if s.modes != nil {
 		return s.modes[campaignID], nil
@@ -156,11 +150,9 @@ func TestAutoPinOnInstall_NoopOnSameVersion(t *testing.T) {
 	}
 }
 
-// TestAutoPinOnInstall_PreserveModeFreezes — campaigns explicitly in
-// "preserve" mode are pinned to the previous version on install.
-// previousVersion=v0.1.10, newVersion=v0.1.11, 3 preserve-mode
-// campaigns. All three get pinned to v0.1.10; per-campaign events
-// fire + one summary event.
+// TestAutoPinOnInstall_PreserveModeFreezes pins that campaigns in
+// "preserve" mode are pinned to the previous version on install, each
+// with a per-campaign event plus one summary event.
 func TestAutoPinOnInstall_PreserveModeFreezes(t *testing.T) {
 	campaigns := []CampaignUsage{
 		{CampaignID: "camp-1", CampaignName: "Imix"},

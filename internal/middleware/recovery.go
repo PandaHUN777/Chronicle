@@ -29,19 +29,14 @@ func Recovery() echo.MiddlewareFunc {
 					)
 
 					// Also record it where an admin can read it without shell
-					// access (host.errors). This hook exists SEPARATELY from
-					// the one in app.errorHandler because a recovered panic
-					// never reaches that handler at all: the c.String below
-					// writes the 500 straight to the response and returns nil,
-					// so Echo sees no error. Hooking only the error handler
-					// would have left the single most valuable error class —
-					// the one that crashed a handler mid-request — invisible
-					// in the diagnostic while it looked like it was working.
+					// access (host.errors). This hook is separate from
+					// app.errorHandler because a recovered panic never reaches
+					// that handler: the c.String below writes the 500 straight
+					// to the response and returns nil, so Echo sees no error.
 					//
-					// The panic VALUE goes in; the stack does not. It is
+					// The panic VALUE goes in; the stack does not — it's
 					// already in the log line above, and kilobytes of frames
-					// per entry would blow the ring's memory budget and bury
-					// the line an operator reads first.
+					// per entry would blow the ring's memory budget.
 					observability.RecordPanic(
 						c.Request().Method,
 						c.Path(),

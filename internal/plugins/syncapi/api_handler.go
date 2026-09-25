@@ -53,9 +53,8 @@ type APIHandler struct {
 }
 
 // TagGrantLister resolves an entity's tag-derived visibility grants so the
-// permissions API can expose them additively to the Foundry module
-// (C-PERM-W1-TAG-GRANTS). Satisfied by the same adapter the entities plugin
-// uses for its glance.
+// permissions API can expose them additively to the Foundry module.
+// Satisfied by the same adapter the entities plugin uses for its glance.
 type TagGrantLister interface {
 	GetEntityTagGrants(ctx context.Context, campaignID, entityID string) ([]entities.EntityTagGrantInfo, error)
 }
@@ -94,20 +93,17 @@ var degradeSignalThrottle sync.Map
 
 // resolveRole returns the caller's effective role for entity privacy filtering.
 //
-// The resolution differs by auth type (T-B1 visibility correctness, §1B):
+// The resolution differs by auth type:
 //
 //   - Session-authed callers (synthetic key, ID == synthKeySessionID) keep their
-//     LIVE campaign role. Their synthetic key already mirrors current membership,
-//     and session behavior must not change.
+//     LIVE campaign role.
 //   - A real stored Bearer key resolves to Owner-level sync visibility,
-//     DECOUPLED from its creator's current membership. Keys are strictly
+//     DECOUPLED from its creator's current membership: keys are strictly
 //     Owner-minted (routes.go: POST /api-keys is RequireRole(Owner)) and the
 //     WebSocket path already grants any valid key Owner role
-//     (service.AuthenticateKeyForWS). Mirroring that here makes the REST and WS
-//     surfaces agree and removes the silent-degrade landmine where transferring
-//     ownership or removing a member quietly stripped private/custom entities
-//     from the sync. When the key's creator HAS lost access we still sync, but
-//     we emit a loud, operator-visible signal instead of degrading silently.
+//     (service.AuthenticateKeyForWS), so this keeps REST and WS in agreement.
+//     When the key's creator HAS lost access we still sync, but emit a loud,
+//     operator-visible signal instead of degrading silently.
 func (h *APIHandler) resolveRole(c echo.Context) int {
 	key := GetAPIKey(c)
 	if key == nil {
@@ -129,9 +125,9 @@ func (h *APIHandler) resolveRole(c echo.Context) int {
 
 // flagIfKeyOwnerLostAccess emits a loud, module-surfaceable signal when a stored
 // Bearer key's creator (key.UserID) is no longer an Owner (or no longer a member)
-// of the key's campaign. We deliberately do NOT downgrade the key's sync
-// visibility here — that silent degrade was the bug. Auto-disabling the key is a
-// separate, operator-visible policy decision left as a follow-up.
+// of the key's campaign. Deliberately does NOT downgrade the key's sync
+// visibility here — degrading silently is worse than flagging loudly.
+// TODO(keyxmakerx/Cordinator#180): decide whether to auto-disable such a key.
 func (h *APIHandler) flagIfKeyOwnerLostAccess(c echo.Context, key *APIKey) {
 	member, err := h.campaignSvc.GetMember(c.Request().Context(), key.CampaignID, key.UserID)
 	// err != nil => creator removed from campaign; role < Owner => demoted.
@@ -193,15 +189,12 @@ func (h *APIHandler) resolveUserID(c echo.Context) string {
 
 // visibilityRoleFor is the API-key path's equivalent of
 // campaigns.CampaignContext.VisibilityRole(): it promotes role to RoleOwner
-// when the caller has been DM-granted dm_only visibility in this campaign,
-// so a Co-DM's CheckEntityAccess call resolves the same way the web Show
-// handler's now does (ADR-057 slice 1, C-CODM-VIS-PARITY). Callers that are
-// already Owner (every stored Bearer key, per resolveRole) skip the extra
-// lookup. Only feed the RESULT into CheckEntityAccess — leave the caller's
-// own `role` variable alone for anything else in that handler (GM-field and
-// secret-stripping decisions stay on the real member role, mirroring the
-// entities-plugin GetEntry path's asymmetry: promoted for visibility, not
-// for what a Player-tier viewer's response gets redacted).
+// when the caller has been DM-granted dm_only visibility in this campaign
+// (ADR-057), so a Co-DM's CheckEntityAccess call resolves like the web Show
+// handler's. Callers already Owner (every stored Bearer key) skip the extra
+// lookup. Feed the RESULT into CheckEntityAccess only — leave the caller's
+// own `role` alone for GM-field and secret-stripping, which stay on the
+// real member role.
 func (h *APIHandler) visibilityRoleFor(ctx context.Context, campaignID, userID string, role int) int {
 	if role >= int(campaigns.RoleOwner) {
 		return role
@@ -342,15 +335,13 @@ func (h *APIHandler) ListEntities(c echo.Context) error {
 	sanitizeEntitiesHTMLForEgress(items)
 
 	// Redact inline GM secrets for callers below the secret-visibility
-	// bar (Player), mirroring the web path. Same P0 leak as GetEntity,
-	// at list scope. Owner/Scribe responses are unchanged.
-	// See C-SYNCAPI-PRELAUNCH-HARDENING.
+	// bar (Player), mirroring the web path and GetEntity's same check at
+	// list scope. Owner/Scribe responses are unchanged.
 	stripEntitiesSecretsForEgress(items, role)
 
-	// Strip GM-only and owner-only field VALUES at list scope (audit M-1 /
-	// C-FIELDS-OWNER-FILTER). Load the campaign's entity types ONCE (not
-	// per-entity) to resolve the markers. Fail closed on a load error
-	// rather than leak.
+	// Strip GM-only and owner-only field VALUES at list scope. Load the
+	// campaign's entity types ONCE (not per-entity) to resolve the markers.
+	// Fail closed on a load error rather than leak.
 	if role < int(campaigns.RoleScribe) && len(items) > 0 {
 		types, terr := h.entitySvc.GetEntityTypes(c.Request().Context(), campaignID)
 		if terr != nil {
@@ -392,16 +383,12 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 	}
 
 	// Enforce visibility: check both legacy is_private and custom permissions.
-	// ADR-057 slice 1 (C-CODM-VIS-PARITY): CheckEntityAccess gets a promoted
-	// role when the caller is DM-granted, mirroring what
-	// campaigns.CampaignContext.VisibilityRole() does on the web path — a
-	// Co-DM must be able to read a dm_only entity through the sync API the
-	// same as they can open it on the web. There is no CampaignContext here
-	// (this handler is API-key authenticated, not session-cc-based), so the
-	// promotion is resolved directly via campaignSvc.IsUserDmGranted rather
-	// than reusing VisibilityRole() itself. `role` is deliberately left
-	// unpromoted for everything below this call (GM-field / secret
-	// stripping) — same asymmetry as the entities-plugin GetEntry path.
+	// CheckEntityAccess gets a promoted role when the caller is DM-granted
+	// (ADR-057), mirroring campaigns.CampaignContext.VisibilityRole() on the
+	// web path so a Co-DM can read a dm_only entity here too. This handler is
+	// API-key authenticated (no CampaignContext), so the promotion is resolved
+	// directly via campaignSvc.IsUserDmGranted. `role` stays unpromoted for
+	// everything below this call (GM-field / secret stripping).
 	userID := h.resolveUserID(c)
 	access, accessErr := h.entitySvc.CheckEntityAccess(ctx, entity.ID, h.visibilityRoleFor(ctx, entity.CampaignID, userID, role), userID)
 	if accessErr != nil || !access.CanView {
@@ -411,19 +398,16 @@ func (h *APIHandler) GetEntity(c echo.Context) error {
 	// Defense-in-depth egress sanitize — see egress_sanitize.go.
 	sanitizeEntityHTMLForEgress(entity)
 
-	// Redact inline GM secrets for callers below the secret-visibility
-	// bar (Player), mirroring the web GetEntry path. Closes the P0
-	// DM-secret egress leak: the whole-entity CanView gate above lets a
-	// player read this entity, but the secret PROSE inside it must not
-	// ship. Owner/Scribe (>= RoleScribe) responses are unchanged.
-	// See C-SYNCAPI-PRELAUNCH-HARDENING.
+	// Redact inline GM secrets for callers below the secret-visibility bar
+	// (Player), mirroring the web GetEntry path. The whole-entity CanView
+	// gate above lets a player read this entity, but the secret PROSE inside
+	// it must not ship. Owner/Scribe (>= RoleScribe) responses are unchanged.
 	stripEntitySecretsForEgress(entity, role)
 
 	// Strip GM-only and owner-only field VALUES from fields_data for callers
-	// who can't see them (audit M-1 / C-FIELDS-OWNER-FILTER). The CanView
-	// gate above lets a player read this entity, but gm_only fields (e.g.
-	// Draw Steel's gm_notes) and owner_only fields (e.g. its backstory, for
-	// a viewer who isn't this entity's claimed owner) must not ship.
+	// who can't see them. The CanView gate above lets a player read this
+	// entity, but gm_only fields (e.g. Draw Steel's gm_notes) and owner_only
+	// fields (e.g. backstory, for a non-owner viewer) must not ship.
 	// Bearer/Owner/Scribe keep full data. Fail closed: if the type can't
 	// load we cannot know which fields are restricted, so error rather than
 	// leak (mirrors the entities-plugin GetFieldsAPI).
@@ -507,15 +491,10 @@ func (r *entityPrivacyResolver) resolve(ctx context.Context, requested patch.Fie
 
 // apiCreateEntityRequest is the JSON body for creating an entity via the API.
 //
-// IsPrivate is three-state for the same reason apiUpdateEntityRequest's is,
-// against a different failure. There is nothing stored to preserve on a
-// create, so this is not the partial-update contract — it is the campaign's
-// DefaultVisibility setting, which only has an opening when the client did
-// NOT state a preference. Bound as a plain bool, an omitted key decoded to
-// false and the entity was created PUBLIC: a DM who set the campaign default
-// to "DM Only" still got player-visible entities out of every Foundry sync,
-// because the module does not send is_private on create. patch.Field is what
-// keeps "the client said nothing" apart from "the client said public".
+// IsPrivate is three-state: there is nothing stored to preserve on create, so
+// absent means "let the campaign's DefaultVisibility decide" rather than
+// "public". A plain bool would collapse absent to false and create entities
+// public regardless of a DM-Only campaign default.
 type apiCreateEntityRequest struct {
 	Name         string            `json:"name"`
 	EntityTypeID int               `json:"entity_type_id"`
@@ -543,13 +522,10 @@ func (h *APIHandler) CreateEntity(c echo.Context) error {
 		return apperror.NewBadRequest("invalid request body")
 	}
 
-	// Reject a missing/zero entity_type_id instead of silently defaulting
-	// to the first available type. Defaulting to types[0] (non-deterministic
-	// "first type", typically Character) is the server-side root of the
-	// calendar-as-Characters bug class: any client with a stale/wrong type
-	// mapping would create entities under an arbitrary category with no
-	// error. The batch-sync create path passes a real type, so no internal
-	// caller regresses. See C-SYNCAPI-PRELAUNCH-HARDENING (P1).
+	// Reject a missing/zero entity_type_id instead of silently defaulting to
+	// the first available type: a client with a stale/wrong type mapping
+	// would otherwise create entities under an arbitrary category with no
+	// error. The batch-sync create path always passes a real type.
 	if req.EntityTypeID == 0 {
 		return apperror.NewBadRequest("entity_type_id is required")
 	}
@@ -587,17 +563,11 @@ func (h *APIHandler) CreateEntity(c echo.Context) error {
 
 // apiUpdateEntityRequest is the JSON body for updating an entity via the API.
 // This is a PARTIAL update: an ABSENT key preserves the stored value, an
-// EXPLICIT null clears it, a present value replaces it (sweep R4, ruled
-// 2026-08-07). patch.Field is what makes absent and null different — a
-// plain pointer collapses them.
-//
-// It used to bind is_private to a value-typed bool, and the documented
-// contract said so: "absent means public". Nobody designed that. The
-// Foundry actor-sync pushes {name} alone on a rename, which bound
-// is_private=false and PUBLISHED a hidden character entity to every player
-// in the campaign. There was no parent_id member at all, so every update
-// also detached the entity from the Chronicle hierarchy; the field is here
-// now and absent preserves.
+// EXPLICIT null clears it, a present value replaces it. patch.Field is what
+// makes absent and null different — a plain pointer collapses them. A
+// value-typed is_private would default absent to false (public) and leak
+// private entities on a narrow update such as a rename; keep it a
+// patch.Field.
 type apiUpdateEntityRequest struct {
 	Name              patch.Field[string] `json:"name"`
 	TypeLabel         patch.Field[string] `json:"type_label"`
@@ -631,8 +601,7 @@ func (h *APIHandler) UpdateEntity(c echo.Context) error {
 
 	// is_private: absent (and an explicit null, which a NOT NULL column has
 	// no room for) yields a nil pointer, which the service reads as
-	// "preserve"; a present true/false is written. Before sweep R4 an absent
-	// key bound false and un-privated the entity.
+	// "preserve"; a present true/false is written.
 	updated, err := h.entitySvc.Update(ctx, entityID, entities.UpdateEntityInput{
 		Name:              req.Name,
 		TypeLabel:         req.TypeLabel,
@@ -763,11 +732,8 @@ func (h *APIHandler) DeleteEntity(c echo.Context) error {
 
 // syncMaxPullPages caps the number of internal pages ONE pull request walks,
 // so a single request cannot hold a connection open across an unbounded table
-// scan. With the cursor (sweep R4 stage 18) this is a page size rather than a
-// ceiling: when the walk stops early the response carries a next_cursor that
-// resumes it. Before the cursor existed it really was a ceiling, and every
-// entity past syncMaxPullPages*syncPageSize in list order could never sync at
-// all — has_more said so and the client had no way to act on it.
+// scan. This is a page size, not a ceiling: when the walk stops early the
+// response carries a next_cursor that resumes it.
 const syncMaxPullPages = 10
 
 // syncPageSize is the per-page size used for internal pagination during sync.
@@ -783,11 +749,9 @@ type syncRequest struct {
 // syncChange describes a single mutation in a sync batch.
 // The content fields are patch.Field for the same reason
 // apiUpdateEntityRequest's are: on an "update" action this struct is a
-// PARTIAL body, and absent must preserve rather than write (sweep R4).
-// Leaving this path value-typed while fixing its single-entity twin would
-// have left the same privacy break reachable through the batch door.
-// On a "create" action there is nothing to preserve, so the create branch
-// reads each field with its zero default.
+// PARTIAL body, and absent must preserve rather than write. On a "create"
+// action there is nothing to preserve, so the create branch reads each
+// field with its zero default.
 type syncChange struct {
 	Action       string              `json:"action"`         // "create", "update", "delete".
 	EntityID     string              `json:"entity_id"`      // Required for update/delete.
@@ -928,17 +892,12 @@ func (h *APIHandler) Sync(c echo.Context) error {
 
 		switch change.Action {
 		case "create":
-			// Create has no stored value to preserve, so the content
-			// fields read with their zero default: absent is the same as
-			// empty.
+			// Create has no stored value to preserve, so content fields
+			// read with their zero default: absent is the same as empty.
 			//
-			// is_private is the exception, and .Val(false) was the bug.
-			// This struct already carried the absent/explicit-false
-			// distinction and that line threw it away, so a batch create
-			// with no is_private came out PUBLIC even in a campaign whose
-			// default visibility is DM Only. Absent here means "the client
-			// has no opinion", which is precisely when the campaign default
-			// gets to decide.
+			// is_private is the exception: absent means "the client has no
+			// opinion", and must fall through to the campaign's default
+			// visibility rather than defaulting to false (public).
 			entity, err := h.entitySvc.Create(ctx, campaignID, key.UserID, entities.CreateEntityInput{
 				Name:         change.Name.Val(""),
 				EntityTypeID: change.EntityTypeID,
@@ -964,8 +923,7 @@ func (h *APIHandler) Sync(c echo.Context) error {
 				// Batch sync is a PARTIAL update, same contract as the
 				// single-entity PUT: absent preserves, a present value
 				// writes. is_private absent yields a nil pointer, which the
-				// service preserves — it used to bind false and un-private
-				// the entity through this door as well.
+				// service preserves.
 				_, err := h.entitySvc.Update(ctx, change.EntityID, entities.UpdateEntityInput{
 					Name:       change.Name,
 					TypeLabel:  change.TypeLabel,
@@ -1049,18 +1007,10 @@ type permissionsAPIResponse struct {
 	Visibility  entities.VisibilityMode     `json:"visibility"`
 	IsPrivate   bool                        `json:"is_private"`
 	Permissions []entities.EntityPermission `json:"permissions"`
-	// TagGrants exposes tag-derived visibility grants ADDITIVELY
-	// (C-PERM-W1-TAG-GRANTS). A separate array (not folded into Permissions) so
-	// the Foundry module's existing _buildOwnership parser, which reads only
-	// `permissions`, keeps working unchanged; the module opts in by reading
-	// `tag_grants` when it adds tag-reveal support. See the module .ai.md API table.
-	//
-	// C-PERM-ANON-IDENTITY: subject_type on a grant (in either Permissions or
-	// TagGrants) may now be "public" — an explicit reveal-to-everyone target.
-	// The wire SHAPE is unchanged (still a string enum), so this is additive:
-	// _buildOwnership consumers that don't recognize "public" simply ignore it
-	// (as they already do for unknown subjects). A module SHOULD map a "public"
-	// subject to Foundry's default OBSERVER ownership. Flag for the module .ai.md.
+	// TagGrants is a separate array, not folded into Permissions, so
+	// consumers reading only `permissions` keep working unchanged.
+	// subject_type (here or in Permissions) may be "public" (reveal to
+	// everyone); unrecognized subject types are ignored by old consumers.
 	TagGrants []entities.EntityTagGrantInfo `json:"tag_grants"`
 }
 
@@ -1092,9 +1042,9 @@ func (h *APIHandler) GetEntityPermissions(c echo.Context) error {
 		grants = []entities.EntityPermission{}
 	}
 
-	// Tag-derived grants (C-PERM-W1-TAG-GRANTS), exposed additively for the
-	// Foundry module's ownership sync. Best-effort: a lookup failure must not
-	// break the permissions read the module relies on.
+	// Tag-derived grants, exposed additively for the Foundry module's
+	// ownership sync. Best-effort: a lookup failure must not break the
+	// permissions read the module relies on.
 	var tagGrants []entities.EntityTagGrantInfo
 	if h.tagGrantLister != nil {
 		tagGrants, err = h.tagGrantLister.GetEntityTagGrants(ctx, c.Param("id"), entityID)
@@ -1162,7 +1112,7 @@ func (h *APIHandler) SetAddonLister(al AddonLister) {
 }
 
 // SetTagGrantLister injects the tag-grant lister so the permissions endpoint
-// can expose tag-derived grants to the Foundry module (C-PERM-W1-TAG-GRANTS).
+// can expose tag-derived grants to the Foundry module.
 func (h *APIHandler) SetTagGrantLister(tgl TagGrantLister) {
 	h.tagGrantLister = tgl
 }

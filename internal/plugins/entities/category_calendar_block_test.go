@@ -1,8 +1,8 @@
-// category_calendar_block_test.go — regression for the operator bug: a
-// calendar_preview block added to an entity type's category dashboard renders
-// nothing. This exercises the SERVER round-trip (stored layout JSON → parse →
-// render) so we can localize the bug: if this passes, the Go path is sound and
-// the drop is client-side (the layout editor not persisting the block).
+// category_calendar_block_test.go pins that a calendar_preview block added
+// to an entity type's category dashboard renders. It exercises the SERVER
+// round-trip (stored layout JSON -> parse -> render) so a regression here
+// localizes to the Go path, distinct from a client-side (layout editor)
+// failure to persist the block.
 package entities
 
 import (
@@ -36,12 +36,9 @@ func TestCategoryDashboard_CalendarBlockRenders(t *testing.T) {
 
 	// 2) Render: the custom dashboard must show the calendar card.
 	//
-	// CALV5-PLACEHOLDER: this asserted the card's own header ("Upcoming
-	// Events"). While the calendar is rebuilt the block renders the shared
-	// rebuild notice, so the marker moves — but the THING BEING TESTED does
-	// not: that a custom dashboard renders its configured calendar block
-	// instead of silently falling back to the default dashboard. Restore the
-	// header assertion when V5 restores the card.
+	// CALV5-PLACEHOLDER: while the calendar is rebuilt this asserts the
+	// shared rebuild notice instead of the card's own header ("Upcoming
+	// Events"); restore the header assertion when V5 restores the card.
 	cc := &campaigns.CampaignContext{Campaign: &campaigns.Campaign{ID: "camp-1", Name: "C"}, MemberRole: campaigns.RoleOwner}
 	var buf bytes.Buffer
 	if err := CategoryDashboardContent(cc, et, nil, nil, 0, ListOptions{}, "", nil).Render(context.Background(), &buf); err != nil {

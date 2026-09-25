@@ -132,8 +132,7 @@ func TestTagGrantService_Create_SubjectValidation(t *testing.T) {
 
 // TestTagGrantService_Create_PublicNormalizesSubjectID pins that a 'public'
 // grant stores an empty subject_id regardless of what the client sent, so the
-// unique key (tag_id, 'public', '') permits exactly one public grant per tag
-// (C-PERM-ANON-IDENTITY).
+// unique key (tag_id, 'public', '') permits exactly one public grant per tag.
 func TestTagGrantService_Create_PublicNormalizesSubjectID(t *testing.T) {
 	var captured *TagPermission
 	repo := &mockGrantRepo{createFn: func(_ context.Context, p *TagPermission) error {

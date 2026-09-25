@@ -1,23 +1,10 @@
-// committer_partial_update_test.go — pins the AI import's half of the
-// absent-means-preserve contract (sweep R4, .ai/conventions.md).
-//
-// WHY THESE ASSERT ON THE CALL AND NOT ON A STORED ROW.
-//
-// The repo's test-honesty doctrine says a test that installs its own fake
-// and asserts the fake proves nothing. These tests assert what the committer
-// SENDS to entities.EntityService — which is the committer's actual
-// responsibility and the exact thing that was wrong — while the other half
-// of the contract (that the service preserves an absent field) is pinned
-// independently, against the real service, by
-// entities/permissions_inline_component_test.go and by the structural
-// ratchet in internal/patch/partial_update_contract_test.go. Neither half
-// is asserted here by the same fake that implements it.
-//
-// Audit findings 6 and 7 (2026-09-12): every AI import that updated an
-// existing page re-decided its privacy from pasted markdown, cleared its
-// type label whenever front matter omitted `subcategory:`, and emptied its
-// structured field data unconditionally. Findings 6 and 7 were CONFIRMED
-// against this source before these tests were written.
+// committer_partial_update_test.go pins the AI import's half of the
+// absent-means-preserve contract: it asserts what the committer SENDS to
+// entities.EntityService on an update (privacy, type label, field data
+// stay untouched unless front matter says otherwise). The other half —
+// that the service preserves an absent field — is pinned independently
+// against the real service by entities/permissions_inline_component_test.go
+// and internal/patch/partial_update_contract_test.go.
 package importer
 
 import (

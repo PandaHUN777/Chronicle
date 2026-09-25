@@ -1,24 +1,12 @@
 package sessions
 
-// The session RSVP token (/rsvp/:token) — the three things it must do that it
-// was not doing.
+// Pins three invariants of the session RSVP token (/rsvp/:token):
 //
-//  1. RE-CHECK MEMBERSHIP. Its two sibling token routes both do:
-//     /proposals/respond/:token calls isCampaignMember on BOTH halves, and
-//     /calendar-rsvp/:token states the invariant outright — "a link cannot
-//     outlive the access that justified it". This one skipped it, so a player
-//     removed from the campaign kept a working "Going" link for the token's full
-//     7-day life, writing `accepted` into session_attendees for a campaign they
-//     were no longer part of. The Director's "3/5 going" counted a non-member
-//     and the attendee list rendered their name to the party.
-//
-//  2. BE SINGLE-USE FOR REAL. MarkRSVPTokenUsed had no `used_at IS NULL`
-//     predicate and no RowsAffected check, and the service applied before
-//     consuming — so two submissions that both validated both applied, and
-//     neither could tell it had lost.
-//
-//  3. NOT 404 ON A ROW THAT IS SITTING RIGHT THERE. See the attendee upsert
-//     guards below.
+//  1. Membership is re-checked before the token is applied, matching its
+//     sibling token routes (/proposals/respond/:token, /calendar-rsvp/:token).
+//  2. The token is genuinely single-use: consumption is atomic and ordered
+//     before the RSVP is applied.
+//  3. A same-status re-submission never 404s on a row that already exists.
 
 import (
 	"context"
@@ -145,13 +133,10 @@ func TestRSVPToken_FailsClosedWithoutARoster(t *testing.T) {
 
 // --- single-use: the ORDER, pinned deterministically ------------------------
 
-// TestRSVPToken_ConsumesBeforeItApplies is the structural guarantee behind the
-// single-use promise, and it is deterministic — unlike the concurrency test
-// below, which can only ever observe a race it happens to lose.
-//
-// The old order was apply-then-consume with a consume that could not report
-// having consumed nothing, so the loser of a race applied anyway. Consuming
-// first makes the atomic `used_at IS NULL` UPDATE the gate.
+// TestRSVPToken_ConsumesBeforeItApplies pins the structural guarantee behind
+// the single-use promise, deterministically: consuming happens before
+// applying, so the atomic `used_at IS NULL` UPDATE is the gate a race must
+// pass.
 func TestRSVPToken_ConsumesBeforeItApplies(t *testing.T) {
 	var order []string
 	future := time.Now().UTC().Add(time.Hour)
@@ -299,13 +284,10 @@ func TestDB_MarkRSVPTokenUsedReportsTheLoser(t *testing.T) {
 	}
 }
 
-// TestDB_SameStatusRSVPTwiceInOneSecondSucceeds pins the "flaky RSVP" 404.
-//
-// The old UPDATE reported RowsAffected==0 as "attendee not found". MariaDB
-// counts CHANGED rows, not matched rows, and responded_at = NOW() has
-// one-second resolution — so a double-tap of Going within one second changed
-// nothing and 404'd on a row that was sitting right there. The loop makes the
-// same-second case certain rather than hoping for it.
+// TestDB_SameStatusRSVPTwiceInOneSecondSucceeds pins that re-submitting the
+// same RSVP status within MariaDB's one-second responded_at resolution still
+// succeeds: RowsAffected==0 on an unchanged row must not read as "not found".
+// The loop makes the same-second case certain rather than hoping for it.
 func TestDB_SameStatusRSVPTwiceInOneSecondSucceeds(t *testing.T) {
 	if testing.Short() {
 		t.Skip("row-level test")
@@ -339,14 +321,9 @@ func TestDB_SameStatusRSVPTwiceInOneSecondSucceeds(t *testing.T) {
 	}
 }
 
-// TestDB_MemberWhoJoinedLaterCanRSVP pins the late-joiner case.
-//
-// InviteAll runs only at session-creation time, and no route adds an attendee
-// afterwards — so a player who joined the campaign on Tuesday had no row on
-// last week's Saturday session, no RSVP control on the page, and a 404 if they
-// posted anyway. The Director had no invite action either; the only escape was
-// deleting and recreating the session, which loses its notes, recap and entity
-// links.
+// TestDB_MemberWhoJoinedLaterCanRSVP pins that a member who joins the
+// campaign after a session was created can still RSVP, even though InviteAll
+// only runs at session-creation time and no other route adds an attendee row.
 func TestDB_MemberWhoJoinedLaterCanRSVP(t *testing.T) {
 	if testing.Short() {
 		t.Skip("row-level test")

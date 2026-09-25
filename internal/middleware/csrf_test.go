@@ -1,7 +1,7 @@
-// csrf_test.go — C-AUTH-LOGIN-CSRF-FIX. Pins the double-submit cookie
-// lifecycle, the proxy/scheme-flip root-cause fix (the cookie is found under
-// either name regardless of how the scheme is derived on the validating
-// request), the friendly (no-jargon) 403, and the login auto-recovery path.
+// csrf_test.go pins the double-submit cookie lifecycle, the proxy/scheme-flip
+// fix (the cookie is found under either name regardless of how the scheme is
+// derived on the validating request), the friendly (no-jargon) 403, and the
+// login auto-recovery path.
 package middleware
 
 import (

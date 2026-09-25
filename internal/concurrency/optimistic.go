@@ -1,17 +1,11 @@
 // Package concurrency provides optimistic-concurrency primitives shared
-// across plugins. The pattern: callers send their last-known UpdatedAt
-// timestamp on a mutation request; the service compares against the row's
-// current timestamp and rejects with 409 Conflict if the row has been
-// modified since.
+// across plugins. Callers send their last-known UpdatedAt timestamp on a
+// mutation request; the service compares against the row's current
+// timestamp and rejects with 409 Conflict if the row has been modified
+// since.
 //
-// The standard wire shape is a JSON request body field
-// `expected_updated_at` of type `*time.Time` (nullable for backwards
-// compatibility — omitting it falls back to last-writer-wins).
-//
-// First adopted by the entities plugin (`internal/plugins/entities/service.go`,
-// the `Update` method) and now generalized so the maps plugin (and any
-// future plugin) can reuse a single check function rather than duplicating
-// the "compare timestamps and return apperror.NewConflict" snippet.
+// The wire shape is a JSON request body field `expected_updated_at` of
+// type `*time.Time` (nullable — omitting it falls back to last-writer-wins).
 package concurrency
 
 import (

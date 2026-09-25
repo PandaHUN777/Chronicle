@@ -101,10 +101,9 @@ func (h *TagAPIHandler) CreateTag(c echo.Context) error {
 }
 
 // apiUpdateTagRequest is the JSON body for updating a tag via the API.
-// PARTIAL update: absent preserves, a present value replaces (sweep R4 /
-// ADR-056) — see tags.UpdateTagInput. Before this, Color/DmOnly were plain
-// value types, so a Foundry-side {name} rename push turned every DM-only
-// tag public.
+// PARTIAL update: absent preserves, a present value replaces (ADR-056) —
+// see tags.UpdateTagInput. Color/DmOnly must stay pointers: a value type
+// would let a {name}-only rename push turn every DM-only tag public.
 type apiUpdateTagRequest struct {
 	Name   string  `json:"name"`
 	Color  *string `json:"color"`

@@ -38,8 +38,6 @@ In `entities/show.templ`, `blockImage()` component (lines 227-272):
 - Entity has no image: shows placeholder div with widget
 - Permission: only rendered for Scribe+ role
 
-## Known Issues
+## Known issue
 
-- Full page reload after upload (could use HTMX swap instead)
-- User reports "click does nothing" — needs browser-level debugging
-  (possible Firefox file input policy or widget mounting issue)
+Full page reload after upload (could use HTMX swap instead). Open work: #624.

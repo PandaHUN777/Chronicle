@@ -6,8 +6,6 @@ import "testing"
 // uses to render the lazy-load slot. Future plugin types added to the
 // PackageType enum need an explicit case here; missing the case is the
 // failure mode this test guards against.
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (NW-2.2 Chunk G).
 func TestActionsFragmentURLFor(t *testing.T) {
 	cases := []struct {
 		name string

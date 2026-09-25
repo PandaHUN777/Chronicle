@@ -1,8 +1,7 @@
-// event_tier_definitions_test.go covers V2 Wave 0 PR 2's tier-definitions
-// service surface — validation rules + empty-means-default fallback +
-// round-trip semantics. Mirror of how AccentColor / FontFamily are
-// tested (campaign-config field; settings JSON nest; Owner-gate
-// enforced at route + handler).
+// event_tier_definitions_test.go covers the tier-definitions service
+// surface: validation rules, empty-means-default fallback, and round-trip
+// semantics, mirroring how AccentColor / FontFamily are tested (campaign-
+// config field nested in settings JSON, Owner-gated at route + handler).
 
 package campaigns
 
@@ -30,10 +29,9 @@ func tierTestRepo(campaignSettingsJSON string, capture *string) *mockCampaignRep
 	}
 }
 
-// TestGetEventTierDefinitions_EmptyReturnsPlatformDefaults — when a
+// TestGetEventTierDefinitions_EmptyReturnsPlatformDefaults: when a
 // campaign has no override, the service returns the platform default
-// trio (major / standard / detail). Empty-means-default semantic per
-// Option B locked 2026-05-28.
+// trio (major / standard / detail).
 func TestGetEventTierDefinitions_EmptyReturnsPlatformDefaults(t *testing.T) {
 	repo := tierTestRepo("{}", nil)
 	svc := &campaignService{repo: repo}
@@ -231,12 +229,10 @@ func TestSetEventTierDefinitions_Validation(t *testing.T) {
 	}
 }
 
-// TestSetEventTierDefinitions_RoundTrip — happy path: valid set
-// validates + persists via repo.UpdateSettings with the marshaled
-// settings containing the EventTierDefinitions array. Verifies that
-// pre-existing settings (e.g., AccentColor) are NOT clobbered by the
-// tier-defs write — important because tier defs nest into the same
-// settings JSON (Option B).
+// TestSetEventTierDefinitions_RoundTrip: a valid set validates and persists
+// via repo.UpdateSettings with the marshaled EventTierDefinitions array,
+// without clobbering pre-existing settings (e.g. AccentColor) that nest
+// into the same settings JSON.
 func TestSetEventTierDefinitions_RoundTrip(t *testing.T) {
 	var captured string
 	repo := tierTestRepo(`{"accent_color":"#22c55e"}`, &captured)

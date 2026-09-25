@@ -1,9 +1,8 @@
-// preview_test.go — C-SYSTEMS-REF-SLUG-FIX-R2. Pins two riders on the
-// preview/dry-run paths: (1) ZIP preview runs items through the same
-// stamp/normalize logic NewJSONProvider applies, so preview counts and
-// samples match what installing the package would actually produce; (2)
-// preview paths do not mutate the global admin-diagnostics ring as a side
-// effect of inspecting a package.
+// preview_test.go pins two properties of the preview/dry-run paths: (1) ZIP
+// preview runs items through the same stamp/normalize logic NewJSONProvider
+// applies, so preview counts and samples match what installing the package
+// would actually produce; (2) preview paths do not mutate the global
+// admin-diagnostics ring as a side effect of inspecting a package.
 package systems
 
 import (
@@ -111,11 +110,10 @@ func TestPreviewFromZIP_NormalizeParity(t *testing.T) {
 	}
 }
 
-// TestPreviewFromPackage_DoesNotPolluteGlobalDiagnostics pins rider 2: a
-// preview is a dry run over a package an admin is merely inspecting (e.g.
-// approving from GitHub), and must not evict real load history from the
-// fixed-capacity global diagnostics ring just because that package happens
-// to contain a bad data item.
+// TestPreviewFromPackage_DoesNotPolluteGlobalDiagnostics pins that a preview
+// (a dry run over a package an admin is merely inspecting) must not evict
+// real load history from the fixed-capacity global diagnostics ring just
+// because that package happens to contain a bad data item.
 func TestPreviewFromPackage_DoesNotPolluteGlobalDiagnostics(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(testManifestJSON), 0o644); err != nil {

@@ -1,21 +1,13 @@
-// daycard_dom.mjs — a minimal DOM for C-CALV4-DAYCARD's node tests.
+// daycard_dom.mjs — a minimal DOM for tests that need a real element tree
+// (not just a `querySelector: () => null` stub), e.g. to assert innerHTML is
+// byte-identical before and after a mutation. jsdom is not a dependency of
+// this repo.
 //
-// WHY A DOM AND NOT A STUB. Every other JS suite in this repo boots its module
-// against `querySelector: () => null` and exercises the pure mappers only —
-// which is right when the DOM flow is the operator's visual gate. It is NOT
-// right here: the whole point of slice R2-2a is that the module READS the
-// Block's DOM and MUST NOT MUTATE IT, and "innerHTML is byte-identical before
-// and after open + close" is an assertion that needs a real tree and a real
-// serialiser. jsdom is not a dependency of this repo and adding one for a
-// single suite is a heavier commitment than 200 lines that do exactly what
-// these tests need.
-//
-// SCOPE, STATED HONESTLY. This implements what calendar_daycard.js touches:
-// single compound selectors (tag + .class + [attr] + [attr="value"]),
-// closest/matches, attribute + dataset + classList + style, appendChild /
-// removeChild, and an innerHTML GETTER. It is not a browser. Anything it does
-// not implement throws rather than returning undefined, so a module reaching
-// past this surface fails loudly instead of silently passing.
+// Implements: single compound selectors (tag + .class + [attr] +
+// [attr="value"]), closest/matches, attribute + dataset + classList + style,
+// appendChild/removeChild, and an innerHTML getter. It is not a browser —
+// anything unimplemented throws rather than returning undefined, so a module
+// reaching past this surface fails loudly instead of silently passing.
 
 const VOID = new Set(['input', 'br', 'hr', 'img', 'link', 'meta']);
 
@@ -43,18 +35,10 @@ function camel(name) {
   return name.replace(/-([a-z])/g, (_, c) => c.toUpperCase());
 }
 
-// THE OPERATION LOG — added with C-CALV4-EDITOR-R2b stage 3.
-//
-// Some claims are about ORDER WITHIN ONE TASK and are invisible to a test that
-// only reads the final state. The one that made this necessary: the editor's
-// close must remove `.dcopen` BEFORE writing the reverse geometry, because the
-// carve-out's open-state rule is the only thing declaring --disc-open — do it
-// the other way round and leaving takes exactly as long as arriving, with every
-// end-state assertion still green. A mutation proved that hole, so the hole is
-// closed rather than described.
-//
-// Every class change and every style write appends to the target element's own
-// `_ops`, in sequence, so a test can assert what happened before what.
+// The operation log: every class change and every style write appends to the
+// target element's own `_ops`, in sequence, so a test can assert ordering
+// within one operation (e.g. "class removed before style written"), which a
+// test reading only final state cannot catch.
 class ClassList {
   constructor(el) { this.el = el; }
   get _set() {
@@ -81,11 +65,8 @@ class Style {
   get cssText() { return ''; }
 }
 
-// `height` and `opacity` join the list with C-CALV4-EDITOR-R2b: they are two of
-// the four properties the editor morph writes, and a stub that silently dropped
-// them would let a test assert about a geometry the module never set. This file
-// implements what the module touches and throws on what it does not, which is
-// the only reason its coverage means anything.
+// Only these style properties are implemented; a stub that silently accepted
+// any property would let a test assert about a geometry no module ever set.
 for (const p of ['left', 'top', 'width', 'height', 'opacity', 'display']) {
   Object.defineProperty(Style.prototype, p, {
     get() { return this._css[p] || ''; },

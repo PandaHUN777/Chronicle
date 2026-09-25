@@ -2,17 +2,12 @@
 // entities + entity_types tables — no separate NPC table is needed because
 // NPCs are just character entities filtered by visibility.
 //
-// SECURITY (finding 2, .ai/designs/2026-09-12-security-audit-findings.md):
-// this repository applies NO visibility predicate of its own. It used to
-// hand-roll one as `role < 2 AND e.is_private = false`, which never consulted
-// entities.visibility or entity_permissions — so an entity switched to
-// visibility='custom' (which does not clear is_private) stayed listed to
-// Players and to anonymous visitors. The fix moves the visibility decision to
-// the service layer, which narrows the ID list returned here through the
-// entities plugin's own canonical FilterViewableEntityIDs (via
-// EntityVisibilityFilter in service.go) instead of a second copy of that
-// predicate — see service.go's visibleNPCIDs for the policy this repository
-// deliberately does not implement.
+// SECURITY: this repository applies NO visibility predicate of its own — a
+// hand-rolled `role < 2 AND is_private = false` check here would miss
+// visibility='custom' entities. The service layer narrows the ID list
+// through the entities plugin's canonical FilterViewableEntityIDs (via
+// EntityVisibilityFilter in service.go); see service.go's visibleNPCIDs for
+// the policy this repository deliberately does not implement.
 package npcs
 
 import (

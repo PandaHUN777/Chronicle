@@ -1,29 +1,18 @@
 #!/usr/bin/env bash
 # tools/check-v2-motion-discipline.sh
 #
-# V2 motion-discipline guard: enforces the locked rules from
-# cordinator/decisions/2026-05-28-cal-timeline-v2-design.md §B2 in
-# the V2-scope plugin directories. Specifically: no NEW `transition: all`
-# (raw CSS) and no NEW `transition-all` (Tailwind utility) introduced
-# in calendar / timeline / ai_workspace plugin sources.
+# Enforces motion discipline in the V2-scope plugin directories: no NEW
+# `transition: all` (raw CSS) or `transition-all` (Tailwind utility) in
+# calendar / timeline / ai_workspace / campaigns plugin sources. Only
+# `transform` and `opacity` may be transitioned there; other properties are
+# discouraged by the same rule but harder to lint statically, so they're
+# documented in the plugins' .ai.md and enforced via PR review instead.
 #
-# Diff-scoped FAIL (matches tools/check-plugin-isolation.sh pattern):
-# only checks lines INTRODUCED by the PR vs origin/main. Pre-existing
-# violations (5 known at PR-1 land: calendar.templ × 3, calendar_list.templ,
-# timeline.templ) are grandfathered. Per the dispatch text:
-# "Existing surfaces not in V2 scope are exempt for now."
+# Diff-scoped FAIL: only checks lines INTRODUCED by the PR vs origin/main.
+# Pre-existing violations are grandfathered.
 #
-# Pre-existing in-scope survivors are tracked in
-# cordinator/plans/BACKLOG.md as Wave 1 cleanup (deferred so PR 1 stays
-# small + visual-feedback gate ships first).
-#
-# Animations on properties other than `transform` + `opacity` are
-# discouraged by the same decision but harder to lint statically —
-# documented in the plugins' .ai.md instead and enforced via PR review.
-#
-# Forbidden tokens reconstructed via fragment join so the script can
-# scan its own directory tree without self-matching (same trick as
-# tools/check-no-instance-hostname.sh + check-plugin-isolation.sh).
+# Forbidden tokens are reconstructed via fragment join so the script can scan
+# its own directory tree without self-matching.
 #
 # Exit codes:
 #   0 — no new violations introduced by the diff vs the merge base
@@ -39,25 +28,17 @@ ta3="trans""ition-all"          # Tailwind utility (matches `transition-all` tok
                                  # including inside a longer class list because the
                                  # following char is whitespace or quote)
 
-# V2-scope directories — only these are linted.
-#
-# Note: the guard checks NEW lines introduced by the PR (via the
-# diff-scoped `^[+]` filter below), so adding a directory here only
-# affects code added by future PRs. Pre-existing `transition: all`
-# inside an in-scope directory is grandfathered.
+# V2-scope directories — only these are linted. Adding a directory here only
+# affects code added by future PRs; pre-existing `transition: all` inside an
+# in-scope directory is grandfathered.
 scopes=(
   "internal/plugins/calendar"
   "internal/plugins/timeline"
   "internal/plugins/ai_workspace"
-  # C-EXT-HUB Phase 1 (2026-05-29): the top-level Extensions hub at
-  # internal/plugins/campaigns/extensions_hub*.templ is V2-styled and
-  # the operator's first encounter with V2 chrome. The campaigns
-  # plugin is added in full because the scope-glob below only walks
-  # one level (campaigns/*.templ); the diff-scoped `^[+]` filter then
-  # bounds enforcement to lines this PR (and future PRs) introduce.
-  # Pre-existing campaigns templs are not re-scanned. New `transition:
-  # all` introduced in any campaigns/*.templ will fail unless tagged
-  # `/* OK exempt: ... */` — the rare legacy-chrome edit can opt out.
+  # The Extensions hub (internal/plugins/campaigns/extensions_hub*.templ) is
+  # V2-styled and the operator's first encounter with V2 chrome. New
+  # `transition: all` in any campaigns/*.templ fails unless tagged
+  # `/* OK exempt: ... */`.
   "internal/plugins/campaigns"
 )
 

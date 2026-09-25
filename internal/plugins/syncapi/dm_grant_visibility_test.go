@@ -1,17 +1,10 @@
-// dm_grant_visibility_test.go — ADR-057 slice 1 (C-CODM-VIS-PARITY), sync-API
-// half. GetEntity's CheckEntityAccess call fed it the plain role resolveRole()
-// returns, which for a session-authed caller is exactly campaign_members.role
-// — a DM grant never enters into it. So a Co-DM (Player + DM-granted) using
-// the Foundry module's session-derived sync key got the same 404 on a
-// dm_only entity as the web Show handler did (both fixed together in this
-// slice). Unlike the entities plugin there is no campaigns.CampaignContext
-// here — api_handler.go is API-key-authenticated, not session-cc-based — so
-// the fix is a small local promotion (visibilityRoleFor) that checks
-// campaigns.CampaignService.IsUserDmGranted, mirroring VisibilityRole()'s
-// semantics without touching resolveRole() itself: `role` (used later in
-// GetEntity for GM-field/secret stripping) is deliberately left unpromoted,
-// matching the entities-plugin GetEntry asymmetry (CheckEntityAccess sees the
-// promoted role; secret-stripping still gates on the real member role).
+// dm_grant_visibility_test.go covers ADR-057: GetEntity's CheckEntityAccess
+// call must see a Co-DM's (Player + DM grant) role promoted via
+// visibilityRoleFor (checking campaigns.CampaignService.IsUserDmGranted),
+// mirroring VisibilityRole() — since api_handler.go is API-key-authenticated
+// and has no campaigns.CampaignContext to derive that from. `role` itself
+// (from resolveRole()) is left unpromoted for GM-field/secret stripping
+// later in GetEntity, matching the entities-plugin GetEntry asymmetry.
 package syncapi
 
 import (
@@ -41,9 +34,8 @@ func (s *stubEntitySvcForDmGrant) GetByID(_ context.Context, _ string) (*entitie
 	return &e, nil
 }
 
-// GetEntityTypeByID: GetEntity's role<Scribe branch (unaffected by this
-// slice's promotion, by design — see the file header) loads the entity type
-// to filter GM-only/owner-only field values. No such fields here.
+// GetEntityTypeByID: GetEntity's role<Scribe branch loads the entity type to
+// filter GM-only/owner-only field values. No such fields here.
 func (s *stubEntitySvcForDmGrant) GetEntityTypeByID(_ context.Context, id int) (*entities.EntityType, error) {
 	return &entities.EntityType{ID: id}, nil
 }

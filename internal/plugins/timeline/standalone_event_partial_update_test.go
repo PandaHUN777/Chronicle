@@ -1,17 +1,9 @@
-// standalone_event_partial_update_test.go — sweep R4, the timeline half of
-// the absent-means-preserve contract.
-//
-// Reproduced before the fix: the edit modal PUTs five keys
-// ({name, year, month, day, visibility}) and UpdateStandaloneEvent assigned
-// all twenty-one fields unguarded, so RENAMING an event cleared eight of
-// them at once — its entity link, its rich-text description_html, its start
-// and end times, its recurrence config, and its per-player
-// visibility_rules, which the edit request struct does not even carry.
-//
-// The R3 booking predicted the client-side repair would need the inline
-// Alpine $dispatch widened to carry raw TipTap HTML through %q into an HTML
-// attribute. Server-side presence-merge removes that surface entirely: the
-// modal keeps dispatching its ten keys and sending its five.
+// Pins the timeline half of the absent-means-preserve partial-update
+// contract: the edit modal PUTs a narrow set of keys and any field it omits
+// must be preserved, not cleared. Server-side presence-merge also means the
+// client never needs to route raw TipTap HTML through the inline Alpine
+// dispatch to preserve description_html — that would be an HTML-injection
+// surface into an attribute.
 package timeline
 
 import (

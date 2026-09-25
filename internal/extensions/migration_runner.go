@@ -258,8 +258,7 @@ func (r *MigrationRunner) DropExtensionTables(ctx context.Context, slug string) 
 		// safe-by-source. database.SafeIdent makes that safety mechanical
 		// rather than convention-only — a future refactor that supplies the
 		// table name from a less-trusted path still cannot interpolate into
-		// the DDL string. Per cordinator/reports/chronicle/2026-05-22-c-security-audit.md
-		// §2 M-2 / §0.5 D5=(b).
+		// the DDL string.
 		quoted, identErr := database.SafeIdent(table)
 		if identErr != nil {
 			slog.Warn("skipping table with unsafe identifier",

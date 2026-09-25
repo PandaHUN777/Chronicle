@@ -6,31 +6,14 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// CALV5-PLACEHOLDER: this file replaces a 1601-line calendar REST surface while
-// the calendar plugin is rebuilt (V5).
-//
-// WHY 503 AND NOT AN EMPTY BODY. The other side of these routes is a SHIPPED
-// PRODUCT — the Chronicle Sync module for Foundry VTT — pointed at a live game
-// world. A handler that answered 200 with `{}` or `[]` would tell the module
-// that the campaign HAS a calendar and it is empty, and the module would
-// faithfully apply that emptiness: it would find no events for the back-catalog
-// window, and its structure comparison would read a zero-month calendar as a
-// mismatch against the GM's real Calendaria world. "Unreachable" is a state the
-// module already handles correctly and fails open on; "empty" is one it
-// believes.
-//
-// So every route below stays REGISTERED (routes.go is untouched — the module's
-// requests reach a real endpoint rather than a 404 that it would read as an old
-// Chronicle build) and answers 503 with a structured, machine-readable body.
-// The module's existing degradation path tolerates this; see the module's
-// API-CONTRACT.md error-shape section.
-//
-// The date-beacon tables and GET /calendar-sync-beacon are deliberately NOT
-// part of this: they are syncapi's own, they outlive the calendar, and V5
-// reuses the same seen/applied model.
-//
-// V5 DELETES THIS FILE and restores the real handler. Every method name here
-// matches the one it replaces, so nothing else has to change back.
+// CALV5-PLACEHOLDER: V5 deletes this file and restores the real calendar
+// REST handler; every method name here matches the one it replaces, so
+// nothing else has to change back. Meanwhile every route stays REGISTERED
+// (routes.go is untouched) and answers 503 rather than 200-with-empty-body,
+// so the Foundry module's own degradation path treats the calendar as
+// unreachable rather than as a real, empty calendar. The date-beacon
+// tables and GET /calendar-sync-beacon are NOT part of this: they are
+// syncapi's own and outlive the calendar.
 
 // CalendarAPIHandler serves the calendar REST surface for external tools
 // (Foundry VTT Calendaria sync). While the calendar is rebuilt it holds the
@@ -45,13 +28,10 @@ func NewCalendarAPIHandler() *CalendarAPIHandler {
 	return &CalendarAPIHandler{}
 }
 
-// calendarRebuilding is the one answer every route below gives.
-//
-// The shape matches the module's expectations for a structured Chronicle error
-// (an `error` code it can switch on, a `message` a GM can read). 503 is chosen
-// over 404 deliberately: 404 means "this Chronicle is too old to have the
-// endpoint", which would send the module down its old-build compatibility path
-// and hide the real reason from the GM.
+// calendarRebuilding is the one answer every route below gives: a
+// structured Chronicle error (an `error` code the module can switch on, a
+// `message` a GM can read). 503, not 404 — 404 would send the module down
+// its old-build compatibility path and hide the real reason from the GM.
 func calendarRebuilding(c echo.Context) error {
 	return c.JSON(http.StatusServiceUnavailable, map[string]string{
 		"error": "calendar_rebuilding",

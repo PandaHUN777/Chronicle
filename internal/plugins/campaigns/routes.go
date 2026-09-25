@@ -46,35 +46,28 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	cg.GET("/members", h.Members, RequireRole(RolePlayer))
 	cg.GET("/plugins", h.PluginHub, RequireRole(RolePlayer))
 	cg.GET("/plugins/fragment", h.PluginHubFragment, RequireRole(RolePlayer))
-	// /foundry-presence relocated to foundry_vtt's RegisterOwnerRoutes
-	// in NW-2.3 (PR pending). URL preserved.
+	// /foundry-presence is registered by foundry_vtt.RegisterOwnerRoutes.
 
 	// Owner-only routes.
 	cg.GET("/edit", h.EditForm, RequireRole(RoleOwner))
 	cg.PUT("", h.Update, RequireRole(RoleOwner))
 	cg.DELETE("", h.Delete, RequireRole(RoleOwner))
 	cg.GET("/settings", h.Settings, RequireRole(RoleOwner))
-	// /ai-export/generate relocated to the ai_workspace plugin in
-	// C-AI-WORKSPACE-V1-B. URL preserved; mounted via
-	// ai_workspace.RegisterOwnerRoutes against the same campaign
-	// group. AST owner-gate pin moved to track the new file location.
+	// /ai-export/generate is registered by ai_workspace.RegisterOwnerRoutes
+	// against this same campaign group.
 	cg.GET("/customize", h.Customize, RequireRole(RoleOwner))
 	cg.GET("/customize/layout-editor/:etid", h.LayoutEditorFragment, RequireRole(RoleOwner))
 
-	// C-EXT-HUB Phase 1: top-level Extensions hub. Owns the bare
-	// /campaigns/:id/extensions path; the extensions plugin's
-	// standalone Content Packs GET retired in this PR and Content
-	// Packs renders as a card inside the hub via ContentPacksCardRenderer.
-	// The /extensions/fragment endpoint is the HTMX swap target after
-	// toggles; the addons-store toggle handler emits the
+	// Top-level Extensions hub; Content Packs renders as a card inside it
+	// via ContentPacksCardRenderer. /extensions/fragment is the HTMX swap
+	// target after toggles; the addons-store toggle handler emits the
 	// `extensions-hub-refresh` HX-Trigger when posted with
 	// redirect_to=extensions-hub.
 	cg.GET("/extensions", h.ExtensionsHub, RequireRole(RoleOwner))
 	cg.GET("/extensions/fragment", h.ExtensionsHubFragmentAPI, RequireRole(RoleOwner))
-	// C-EXT-HUB Phase 2: per-extension inline dashboard fragment.
-	// Hub cards with HasDashboard=true hx-get this URL on expand;
-	// disabled / unknown-slug paths render safe placeholders inside
-	// the panel (no 4xx surfaces; matches audit §1.4 nil-safety).
+	// Per-extension inline dashboard fragment: hub cards with
+	// HasDashboard=true hx-get this on expand. Disabled / unknown-slug
+	// paths render safe placeholders, never a 4xx.
 	cg.GET("/extensions/:slug/dashboard", h.ExtensionDashboardFragmentAPI, RequireRole(RoleOwner))
 
 	// Sidebar config API (Owner only).
@@ -104,8 +97,8 @@ func RegisterRoutes(e *echo.Echo, h *Handler, svc CampaignService, authSvc auth.
 	cg.PUT("/font-family", h.UpdateFontFamilyAPI, RequireRole(RoleOwner))
 	cg.PUT("/welcome-message", h.UpdateWelcomeMessageAPI, RequireRole(RoleOwner))
 	cg.PUT("/default-visibility", h.UpdateDefaultVisibilityAPI, RequireRole(RoleOwner))
-	// V2 Wave 0 PR 2: event tier definitions per campaign. Owner-only
-	// campaign-config surface; not exposed via syncapi (Wave 5 territory).
+	// Event tier definitions per campaign: owner-only campaign-config
+	// surface, not exposed via syncapi.
 	cg.GET("/event-tier-definitions", h.GetEventTierDefinitionsAPI, RequireRole(RoleOwner))
 	cg.PUT("/event-tier-definitions", h.UpdateEventTierDefinitionsAPI, RequireRole(RoleOwner))
 
@@ -170,14 +163,9 @@ func RegisterInviteRoutes(e *echo.Echo, ih *InviteHandler, svc CampaignService, 
 
 // RegisterExportRoutes sets up campaign export/import routes.
 // Export is campaign-scoped (owner only). Import is auth-only (creates new campaign).
-//
-// Export and import are both heavy: export with media zips per-campaign
-// bytes; import unpacks a possibly-large blob and runs adapters across
-// many tables. The rate limits below cap how often a single IP can hit
-// these so a runaway browser refresh or malicious POST flood can't
-// monopolize the server. The numbers are deliberately tight (export
-// happens during planned backups; import happens once per migration);
-// real users won't notice the limit.
+// Both are heavy (media zips, adapters across many tables), so they carry
+// tight rate limits to stop a runaway refresh or POST flood from
+// monopolizing the server.
 func RegisterExportRoutes(e *echo.Echo, eh *ExportHandler, svc CampaignService, authSvc auth.AuthService) {
 	// Import creates a new campaign (auth only, no campaign scope needed).
 	authed := e.Group("", auth.RequireAuth(authSvc))

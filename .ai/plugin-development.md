@@ -52,6 +52,12 @@ Plugins can:
 }
 ```
 
+**Calendar is being rebuilt (V5, #741).** Its UI, routes and service were
+deleted; only its domain layer and migrations remain. The `calendar_read` /
+`calendar_write` host functions and the three `calendar.event_*` hooks stay
+declared and registered, but the read/write functions return an error instead
+of data and the hooks never fire, until the rebuild rewires them.
+
 ## Capabilities
 
 Plugins must declare required capabilities. Only matching host functions are
@@ -62,8 +68,8 @@ exposed to the WASM runtime.
 | `log` | `chronicle_log` | Server-side logging |
 | `entity_read` | `get_entity`, `search_entities`, `list_entity_types` | Read entity data |
 | `entity_write` | `update_entity_fields` | Modify entity custom fields |
-| `calendar_read` | `get_calendar`, `list_events` | Read calendar data |
-| `calendar_write` | `create_event` | Create calendar events |
+| `calendar_read` | `get_calendar`, `list_events` | Read calendar data (currently returns an error — see note below) |
+| `calendar_write` | `create_event` | Create calendar events (currently returns an error — see note below) |
 | `tag_read` | `list_tags` | Read campaign tags |
 | `tag_write` | `set_entity_tags`, `get_entity_tags` | Read/write entity tags |
 | `relation_write` | `create_relation` | Create entity relations |
@@ -102,17 +108,25 @@ Update custom fields on an entity.
 Get calendar configuration for a campaign.
 - Input: `{"campaign_id": "..."}`
 - Output: Calendar config JSON
+- **Currently always errors.** Calendar's UI, routes and service were deleted
+  for a ground-up rebuild (V5, #741); only its domain layer and migrations
+  remain. The host function stays registered and declared, but its adapter
+  (`internal/app/routes.go`, `wasmCalendarReader`) returns "calendar is being
+  rebuilt (V5) and is unavailable to extensions" rather than data.
 
 ### list_events
 List upcoming events for a campaign's calendar.
 - Input: `{"campaign_id": "...", "limit": 50}`
 - Output: JSON array of events
+- **Currently always errors**, same reason as `get_calendar` above.
 
 ### create_event
 Create a calendar event.
 - Input: `{"name": "...", "year": 1492, "month": 6, "day": 15, ...}`
 - Output: Created event JSON with ID
 - Max input: 64 KB
+- **Currently always errors**, same reason as `get_calendar` above (its
+  adapter is `wasmHostEnv.SetCalendarWriter` in `internal/app/routes.go`).
 
 ### list_tags
 List all tags for a campaign.
@@ -177,9 +191,9 @@ When an event fires, Chronicle calls the plugin's `on_hook` export with:
 | `entity.created` | New entity created |
 | `entity.updated` | Entity modified |
 | `entity.deleted` | Entity deleted |
-| `calendar.event_created` | Calendar event created |
-| `calendar.event_updated` | Calendar event modified |
-| `calendar.event_deleted` | Calendar event deleted |
+| `calendar.event_created` | Calendar event created (currently dormant — nothing calls the dispatcher while calendar is being rebuilt, see below) |
+| `calendar.event_updated` | Calendar event modified (currently dormant) |
+| `calendar.event_deleted` | Calendar event deleted (currently dormant) |
 | `tag.added` | Tag applied to entity |
 | `tag.removed` | Tag removed from entity |
 

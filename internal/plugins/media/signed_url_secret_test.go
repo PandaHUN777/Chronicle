@@ -1,10 +1,7 @@
-// Tests for LoadOrInitSigningSecret — the persistence layer added
-// in C-UPDATER-MANIFEST-403 (cordinator Issue #17). Pins the
-// invariant violated by the previous behavior: an auto-generated
-// signing secret MUST survive process restarts so that
-// foundry_vtt's TokenSigner (which shares this secret as its HMAC
-// key) does not silently invalidate every previously-minted
-// Foundry manifest token.
+// Tests for LoadOrInitSigningSecret. Pins that an auto-generated signing
+// secret MUST survive process restarts so that foundry_vtt's TokenSigner
+// (which shares this secret as its HMAC key) does not silently invalidate
+// every previously-minted Foundry manifest token.
 package media
 
 import (

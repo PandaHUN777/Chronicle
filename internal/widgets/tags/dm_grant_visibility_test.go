@@ -1,19 +1,12 @@
-// dm_grant_visibility_test.go — ADR-057 slice 2 (P1FIX dispatch, review
-// finding on the slice-1 commit).
+// dm_grant_visibility_test.go pins that a Co-DM (Player + DM grant) can see
+// dm_only tags: GetEntityTags's entity-privacy gate must use the promoted
+// cc.VisibilityRole(), not the raw int(cc.MemberRole), or it 404s the Co-DM
+// before canSeeDmOnly's own IsDmGranted check ever runs (ADR-057).
 //
-// GetEntityTags's content decision already checks cc.IsDmGranted directly
-// (canSeeDmOnly: `cc.MemberRole >= campaigns.RoleOwner || cc.IsSiteAdmin ||
-// cc.IsDmGranted`) — a Co-DM (Player + DM grant) was always meant to see
-// dm_only tags. But the entity-privacy gate a few lines above it
-// (h.entityGate.ResolveViewableEntity) passed the raw int(cc.MemberRole)
-// instead of the promoted cc.VisibilityRole() — so the gate 404'd the Co-DM
-// before canSeeDmOnly's branch could ever run. Same one-function,
-// two-role-derivations shape as BacklinksFragment (ADR-057).
-//
-// tagsDmGrantGate mirrors the real adapter's behavior (entities'
-// CheckEntityAccess via ResolveViewableEntity): a dm_only (private) entity
-// requires role>=RoleScribe (2) — the threshold VisibilityRole()'s Owner
-// promotion (3) clears and int(cc.MemberRole) for a Player (1) does not.
+// tagsDmGrantGate mirrors the real adapter (entities' CheckEntityAccess via
+// ResolveViewableEntity): a dm_only (private) entity requires role >=
+// RoleScribe (2), which VisibilityRole()'s Owner promotion (3) clears but a
+// raw Player role (1) does not.
 package tags
 
 import (

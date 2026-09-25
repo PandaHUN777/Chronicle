@@ -33,17 +33,10 @@
   // The dm_* options are hidden when the viewer can't author them
   // (see filterAudienceOptions). Server checks again.
   //
-  // borderClass is the audience-coded left edge of each note card —
-  // gives the file-list a quick scan affordance (DM-only stuff is red,
-  // shared-everyone is green, etc.) without needing to read the badge.
-  // badgeClass is for the small inline label.
-  // Each row carries audience info via its small badge (icon + label).
-  // The row itself stays neutral so the campaign accent — used for
-  // hover, the expanded-row tint, the chevron, and buttons — owns the
-  // visual hierarchy. Earlier iterations also used colored left borders
-  // (red/amber/green/purple) per audience, which fought the campaign
-  // accent in any campaign whose accent didn't already match. The
-  // badge is enough; one signal beats two.
+  // Each row carries audience info via its small badge (icon + label);
+  // badgeClass styles that badge. The row itself stays neutral so the
+  // campaign accent (hover, expanded-row tint, chevron, buttons) owns
+  // the visual hierarchy instead of competing with per-audience colors.
   var ALL_AUDIENCES = [
     { value: 'private',   label: 'Private',    icon: 'fa-lock',        desc: 'Only you can see this',
       badgeClass: 'bg-slate-500/10 text-slate-600 dark:text-slate-400' },
@@ -100,8 +93,8 @@
       // --- API ---
       //
       // Chronicle.apiFetch returns a raw Response object, NOT parsed JSON
-      // (it's a thin wrapper around fetch() — see boot.js:522). Every call
-      // here funnels through asJSON which (a) parses the body, (b) bubbles
+      // (a thin wrapper around fetch()). Every call here funnels through
+      // asJSON which (a) parses the body, (b) bubbles
       // server-side error messages up to the .catch handlers so the
       // operator sees "you do not have permission to use this audience"
       // instead of "Something went wrong."
@@ -223,10 +216,8 @@
         if (typeof window.WebSocket !== 'function') return;
         try {
           var protocol = (window.location.protocol === 'https:') ? 'wss:' : 'ws:';
-          // Server-side WS auth (internal/websocket/auth.go:79) reads
-          // the campaign from `?campaign=` (not `?campaignId=`). Mismatch
-          // here causes "campaign parameter required for session auth"
-          // 401 even though the cookie is fine.
+          // Server-side WS auth reads the campaign from `?campaign=` (not
+          // `?campaignId=`); mismatch causes a 401 even with a valid cookie.
           var url = protocol + '//' + window.location.host + '/ws?campaign=' + encodeURIComponent(campaignId);
           ws = new WebSocket(url);
           ws.addEventListener('message', function (ev) {
@@ -406,19 +397,10 @@
       // editing implies expanded; the kebab "Edit" entry expands the
       // row first. Cancel returns to expanded read-only.
       //
-      // Visual treatment:
-      //   - Audience info lives in the small badge inside the header,
-      //     not on a colored left border. Earlier iterations carried
-      //     audience colors on the border too, but the bold left
-      //     stripes fought the campaign accent in any campaign whose
-      //     accent didn't already match (a green-themed campaign with
-      //     red/amber/green/purple borders looked chaotic). Single
-      //     signal — the badge — is enough.
-      //   - Expanded rows tint with the campaign accent (bg-accent/5)
-      //     and gain a 2px accent-colored left border so the active
-      //     row picks up the campaign theme color.
-      //   - Collapsed rows have no left border at all — clean, uniform
-      //     file-list feel.
+      // Audience info lives in the small badge in the header, not a
+      // colored left border (which fights the campaign accent). Expanded
+      // rows tint with the campaign accent and gain a 2px accent-colored
+      // left border; collapsed rows have no left border.
       function renderNote(note) {
         var isExpanded = !!state.expandedIds[note.id] || state.editingId === note.id;
         var isEditing = state.editingId === note.id;
@@ -445,17 +427,10 @@
       // metadata, audience badge, pin indicator, kebab menu.
       // The whole row (except action buttons) toggles expand/collapse.
       //
-      // Polish notes:
-      //   - Hover uses bg-accent/5 — picks up the campaign accent so
-      //     the row you're about to click is unambiguously highlighted
-      //     (the previous bg-surface-alt/40 was too subtle to read as
-      //     "this is the active row").
-      //   - When expanded, the chevron flips to text-accent so the
-      //     "open" affordance is consistent with the row tint.
-      //   - The date column has a fixed width (w-16, right-aligned) so
-      //     audience badges across rows line up vertically. Without
-      //     this, "14:23" vs "Yesterday" vs "Apr 22" pushed the badge
-      //     by a few pixels each row, which read as misalignment.
+      // Hover and the expanded chevron use the campaign accent for
+      // consistency with the row tint. The date column has a fixed width
+      // (w-16, right-aligned) so audience badges line up vertically across
+      // rows regardless of date-text length.
       //
       // The kebab dropdown uses position: fixed (set in JS at click time)
       // so it escapes any clipping from ancestor overflow contexts.
@@ -473,8 +448,8 @@
         h += '<i class="fa-solid fa-chevron-' + (isExpanded ? 'down' : 'right') +
              ' text-[9px] w-2.5 ' + (isExpanded ? 'text-accent' : 'text-fg-muted') + '"></i>';
 
-        // Title (or first-line excerpt fallback). Slightly lighter
-        // weight than the previous design — file-list, not card title.
+        // Title (or first-line excerpt fallback), file-list weight
+        // rather than a card title.
         h += '<span class="text-fg flex-1 truncate">' + esc(titleText) + '</span>';
 
         // Pinned indicator

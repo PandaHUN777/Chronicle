@@ -1,21 +1,12 @@
 // operator_diag_host.go is the "which Chronicle am I actually running?" half of
 // the operator diagnostic catalog.
 //
-// WHY it exists: Chronicle could already fingerprint every installed system
-// PACKAGE down to the sha256 of each served file, and was completely blind to
-// ITSELF. On 2026-08-11 that cost an hour of shell archaeology and produced a
-// conclusion that had to be retracted — the container image's labels
-// (org.opencontainers.image.revision=33f4cb07, created=2026-02-19) were read as
-// evidence that the running binary was six months stale. It had been built
-// minutes earlier. The labels described a different image that still held the
-// tag in the deploy host's local image store; `docker inspect <tag>` never
-// answers for the image a running container was created from.
-//
-// So these diagnostics report ONLY what the process can observe about itself,
-// and each line says whether the fact is actually known. "not stamped" is a
-// real answer; a blank field or a plausible-looking guess is not. The closing
-// trust note names the label trap explicitly, because the next reader will have
-// a `docker inspect` window open too.
+// These diagnostics report ONLY what the process can observe about itself,
+// and each line says whether the fact is actually known: "not stamped" is a
+// real answer; a blank field or a plausible-looking guess is not. This
+// matters because `docker inspect <tag>` describes whichever image holds
+// that tag NOW, never the image a running container was created from — the
+// closing trust note names that trap explicitly.
 package systems
 
 import (
@@ -147,12 +138,11 @@ func renderBuildRevision(out *strings.Builder, b hostinfo.Build) {
 	out.WriteString("- These stamps are compiled in by the toolchain. They cannot drift from the binary and are not metadata *about* it — when present, they are the strongest evidence available.\n\n")
 }
 
-// renderBuildEnvVersion prints CHRONICLE_VERSION and, crucially, what the
-// public /api/version endpoint will therefore answer — the env var is that
-// endpoint's highest-precedence input, and for years it was set by nothing at
-// all, which is why the endpoint answered "unknown" for its whole life. CI now
-// passes it for tag builds only, so "unset" remains the ordinary reading on a
-// branch build and must not be rendered as a fault.
+// renderBuildEnvVersion prints CHRONICLE_VERSION and what the public
+// /api/version endpoint will therefore answer — the env var is that
+// endpoint's highest-precedence input. CI passes it for tag builds only, so
+// "unset" is the ordinary reading on a branch build and must not render as a
+// fault.
 func renderBuildEnvVersion(out *strings.Builder, envVersion string, b hostinfo.Build) {
 	out.WriteString("### CHRONICLE_VERSION\n\n")
 	if strings.TrimSpace(envVersion) == "" {
@@ -166,10 +156,9 @@ func renderBuildEnvVersion(out *strings.Builder, envVersion string, b hostinfo.B
 		hostinfo.VersionFrom(envVersion, b))
 }
 
-// renderBuildExecutable prints the file this process is executing. This is the
-// always-available fallback: it needs no build-time cooperation, so it survives
-// the missing-git problem entirely, and its mtime is what actually settled the
-// 2026-08-11 incident.
+// renderBuildExecutable prints the file this process is executing — the
+// always-available fallback, since it needs no build-time cooperation and
+// survives the missing-git case entirely.
 func renderBuildExecutable(out *strings.Builder, exe hostinfo.Executable, now time.Time) {
 	out.WriteString("### Running executable — always available, and the closest honest proxy for build time\n\n")
 	if exe.Path != "" {
@@ -243,13 +232,8 @@ func renderBuildTrustNote(out *strings.Builder) {
 
 // hostIdentityLines is the COMPACT three-line build identity, for callers that
 // need the answer without host.build's full account (today: host.deploy-check).
-//
-// It lives beside host.build's long renderer and shares notStampedHeadline with
-// it deliberately. The alternative — a composite assembling its own summary
-// from hostinfo — is a second opinion about what an absent VCS stamp means, and
-// the one thing this whole workstream exists to prevent is two parts of
-// Chronicle disagreeing about the identity of the binary they are both running
-// inside.
+// It lives beside host.build's long renderer and shares notStampedHeadline
+// with it, so the two can't disagree about what an absent VCS stamp means.
 func hostIdentityLines(b hostinfo.Build, exe hostinfo.Executable, proc hostProcess, now time.Time) []string {
 	lines := make([]string, 0, 3)
 

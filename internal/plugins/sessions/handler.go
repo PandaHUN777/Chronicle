@@ -32,7 +32,7 @@ type Handler struct {
 	baseURL      string // Application base URL for RSVP links (e.g. "https://chronicle.example.com").
 	userDir      UserDirectory // Resolves a user's stored IANA timezone for the availability overlay.
 	// campaignReader is the one-read source of the co-DM grant set the overlay
-	// roster's role column needs (WG-4). Nil-safe.
+	// roster's role column needs. Nil-safe.
 	campaignReader CampaignReader
 }
 
@@ -118,7 +118,7 @@ func (h *Handler) CreateSession(c echo.Context) error {
 	name := c.FormValue("name")
 	summary := c.FormValue("summary")
 	scheduledDate := c.FormValue("scheduled_date")
-	scheduledTime := c.FormValue("scheduled_time") // "HH:MM" from the modal's time input (C-SCHED-P3).
+	scheduledTime := c.FormValue("scheduled_time") // "HH:MM" from the modal's time input.
 
 	// Validate field lengths.
 	if err := apperror.ValidateRequired("name", name); err != nil {
@@ -225,15 +225,13 @@ func (h *Handler) CreateSession(c echo.Context) error {
 // updateSessionRequest is the wire form of PUT /campaigns/:id/sessions/:sid.
 //
 // It is a PARTIAL update: absent preserves, explicit null clears, a present
-// value replaces (sweep R4; see UpdateSessionInput and API-CONTRACT.md).
-// patch.Field is what makes "absent" and "null" different here — a plain
-// pointer collapses them, which is how "Mark Complete" (a {status}-only body)
-// used to wipe the schedule, the summary, the in-world date and the whole
-// recurrence config, and with it the next-occurrence generator.
+// value replaces (see UpdateSessionInput and API-CONTRACT.md). patch.Field is
+// what makes "absent" and "null" different here — a plain pointer collapses
+// them, which would let a {status}-only "Mark Complete" body wipe every other
+// field.
 //
-// It is a named type, rather than the anonymous struct it used to be, so the
-// regression test can decode the real templ clients' literal request bodies
-// through the real binder.
+// It is a named type so the regression test can decode the real templ
+// clients' literal request bodies through the real binder.
 type updateSessionRequest struct {
 	Name                patch.Field[string] `json:"name"`
 	Summary             patch.Field[string] `json:"summary"`
@@ -487,9 +485,8 @@ These links expire in 7 days.
 <p style="text-align:center;color:#999;font-size:12px">These links expire in 7 days.</p>
 </body></html>`,
 			// Escape the operator-authored session name + campaign name so they
-			// can't inject markup into the email (C-SCHED-P3 0c, same sweep as the
-			// proposal invite). dateStr is our own formatted label; URLs are hex
-			// tokens — both safe.
+			// can't inject markup into the email. dateStr is our own formatted
+			// label; URLs are hex tokens — both safe.
 			html.EscapeString(session.Name), html.EscapeString(campaignName), dateStr, acceptURL, declineURL)
 
 		if err := h.mailer.SendHTMLMail(ctx, []string{m.Email}, subject, plainBody, htmlBody); err != nil {
@@ -506,7 +503,7 @@ These links expire in 7 days.
 
 // RedeemRSVPToken renders the confirm interstitial for a one-click RSVP token.
 // GET /rsvp/:token — no auth required, token is the credential. GET is a pure
-// read (0b): it validates the token and shows a POST form; ApplyRSVPToken records
+// read: it validates the token and shows a POST form; ApplyRSVPToken records
 // the RSVP, so a mail scanner prefetching the link can't auto-RSVP.
 func (h *Handler) RedeemRSVPToken(c echo.Context) error {
 	tokenStr := c.Param("token")
@@ -529,20 +526,16 @@ func (h *Handler) RedeemRSVPToken(c echo.Context) error {
 }
 
 // ApplyRSVPToken applies a one-click RSVP and consumes the token.
-// POST /rsvp/:token — the state-changing half of the token flow (0b).
+// POST /rsvp/:token — the state-changing half of the token flow.
 func (h *Handler) ApplyRSVPToken(c echo.Context) error {
 	tokenStr := c.Param("token")
 	if tokenStr == "" {
 		return c.HTML(http.StatusBadRequest, rsvpResultHTML("Invalid Link", "This RSVP link is invalid.", false))
 	}
-	// A LINK CANNOT OUTLIVE THE ACCESS THAT JUSTIFIED IT. The token is resolved
-	// and the roster re-checked BEFORE anything is applied, exactly as
-	// /proposals/respond/:token and /calendar-rsvp/:token already do. Without
-	// this, a player removed from the campaign kept a working "Going" link for
-	// the token's full 7-day life: ApplyRSVPToken wrote `accepted` into
-	// session_attendees for a campaign they were no longer part of, the
-	// Director's "3/5 going" counted a non-member, and the attendee list
-	// (INNER JOIN users) rendered their name to the party.
+	// A link cannot outlive the access that justified it: the token is
+	// resolved and the roster re-checked BEFORE anything is applied, exactly
+	// as /proposals/respond/:token and /calendar-rsvp/:token do, so a player
+	// removed from the campaign cannot still apply a stale RSVP link.
 	preToken, err := h.svc.ValidateRSVPToken(c.Request().Context(), tokenStr)
 	if err != nil {
 		msg := apperror.UserMessage(err, "This RSVP link is invalid or has expired.")
@@ -601,8 +594,8 @@ func (h *Handler) tokenUserStillBelongs(ctx context.Context, token *RSVPToken) b
 }
 
 // isCampaignMember reports whether userID is currently a member of campaignID.
-// FAIL-CLOSED: a nil lister or a lookup error denies (used by the public token
-// routes to enforce current membership before applying — C-SCHED-P3 0a).
+// FAIL-CLOSED: a nil lister or a lookup error denies. Used by the public
+// token routes to enforce current membership before applying.
 func (h *Handler) isCampaignMember(ctx context.Context, campaignID, userID string) bool {
 	if h.memberLister == nil {
 		return false
@@ -620,8 +613,8 @@ func (h *Handler) isCampaignMember(ctx context.Context, campaignID, userID strin
 }
 
 // rsvpResultHTML returns a simple standalone HTML page for RSVP token results.
-// title + message are escaped (C-SCHED-P3 0c sweep) so any interpolated
-// user/data value (e.g. a session name in a confirm message) is inert.
+// title + message are escaped so any interpolated user/data value (e.g. a
+// session name in a confirm message) is inert.
 func rsvpResultHTML(title, message string, success bool) string {
 	icon := "fa-circle-xmark"
 	color := "red"
@@ -641,8 +634,8 @@ p{color:#666;margin:0;font-size:.9rem}</style></head><body>
 }
 
 // tokenConfirmHTML renders the GET interstitial for a one-click token: a POST
-// form the user must submit to apply (C-SCHED-P3 0b). Because a mail scanner /
-// link prefetcher issues a GET, not a POST, this page defeats the "state-changing
+// form the user must submit to apply. Because a mail scanner / link
+// prefetcher issues a GET, not a POST, this page defeats the "state-changing
 // GET" hazard for both the RSVP and proposal token routes. All interpolated
 // values are escaped; actionURL is a same-origin token path.
 //

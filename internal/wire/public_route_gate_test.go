@@ -1,14 +1,11 @@
 // Package wire — public-route gate sweep.
 //
-// C-PUBLIC-VIEW-FIX-R2 (per cordinator/dispatches/chronicle/C-PUBLIC-VIEW-FIX-R2.md):
-// #522 restored public-campaign viewing by swapping 51 routes from
-// RequireRole(RolePlayer) to RequireViewAccess(). Its own regression guard,
-// however, only pinned 2 of those 51 routes — reverting timeline/routes.go:71
-// back to RequireRole kept the whole suite green. This test closes that gap with
-// a wire-level AST sweep: EVERY route registered on a group built with
-// campaigns.AllowPublicCampaignAccess(...) must carry campaigns.RequireViewAccess()
-// and must NOT carry campaigns.RequireRole(...). A public route that loses its
-// view gate (or regains a role gate) fails here.
+// This is a wire-level AST sweep: every route registered on a group built
+// with campaigns.AllowPublicCampaignAccess(...) must carry
+// campaigns.RequireViewAccess() and must NOT carry campaigns.RequireRole(...).
+// A public route that loses its view gate (or regains a role gate) fails
+// here. A per-route regression guard alone is not enough — it can miss most
+// of a large batch of routes while staying green.
 //
 // WHY an AST sweep and not the runtime router: same rationale as
 // wire_contract_test.go — constructing the full App needs a real DB/Redis. AST
@@ -22,21 +19,16 @@
 // authenticated `cg` group and a public `pub` group (or reuses the name `pub`
 // across two functions, as maps/routes.go does) is handled correctly.
 //
-// C-ENTITY-VIS-PARITY (ride-along 4a) hardens the sweep against three evasions the
-// per-route scan above could not see:
+// The sweep is also hardened against three evasions a naive per-route scan
+// would miss:
 //   - a RequireRole passed as GROUP-LEVEL middleware to e.Group(...) alongside
 //     AllowPublicCampaignAccess (applies to every route in the group, yet each
 //     route's own args look clean);
 //   - a RequireRole added to a public group via a later <group>.Use(...) call;
 //   - a route registered through a NON-Ident receiver rooted at a public group
-//     (e.g. a chained sub-group `pub.Group("/x").GET(...)`), whose view gate the
-//     static per-route scan silently skipped. Such a registration now fails: its
+//     (e.g. a chained sub-group `pub.Group("/x").GET(...)`), whose view gate a
+//     static per-route scan would silently skip. Such a registration fails: its
 //     gate cannot be statically verified, so it must fail closed here.
-//
-// Cites: cordinator/decisions/2026-05-21-core-tenets.md §T-B1 (security-first;
-// auth-surface drift is a P0), §T-O2 (wire-contract integrity);
-// cordinator/reports/coordinator/2026-07-11-r13-post-merge-review.md §2 +
-// merge-gate addendum; cordinator/dispatches/chronicle/C-ENTITY-VIS-PARITY.md §4a.
 package wire
 
 import (
@@ -144,13 +136,11 @@ func TestPublicRoutesCarryViewAccess(t *testing.T) {
 	}
 }
 
-// TestPublicRouteGate_CatchesEvasions proves the 4a extensions have teeth: it
-// feeds a synthetic routes file — one func per evasion plus a clean control —
-// through the SAME collectPublicGroupVars + checkRoutesOnGroups pipeline the real
-// sweep uses, and asserts each evasion is flagged and the clean group is not.
-// Without this, the extension could silently pass vacuously (the real codebase
-// has none of these patterns today, so the sweep alone can't demonstrate it
-// catches them).
+// TestPublicRouteGate_CatchesEvasions proves the evasion checks have teeth:
+// it feeds a synthetic routes file — one func per evasion plus a clean
+// control — through the SAME collectPublicGroupVars + checkRoutesOnGroups
+// pipeline the real sweep uses, and asserts each evasion is flagged and the
+// clean group is not.
 func TestPublicRouteGate_CatchesEvasions(t *testing.T) {
 	// Referenced identifiers need not resolve — ParseFile does no type-checking.
 	const src = `package routes
@@ -227,7 +217,7 @@ func Clean(e *echo.Echo) {
 // `pub = e.Group(...)` (assign). It also returns a violation for any public
 // group whose e.Group(...) constructor ALSO carries a RequireRole middleware arg
 // — a group-level RequireRole 403s anon on every route in the group while each
-// route's own args look clean, so the per-route scan cannot see it (4a).
+// route's own args look clean, so the per-route scan cannot see it.
 func collectPublicGroupVars(fset *token.FileSet, fn *ast.FuncDecl, relPath string) (map[string]bool, []publicRouteViolation) {
 	groups := make(map[string]bool)
 	var violations []publicRouteViolation
@@ -289,7 +279,7 @@ func collectPublicGroupVars(fset *token.FileSet, fn *ast.FuncDecl, relPath strin
 
 // checkRoutesOnGroups walks fn for route registrations (`<group>.METHOD(...)`)
 // whose receiver is one of the public groups, and returns the count plus any
-// invariant violations. Beyond the per-route arg scan, it also flags (4a): a
+// invariant violations. Beyond the per-route arg scan, it also flags: a
 // RequireRole added to a public group via `<group>.Use(...)`, and any route
 // registered through a non-Ident receiver rooted at a public group (e.g. a
 // chained sub-group), whose gate cannot be statically verified.

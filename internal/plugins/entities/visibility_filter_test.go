@@ -7,12 +7,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/permissions"
 )
 
-// TestVisibilityFilter pins the entities-side half of the mirrored entity
-// visibility policy (the calendar plugin holds the verbatim other half in
-// entity_ties_test.go::TestEntityVisibilityFilter). Both suites assert the SAME
-// token set + arg shape so the two SQL fragments cannot silently diverge
-// (cordinator#32/#455). This is the most security-sensitive query in the
-// product — a drift here is a data-leak.
+// TestVisibilityFilter pins the exact token set and arg shape of the
+// entities visibility filter. This is the most security-sensitive query in
+// the product — a drift here is a data-leak.
 func TestVisibilityFilter(t *testing.T) {
 	t.Run("owner is unfiltered (sees all, including dm_only)", func(t *testing.T) {
 		frag, args := visibilityFilter(permissions.RoleOwner, "owner-1")
@@ -68,8 +65,8 @@ func TestVisibilityFilter(t *testing.T) {
 	// quietly weaken it (e.g. dropping the role ceiling, the group join, or
 	// flipping the comparison direction). Both grant tables use subject_id <= ?
 	// (viewer role): a Player-role grant (subject_id "1") is therefore visible
-	// to role >= 1 but NOT to an anonymous viewer (role 0) — the leak this fix
-	// closes. The 'public' subject matches every viewer, anonymous included.
+	// to role >= 1 but NOT to an anonymous viewer (role 0). The 'public'
+	// subject matches every viewer, anonymous included.
 	t.Run("subject-match shape: role ceiling, user, group, public", func(t *testing.T) {
 		frag, _ := visibilityFilter(permissions.RolePlayer, "u")
 		for _, want := range []string{

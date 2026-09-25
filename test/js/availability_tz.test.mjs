@@ -1,9 +1,7 @@
-// availability_tz.test.mjs — C-TZ-CONSOLIDATION: pins that the availability
-// scheduler's "Your timezone" select renders from the server-embedded
-// data-common-tz JSON (internal/timeutil.CommonZonesJSON) rather than a
-// hand-rolled list baked into the JS file. A regression here (someone
-// reintroducing a local COMMON_TZ array) would silently re-fork the list this
-// dispatch consolidated.
+// availability_tz.test.mjs — pins that the availability scheduler's "Your
+// timezone" select renders from the server-embedded data-common-tz JSON
+// (internal/timeutil.CommonZonesJSON), not a hand-rolled list baked into the
+// JS file.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

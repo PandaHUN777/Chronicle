@@ -1,10 +1,9 @@
-// notes_autosave.test.mjs — pins the notes-widget autosave contract
-// (cordinator#6). The floating notes widget (notes.js) only persisted edits
-// when the user clicked Done; this adds a journal.js-style debounced autosave
-// plus blur / navigation / unload flushes. notes.js is a browser IIFE bound to
-// TipTap + the live DOM, so — like widget_listener_leaks.test.mjs — these pin
-// the wiring by static source contract rather than executing it. Behavioral
-// verification (typing → save fires) needs a real browser.
+// notes_autosave.test.mjs — pins the notes-widget (notes.js) autosave
+// contract: a journal.js-style debounced autosave plus blur / navigation /
+// unload flushes, not just a save-on-Done click. notes.js is a browser IIFE
+// bound to TipTap + the live DOM, so these pin the wiring by static source
+// contract rather than executing it; behavioral verification (typing → save
+// fires) needs a real browser. (cordinator#6)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

@@ -192,15 +192,11 @@ func errorTypeOf(t *testing.T, rec *httptest.ResponseRecorder) string {
 
 // --- REST gate ---
 
-// TestSyncAPIAddon_BearerRejectedWhenDisabled is the security finding itself:
-// with the campaign's "Sync API" toggle off, an otherwise perfectly valid
-// Bearer key used to reach every campaign-scoped endpoint on /api/v1.
-//
-// The assertion on the error TYPE is not decoration. 403/"sync_api_disabled"
-// tells a client the credential is fine and the campaign has switched the
-// integration off; a 404 would be read by Chronicle's own Foundry module as
-// "this Chronicle is too old to have that endpoint" and send it down the
-// version-compatibility path with the real cause hidden.
+// TestSyncAPIAddon_BearerRejectedWhenDisabled pins that a Bearer key must
+// not reach any campaign-scoped endpoint while the campaign's "Sync API"
+// toggle is off, and specifically with a 403/"sync_api_disabled" — not a
+// 404, which Chronicle's own Foundry module would read as "too old to have
+// that endpoint" and hide the real cause.
 func TestSyncAPIAddon_BearerRejectedWhenDisabled(t *testing.T) {
 	f := newAddonGateFixture(t, 101, "camp-1")
 	f.gate.enabled["camp-1"] = false
@@ -229,17 +225,11 @@ func TestSyncAPIAddon_BearerAllowedWhenEnabled(t *testing.T) {
 	}
 }
 
-// TestSyncAPIAddon_SessionCallerUnaffected pins Trap 1. Chronicle's own
-// browser widgets (static/js/widgets/layout_editor.js reads /entity-types and
-// /maps this way) authenticate on these same routes by session cookie and
-// receive a synthetic APIKey with ID == synthKeySessionID. "Sync API" is an
-// INTEGRATION toggle: an owner switching it off is revoking outside access,
-// not asking Chronicle's own UI to stop working. A naive group-wide gate
-// would 403 the app's pages the moment the owner touched that switch.
-//
-// The gate must not even ASK the addons service about a session caller —
-// asserted below — because a cheap short-circuit is also the thing that keeps
-// the app's own request path free of a per-request addon lookup.
+// TestSyncAPIAddon_SessionCallerUnaffected pins that session-authed callers
+// (synthetic APIKey, ID == synthKeySessionID — e.g. layout_editor.js reading
+// /entity-types and /maps) are unaffected by the "Sync API" toggle, since
+// that toggle governs outside access, not Chronicle's own UI. The gate must
+// not even ASK the addons service about a session caller, asserted below.
 func TestSyncAPIAddon_SessionCallerUnaffected(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -311,11 +301,10 @@ func wsGateService(t *testing.T, gate SyncAPIAddonGate) (SyncAPIService, string)
 	return svc, rawKey
 }
 
-// TestSyncAPIAddon_WebSocketRefusedWhenDisabled covers the second half of the
-// finding. The WS upgrade never passes through Echo's /api/v1 chain —
-// internal/websocket/auth.go calls AuthenticateKeyForWS directly — so the REST
-// middleware cannot cover it and the push channel would otherwise stay live
-// for a campaign that had switched the integration off.
+// TestSyncAPIAddon_WebSocketRefusedWhenDisabled pins that the WS upgrade
+// (internal/websocket/auth.go calls AuthenticateKeyForWS directly, bypassing
+// the REST middleware chain) also refuses a key for a campaign with the
+// Sync API addon disabled.
 func TestSyncAPIAddon_WebSocketRefusedWhenDisabled(t *testing.T) {
 	gate := newFakeAddonGate()
 	gate.enabled["camp-ws"] = false
@@ -347,10 +336,8 @@ func TestSyncAPIAddon_WebSocketAllowedWhenEnabled(t *testing.T) {
 	}
 }
 
-// TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired fixes the direction a
-// wiring mistake fails in. A security control that silently no-ops when its
-// dependency was never injected is the exact defect class this change
-// removes, so an unwired gate refuses rather than assuming permission.
+// TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired pins that an unwired gate
+// refuses rather than silently assuming permission.
 func TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired(t *testing.T) {
 	svc, rawKey := wsGateService(t, nil)
 
@@ -361,16 +348,11 @@ func TestSyncAPIAddon_WebSocketRefusedWhenGateUnwired(t *testing.T) {
 
 // --- CreateKey ---
 
-// TestCreateKey_EnablesSyncAPIAddon closes the gap permanently rather than
-// leaving it to the next boot's reconciler. Without this, a campaign that
-// mints its first key while the addon is off gets a token that is dead by
-// construction and only starts working after a server restart — "restart the
-// server to make your new key work" is a worse bug than the one being fixed.
-//
-// It is deliberate that this re-enables a toggle the owner may have switched
-// off: the owner is, at that moment, on the API keys screen asking for an
-// external credential, and the campaign_addons row is the only record this
-// system keeps of that decision.
+// TestCreateKey_EnablesSyncAPIAddon pins that creating a key immediately
+// enables the campaign's Sync API addon rather than leaving the new key dead
+// until the next reconciler pass. This deliberately re-enables a toggle the
+// owner may have switched off — they're on the API keys screen asking for a
+// credential at that moment.
 func TestCreateKey_EnablesSyncAPIAddon(t *testing.T) {
 	repo := &mockSyncAPIRepo{
 		createKeyFn: func(_ context.Context, key *APIKey) error {

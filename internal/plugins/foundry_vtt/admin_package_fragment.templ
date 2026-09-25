@@ -1,15 +1,11 @@
-// admin_package_fragment.templ holds the per-foundry-module-package
-// UI fragment that the admin /admin/packages page lazy-loads into each
-// foundry-module row. Per cordinator/decisions/2026-05-23-packages-treatment.md
-// + NW-2.2 Chunk G.
+// admin_package_fragment.templ holds the per-foundry-module-package UI
+// fragment that /admin/packages lazy-loads into each foundry-module
+// row: GET /admin/foundry-vtt/packages/:id/actions-fragment.
 //
-// Lives in foundry_vtt (the owning plugin) rather than packages so the
-// packages plugin stays foundry-agnostic per Pillar 2. URL convention:
-//   GET /admin/foundry-vtt/packages/:id/actions-fragment
-//
-// Returns ONLY the action elements (links, buttons) that go inside the
-// per-row button group. packages.templ supplies the wrapping container;
-// this fragment is the type-specific innards.
+// Lives in foundry_vtt, not packages, so the packages plugin stays
+// foundry-agnostic. Returns only the action elements (links, buttons)
+// that go inside the per-row button group; packages.templ supplies
+// the wrapping container.
 
 package foundry_vtt
 
@@ -22,19 +18,16 @@ import (
 // packages.templ via an hx-get slot with hx-swap="outerHTML" so this
 // fragment replaces the skeleton placeholder span entirely.
 //
-// Contents (this chunk):
-//   - "API monitor" link (foundry-only; the package's manifest is
-//     served from Chronicle so the API monitor surfaces hits)
+// Currently just the "API monitor" link (the package's manifest is
+// served from Chronicle, so the API monitor surfaces hits). The
+// Versions button's data-fvtt-versions-trigger attribute stays on the
+// generic Versions button in packages.templ; moving it here would
+// require reshaping the autopin banner's selector strategy —
+// TODO(#721).
 //
-// Out of scope (deferred to G2):
-//   - The Versions button's data-fvtt-versions-trigger attribute — left
-//     on the generic Versions button in packages.templ; moving it
-//     requires reshaping the autopin banner's selector strategy.
-//
-// csrfToken is threaded through for any state-changing actions the
-// fragment might grow later (e.g. a "Pin to current" quick action);
-// today's content is read-only but accepts the param for parity with
-// packages.templ's packageCard signature.
+// csrfToken is threaded through for parity with packages.templ's
+// packageCard signature, for state-changing actions this fragment
+// might grow later; today's content is read-only.
 templ AdminPackageActionsFragment(pkg packages.Package, csrfToken string) {
 	<a
 		href="/admin/api"

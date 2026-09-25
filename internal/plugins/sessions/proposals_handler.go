@@ -16,10 +16,10 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// Slot-proposal HTTP surface (C-SCHED-P2). Handlers stay thin: bind, call the
-// service, render. Notification + email fan-out is coordination (enumerate
-// members, call the service's notify methods, send email) — it lives here like
-// the RSVP email path, not in the service.
+// Slot-proposal HTTP surface. Handlers stay thin: bind, call the service,
+// render. Notification + email fan-out is coordination (enumerate members,
+// call the service's notify methods, send email) — it lives here like the
+// RSVP email path, not in the service.
 
 // ListProposals renders the proposals list for a campaign.
 // GET /campaigns/:id/proposals
@@ -134,10 +134,10 @@ func (h *Handler) RespondOptionAPI(c echo.Context) error {
 
 // RedeemProposalToken renders the confirm interstitial for a one-click response
 // token. GET /proposals/respond/:token — no auth, the token is the credential.
-// GET is a pure READ (0b): it validates the token, rechecks the proposal is still
-// open (0a, in the service) + the user is still a member (0a, below), then shows a
-// POST form. ApplyProposalToken records the response, so a mail prefetcher's GET
-// never writes.
+// GET is a pure read: it validates the token, rechecks the proposal is still
+// open (in the service) and the user is still a member (below), then shows a
+// POST form. ApplyProposalToken records the response, so a mail prefetcher's
+// GET never writes.
 func (h *Handler) RedeemProposalToken(c echo.Context) error {
 	tokenStr := c.Param("token")
 	if tokenStr == "" {
@@ -163,8 +163,9 @@ func (h *Handler) RedeemProposalToken(c echo.Context) error {
 }
 
 // ApplyProposalToken records a one-click response and consumes the token.
-// POST /proposals/respond/:token — the state-changing half (0b). Re-runs the
-// open-proposal (service) + current-membership (0a) checks before applying.
+// POST /proposals/respond/:token — the state-changing half of the flow.
+// Re-runs the open-proposal (service) and current-membership checks before
+// applying.
 func (h *Handler) ApplyProposalToken(c echo.Context) error {
 	tokenStr := c.Param("token")
 	if tokenStr == "" {
@@ -189,8 +190,8 @@ func (h *Handler) ApplyProposalToken(c echo.Context) error {
 
 // ConfirmProposalAPI is the DM/Scribe confirm-winner action: pick a winning
 // option, which closes the proposal and creates a planned session from that
-// slot's UTC instant (C-SCHED-P3). Members are auto-invited to the new session
-// and every responder is notified — both off the request path, mirroring create.
+// slot's UTC instant. Members are auto-invited to the new session and every
+// responder is notified — both off the request path, mirroring create.
 // POST /campaigns/:id/proposals/:pid/confirm
 func (h *Handler) ConfirmProposalAPI(c echo.Context) error {
 	cc := campaigns.GetCampaignContext(c)
@@ -352,14 +353,9 @@ func (h *Handler) getProposalForEmail(ctx context.Context, campaignID, proposalI
 // (option, user, response) so the response records with no login. Slots are
 // rendered in the member's own stored zone.
 func (h *Handler) sendProposalEmail(ctx context.Context, campaignID, campaignName string, proposal *SlotProposal, options []ProposalOptionView, m campaigns.CampaignMember) {
-	// THROUGH tokenUserTZ, NEVER A SECOND READING. Inlining the lookup here with
-	// only a nil check let a users.timezone stored as '' (not NULL) through, so
-	// the email header printed "times in " with a blank zone and the plain body
-	// printed "Times shown in ." — while renderLocalSlotForTZ fell back to UTC
-	// for the actual clock values, and the confirm page the member lands on said
-	// UTC. Two surfaces disagreeing about the same slot, with one of them naming
-	// no zone at all. tokenUserTZ already rejects the empty string; this is the
-	// same question, so it is the same call.
+	// Always go through tokenUserTZ, never a raw nil check on the field: it
+	// rejects an empty-string (not NULL) users.timezone that would otherwise
+	// print a blank zone here while renderLocalSlotForTZ falls back to UTC.
 	memberTZ := h.tokenUserTZ(ctx, m.UserID)
 
 	var optionsHTML, optionsText string
@@ -389,10 +385,10 @@ func (h *Handler) sendProposalEmail(ctx context.Context, campaignID, campaignNam
 	// Plain-text body: no markup, so the raw values are safe as-is.
 	plainBody := fmt.Sprintf("You've been asked to weigh in on session times for %s.\n\nProposal: %s\nTimes shown in %s.\n\n%sThese links expire in 7 days.\n",
 		campaignName, proposal.Title, memberTZ, optionsText)
-	// HTML body: escape every interpolated data value (campaign name + operator-
-	// authored proposal title + zone) so a title like `<img onerror=…>` can't
-	// inject markup into the email (C-SCHED-P3 0c). optionsHTML is our own
-	// server-built markup (date/time labels + token URLs), so it is NOT escaped.
+	// HTML body: escape every interpolated data value (campaign name, operator-
+	// authored proposal title, zone) so a title like `<img onerror=…>` can't
+	// inject markup into the email. optionsHTML is our own server-built markup
+	// (date/time labels + token URLs), so it is NOT escaped.
 	htmlBody := fmt.Sprintf(`<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:system-ui,-apple-system,sans-serif;max-width:520px;margin:0 auto;padding:20px;color:#333">
 <div style="text-align:center;margin-bottom:20px"><div style="font-size:32px;margin-bottom:8px">📅</div>
 <h1 style="font-size:20px;margin:0">When can you play?</h1>

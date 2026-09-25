@@ -24,14 +24,10 @@ type Drawing struct {
 	Rotation    float64         `json:"rotation"`
 	Visibility  string          `json:"visibility"` // everyone, dm_only
 	// VisibilityRules mirrors Marker.VisibilityRules — per-player
-	// allow/deny overrides (S1). The map_drawings.visibility_rules
-	// column has existed since migration 002 (added alongside markers'
-	// in the same statement) but was never selected or enforced
-	// anywhere: a rule set on a drawing did nothing, not on the HTTP
-	// list and not over the WebSocket feed. ListDrawings now selects
-	// and enforces it (drawing_repository.go, matching ListMarkers'
-	// predicate) and the WS publisher now honors it too (routes.go's
-	// mapEventPublisherAdapter).
+	// allow/deny overrides. Must be selected and enforced by ListDrawings
+	// (drawing_repository.go, matching ListMarkers) and by the WS publisher
+	// (routes.go's mapEventPublisherAdapter), or a rule set on a drawing
+	// silently does nothing.
 	VisibilityRules *string   `json:"visibility_rules,omitempty"`
 	CreatedBy       *string   `json:"created_by,omitempty"`
 	FoundryID       *string   `json:"foundry_id,omitempty"`
@@ -62,14 +58,9 @@ type CreateDrawingInput struct {
 // NOT a data field, so it stays a plain pointer.
 //
 // PARTIAL update: absent preserves, explicit null clears, present replaces
-// (contract ruled 2026-08-07, sweep R4; ADR-054 #6 — this struct shares
-// UpdateTokenInput's shape and its unaudited history exactly). Before this
-// every field but Points/StrokeColor/StrokeWidth/Visibility was assigned
-// unguarded (`d.FillColor = input.FillColor`, `d.Rotation = input.Rotation`,
-// …), so a caller sending only {points} to reshape a freehand stroke wiped
-// its fill, its text content, its font size and its rotation on every call.
-// No shipped caller does this today, but the route is reachable via syncapi
-// (a Foundry-side drawing edit) with nothing stopping it.
+// (see .ai/conventions.md's partial-update contract; same shape as
+// UpdateTokenInput). A caller sending only {points} to reshape a freehand
+// stroke must not wipe fill, text content, font size or rotation.
 type UpdateDrawingInput struct {
 	Points            patch.Field[json.RawMessage]
 	StrokeColor       patch.Field[string]
@@ -159,19 +150,14 @@ type CreateTokenInput struct {
 // NOT a data field, so it stays a plain pointer.
 //
 // PARTIAL update: absent preserves, explicit null clears, present replaces
-// (contract ruled 2026-08-07, sweep R4; ADR-054 #6). Before this every field
-// but Name was assigned unguarded — including fields that were ALREADY a Go
-// pointer (Bar1Value, AuraRadius, ImagePath, …): a plain *T bound from JSON
-// cannot tell "the caller omitted this key" from "the caller sent null", so
-// the pointer type alone never protected anything. A drag PUT carrying only
-// {x, y} zeroed IsHidden, IsLocked, both HP bars, and every aura/light/
-// vision field on every single move — a GM's hidden ambush monster went
-// visible to every player the instant someone nudged it half a pixel.
+// (see .ai/conventions.md's partial-update contract). Every field uses
+// patch.Field[T] rather than a plain *T, since a plain pointer bound from
+// JSON can't distinguish "key omitted" from "key sent null" — a drag PUT
+// carrying only {x, y} must not zero IsHidden, HP bars, or aura/light/vision.
 //
 // Name is the one field deliberately left a plain string: UpdateToken only
-// ever assigns it when the caller sends a non-empty value ("if input.Name
-// != \"\" { … }"), so an absent/blank name was already preserved before
-// this fix — it was never part of the blind-overwrite class.
+// assigns it when the caller sends a non-empty value, so an absent/blank
+// name is already preserved without patch.Field.
 type UpdateTokenInput struct {
 	Name              string
 	ImagePath         patch.Field[string]
@@ -241,15 +227,13 @@ type CreateLayerInput struct {
 // NOT a data field, so it stays a plain pointer.
 //
 // PARTIAL update: absent preserves, explicit null clears, present replaces
-// (contract ruled 2026-08-07, sweep R4; ADR-054 #6 — same shape as
-// UpdateTokenInput). Before this, SortOrder/IsVisible/IsLocked/Opacity were
-// assigned unguarded, so reordering the layer stack (a SortOrder-only PUT)
-// silently turned every OTHER layer's visibility and lock state off. No
-// shipped caller does this today, but the route is reachable via syncapi.
+// (see .ai/conventions.md's partial-update contract). A SortOrder-only PUT
+// must not silently reset the other patch.Field members' visibility/lock
+// state.
 //
 // Name is deliberately left a plain string: UpdateLayer only ever assigns
-// it when the caller sends a non-empty value, so an absent/blank name was
-// already preserved before this fix.
+// it when the caller sends a non-empty value, so an absent/blank name is
+// already preserved.
 type UpdateLayerInput struct {
 	Name              string
 	SortOrder         patch.Field[int]

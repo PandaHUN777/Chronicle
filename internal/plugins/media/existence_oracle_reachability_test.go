@@ -1,23 +1,10 @@
-// existence_oracle_reachability_test.go is a REACHABILITY test for the
-// audit finding recorded at
-// .ai/designs/2026-09-12-security-audit-findings.md (UNTESTED section):
-// "internal/plugins/media/handler.go:272 — a private campaign's file
-// answers 403 to an anonymous caller while an unknown id answers 404. Two
-// distinguishable responses is an existence oracle." The doc also records
-// a claimed mitigation — a defense-in-depth branch ~17 lines below the 403
-// that deliberately returns not-found for exactly this case — but says
-// that branch is UNREACHABLE whenever a signer is configured, which is
-// always true in production (app/routes.go wires SetURLSigner whenever
-// signingSecret != "", and the secret is auto-generated when unset — there
-// is no deploy path that leaves h.signer nil).
-//
-// This test drives the REAL, exported Handler.Serve — the actual HTTP
-// entrypoint GET /media/:id is routed to — never checkMediaAccess
-// directly and never a reimplementation of the branch order. It asserts
-// the CORRECT behaviour (an anonymous, unauthenticated caller must not be
-// able to tell "this id exists but is private" from "no such id" via
-// status code alone). A failing assertion here is proof the oracle is
-// reachable in the shipped configuration, not a design opinion.
+// existence_oracle_reachability_test.go pins that an anonymous,
+// unauthenticated caller cannot tell "this id exists but is private" from
+// "no such id" via status code alone, for a real GET /media/:id request
+// (with a signer configured, as production always has). It drives the
+// real, exported Handler.Serve rather than checkMediaAccess directly, so a
+// failing assertion is proof the oracle is reachable in the shipped
+// configuration.
 package media
 
 import (
@@ -31,24 +18,14 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/apperror"
 )
 
-// --- Finding 1 companion: end-to-end Serve() check for the public-campaign
-// carve-out (.ai/designs/2026-09-12-security-audit-findings.md, UNTESTED:
-// "on a public campaign `allowUnsignedAccess` returns true for every
-// file... Any media id in a public campaign is readable by the internet").
-// The package already has unit coverage of this exact scenario at the
-// checkMediaAccess level (viewer_binding_test.go:
-// TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied) — this
-// test does not duplicate that reasoning, it drives one level higher,
-// through the real exported Handler.Serve, to confirm the fix holds at
-// the actual HTTP entrypoint and not only in the internal method.
+// --- End-to-end Serve() check for the public-campaign carve-out (ADR-058
+// decision 7), complementing the checkMediaAccess-level coverage in
+// viewer_binding_test.go's TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied
+// — this drives the real exported Handler.Serve instead.
 
 // idKeyedMediaService is a MediaService double whose GetByID resolves from
-// a small map and falls back to the exact same 404 the real service
-// returns for an unmapped id (service.go's GetByID -> repo.FindByID, see
-// TestGetByID_NotFound in service_test.go). Everything else is inherited
-// from fakeAccessMediaService (entity_visibility_access_test.go, same
-// package) — Serve never reaches those methods for a request denied
-// before c.File is called.
+// a small map and falls back to the same 404 the real service returns for
+// an unmapped id. Everything else is inherited from fakeAccessMediaService.
 type idKeyedMediaService struct {
 	fakeAccessMediaService
 	files map[string]*MediaFile
@@ -62,12 +39,9 @@ func (f *idKeyedMediaService) GetByID(ctx context.Context, id string) (*MediaFil
 }
 
 // serveRequestAnonymous drives Handler.Serve for a completely anonymous
-// caller — no session cookie, no query string at all (no `sig`/`expires`,
-// the shape of a bare <img src="/media/ID"> request with no signed link).
-// It returns the *apperror.AppError Serve hands back; app/app.go's real
-// errorHandler maps AppError.Code straight onto the wire status
-// (`code = appErr.Code`, pinned by error_handler_api_type_test.go), so
-// Code here is exactly the HTTP status a real client would see.
+// caller (no session cookie, no query string) and returns the
+// *apperror.AppError Serve hands back. AppError.Code is the exact HTTP
+// status a real client would see (error_handler_api_type_test.go).
 func serveRequestAnonymous(t *testing.T, h *Handler, id string) *apperror.AppError {
 	t.Helper()
 	e := echo.New()
@@ -88,14 +62,10 @@ func serveRequestAnonymous(t *testing.T, h *Handler, id string) *apperror.AppErr
 	return appErr
 }
 
-// TestServe_ExistenceOracle_PrivateCampaign_AnonymousCaller is the
-// reachability verdict for handler.go:272. It wires a real signer
-// (h.signer != nil), matching production exactly, and compares the status
-// Serve returns for:
-//   - a real file that exists and belongs to a private campaign, and
-//   - an id that does not exist at all,
-//
-// both requested unsigned, anonymously. They must be indistinguishable.
+// TestServe_ExistenceOracle_PrivateCampaign_AnonymousCaller wires a real
+// signer (matching production) and compares the status Serve returns, for
+// an anonymous unsigned request, between a real file in a private campaign
+// and an id that does not exist. The two must be indistinguishable.
 func TestServe_ExistenceOracle_PrivateCampaign_AnonymousCaller(t *testing.T) {
 	h := &Handler{
 		signer:        NewURLSigner("test-secret"),
@@ -130,13 +100,10 @@ func TestServe_ExistenceOracle_PrivateCampaign_AnonymousCaller(t *testing.T) {
 	}
 }
 
-// TestServe_PublicCampaign_DmOnlyArtwork_AnonymousCaller_Denied is the
-// finding-1 reachability check, driven through the real Handler.Serve HTTP
-// entrypoint rather than checkMediaAccess directly. A public campaign, a
-// file referenced only by a dm_only entity, and a fully anonymous,
-// unsigned request (the exact shape the audit finding describes: "any
-// media id in a public campaign... readable by the internet"). Correct
-// (ADR-058 decision 7) behaviour is denial.
+// TestServe_PublicCampaign_DmOnlyArtwork_AnonymousCaller_Denied drives the
+// real Handler.Serve entrypoint (not checkMediaAccess directly): a public
+// campaign's file referenced only by a dm_only entity must deny a fully
+// anonymous, unsigned request (ADR-058 decision 7).
 func TestServe_PublicCampaign_DmOnlyArtwork_AnonymousCaller_Denied(t *testing.T) {
 	campaignID := "camp-public-e2e"
 	dmOnlyArt := &MediaFile{

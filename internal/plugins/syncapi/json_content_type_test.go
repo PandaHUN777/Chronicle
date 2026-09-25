@@ -1,5 +1,4 @@
-// Tests for the RequireJSONContentType middleware introduced by
-// C-SEC-CHUNK-3-AMENDED (operator decision D-C3.1 — sub-group skip).
+// Tests for the RequireJSONContentType middleware.
 //
 // The middleware sits on the /api/v1/* JSON group and rejects state-
 // changing requests whose Content-Type is anything other than
@@ -153,14 +152,11 @@ func TestRequireJSONContentType_SafeMethodsPassThrough(t *testing.T) {
 	}
 }
 
-// TestRequireJSONContentType_SubGroupSkipPattern pins the wiring
-// invariant operator decision D-C3.1 requires: a sub-group that
-// re-uses /test as its prefix but DOES NOT include
-// RequireJSONContentType() must accept multipart/form-data. This is
-// the structural equivalent of v1Multipart in RegisterAPIRoutes — if
+// TestRequireJSONContentType_SubGroupSkipPattern pins that a sub-group
+// omitting RequireJSONContentType() still accepts multipart/form-data —
+// the structural equivalent of v1Multipart in RegisterAPIRoutes. If
 // someone accidentally also gates the multipart sub-group with this
-// middleware, UploadMedia returns 415 in production. This test
-// asserts the negative-by-construction.
+// middleware, UploadMedia returns 415 in production.
 func TestRequireJSONContentType_SubGroupSkipPattern(t *testing.T) {
 	e := echo.New()
 	e.HTTPErrorHandler = func(err error, c echo.Context) {

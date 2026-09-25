@@ -25,10 +25,8 @@ type EntityCampaignChecker interface {
 // Wraps entities.EntityService.FilterViewableEntityIDs — the SAME method the
 // relations widget uses to hide private-entity targets — so the sessions
 // plugin never imports the entities repository (rule 8) while still deferring
-// to a single real policy rather than re-deriving one from is_private alone.
-//
-// Used to keep a session's linked-entity list from naming a private entity to
-// a viewer who could not otherwise see it (ADR-055 rule 3).
+// to a single real policy. Keeps a session's linked-entity list from naming a
+// private entity to a viewer who could not otherwise see it (ADR-055 rule 3).
 type EntityVisibilityFilter interface {
 	FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error)
 }
@@ -56,7 +54,7 @@ type SessionService interface {
 
 	// RSVP tokens for email-based responses. Redeem is split into a read-only
 	// validate (GET confirm page) + a state-changing apply (POST) so a mail
-	// prefetcher's GET never records an RSVP (C-SCHED-P3 0b).
+	// prefetcher's GET never records an RSVP.
 	CreateRSVPTokens(ctx context.Context, sessionID, userID string) (acceptToken, declineToken string, err error)
 	ValidateRSVPToken(ctx context.Context, tokenStr string) (*RSVPToken, error)
 	ApplyRSVPToken(ctx context.Context, tokenStr string) (*RSVPToken, error)
@@ -67,15 +65,15 @@ type SessionService interface {
 	UnlinkEntity(ctx context.Context, sessionID, entityID string) error
 	ListSessionEntities(ctx context.Context, sessionID string) ([]SessionEntity, error)
 	// FilterEntitiesForViewer removes session-linked entities a given viewer
-	// may not see. Owners and Scribes (role >= 2) see the list unchanged —
-	// exactly what they saw before this filter existed; only a Player or
-	// anonymous viewer (role < 2) is narrowed, via EntityVisibilityFilter.
-	// Hidden content is ABSENT from the returned slice, never a placeholder
-	// or a count (ADR-055 rule 3). Fails CLOSED (returns nothing) if no
-	// filter is wired, rather than risk showing a name it cannot check.
+	// may not see. Owners and Scribes (role >= 2) see the list unchanged; a
+	// Player or anonymous viewer (role < 2) is narrowed via
+	// EntityVisibilityFilter. Hidden content is ABSENT from the returned
+	// slice, never a placeholder or a count (ADR-055 rule 3). Fails CLOSED
+	// (returns nothing) if no filter is wired, rather than risk showing a
+	// name it cannot check.
 	FilterEntitiesForViewer(ctx context.Context, campaignID string, ents []SessionEntity, role int, userID string) ([]SessionEntity, error)
 
-	// Availability scheduler (C-SCHED-P1). See availability_service.go.
+	// Availability scheduler. See availability_service.go.
 	GetMyAvailability(ctx context.Context, campaignID, userID string) (*MyAvailabilityResponse, error)
 	SaveMyAvailability(ctx context.Context, campaignID, userID string, req SaveAvailabilityRequest) error
 	ListMyExceptions(ctx context.Context, campaignID, userID string) ([]AvailabilityException, error)
@@ -83,7 +81,7 @@ type SessionService interface {
 	ReplaceMyDayExceptions(ctx context.Context, campaignID, userID string, req ReplaceDayExceptionsRequest) error
 	// AddMyAvailableWindows records temporary offered availability for specific
 	// dates, composing each day so the offer never erases the member's usual
-	// hours (C-CAL-RSVP-P2).
+	// hours.
 	AddMyAvailableWindows(ctx context.Context, campaignID, userID, tz string, windows []AvailabilityWindowDTO) error
 	DeleteMyException(ctx context.Context, campaignID, userID, exceptionID string) error
 	// CampaignMemberZones returns the zone each member set on the availability
@@ -91,16 +89,14 @@ type SessionService interface {
 	CampaignMemberZones(ctx context.Context, campaignID string) (map[string]string, error)
 	BuildOverlay(ctx context.Context, campaignID string, members []overlayMemberInput, weekStart, viewerTZ string, includeDetail bool) (*WeekOverlay, error)
 	// AvailabilityAnswerStatuses / NudgeUnansweredAvailability are the
-	// answered-or-not pair (C-RSVP-P9). Zero availability rows has always meant
-	// "unavailable", so a member who never opened the page was indistinguishable
-	// from one who is genuinely never free; these two report the difference and
-	// let the Director ask the silent ones, on an explicit press rather than a
-	// timer (no scheduled-job runner exists, and inventing one for a reminder
-	// would be infrastructure justified by a nicety).
+	// answered-or-not pair: zero availability rows always means "unavailable",
+	// so these two distinguish a member who never opened the page from one who
+	// is genuinely never free, and let the Director ask the silent ones on an
+	// explicit press (there is no scheduled-job runner in this product).
 	AvailabilityAnswerStatuses(ctx context.Context, campaignID string, members []overlayMemberInput) ([]AvailabilityAnswerStatus, error)
 	NudgeUnansweredAvailability(ctx context.Context, campaignID, link string, members []overlayMemberInput) (*NudgeResult, error)
 
-	// Slot proposals + responses (C-SCHED-P2). See proposals_service.go.
+	// Slot proposals + responses. See proposals_service.go.
 	CreateProposal(ctx context.Context, campaignID, createdBy string, req CreateProposalRequest) (*SlotProposal, error)
 	GetProposalView(ctx context.Context, campaignID, proposalID, viewerID, viewerTZ string, includeDetail bool) (*ProposalView, error)
 	ListProposalSummaries(ctx context.Context, campaignID, viewerID string) ([]ProposalSummary, error)
@@ -108,27 +104,26 @@ type SessionService interface {
 	CreateProposalTokens(ctx context.Context, optionID, userID string) (map[string]string, error)
 	// Emailed-token redeem is split into a read-only validate (used by the GET
 	// confirm page) and a state-changing apply (POST only), so a mail prefetcher's
-	// GET never records a response; validate also enforces the proposal is still
-	// open (C-SCHED-P3 0a/0b).
+	// GET never records a response; validate also enforces the proposal is
+	// still open.
 	ValidateProposalToken(ctx context.Context, tokenStr string) (*ProposalTokenContext, error)
 	ApplyProposalToken(ctx context.Context, tokenStr string) (*ProposalTokenContext, error)
 	// ConfirmProposalWinner (Scribe+) marks the winning option, closes the
-	// proposal, and creates a planned session from the winning UTC instant
-	// (C-SCHED-P3).
+	// proposal, and creates a planned session from the winning UTC instant.
 	ConfirmProposalWinner(ctx context.Context, campaignID, proposalID, optionID, confirmedBy, confirmerTZ string) (*Session, error)
 
-	// Scheduler-scoped notifications (C-SCHED-P2). Writes are driven by the
-	// handler (which enumerates members / resolves names); the service owns the
+	// Scheduler-scoped notifications. Writes are driven by the handler (which
+	// enumerates members / resolves names); the service owns the
 	// payload/link/message construction. See notifications_service.go.
 	NotifyProposalCreated(ctx context.Context, campaignID, proposalID, title string, recipientIDs []string) error
 	NotifyProposalResponse(ctx context.Context, campaignID, proposalID, responderName, response string) error
-	// NotifyUsers is the generic fan-in the notifications store was always
-	// documented to support (T-B2). Added by C-CAL-RSVP-P1 so a feature outside
-	// the scheduler can write a bell notification without the scheduler growing
-	// a method per feature — and without that feature reaching the repository.
+	// NotifyUsers is the generic fan-in the notifications store supports, so a
+	// feature outside the scheduler can write a bell notification without the
+	// scheduler growing a method per feature and without that feature
+	// reaching the repository.
 	NotifyUsers(ctx context.Context, userIDs []string, campaignID, ntype, message, link string) error
-	// NotifyProposalConfirmed tells everyone who responded that the winning slot
-	// was picked, linking to the new session (C-SCHED-P3, reuses the P2 store).
+	// NotifyProposalConfirmed tells everyone who responded that the winning
+	// slot was picked, linking to the new session.
 	NotifyProposalConfirmed(ctx context.Context, campaignID, proposalID, sessionID string) error
 	ListMyNotifications(ctx context.Context, userID string, limit int) ([]Notification, error)
 	CountMyUnreadNotifications(ctx context.Context, userID string) (int, error)
@@ -294,10 +289,9 @@ func (s *sessionService) UpdateSession(ctx context.Context, id string, input Upd
 	// Validate recurrence type. CreateSession only checks this when IsRecurring
 	// is set, but the update path validates unconditionally: the edit-session
 	// modal reads RecurrenceType into an Alpine `x-data` JS string regardless of
-	// IsRecurring, so an unvalidated value persisted here is a stored-XSS vector
-	// (C-SEC-XSS-JSATTR-SWEEP-R1 sink 2 — the JSON PUT handler binds the body
-	// unchecked). A nil type means "no recurrence" and is always allowed;
-	// jsEsc at the sink is the second layer of defense.
+	// IsRecurring, so an unvalidated value persisted here is a stored-XSS
+	// vector. A nil type means "no recurrence" and is always allowed; jsEsc at
+	// the sink is the second layer of defense.
 	if rt, ok := input.RecurrenceType.Get(); ok {
 		switch rt {
 		case RecurrenceWeekly, RecurrenceBiWeekly, RecurrenceMonthly, RecurrenceCustom:
@@ -439,13 +433,10 @@ func (s *sessionService) ListSessionEntities(ctx context.Context, sessionID stri
 // that gate is enforced before the list reaches a template.
 //
 // Owners and Scribes (role >= permissions.RoleScribe) get the list back
-// unchanged: that is what every viewer saw before this filter existed, and
-// narrowing it further (e.g. to match a custom-visibility grant a Scribe
-// isn't on) is a separate, undecided product question, not this fix's scope.
-// A Player or anonymous viewer (role < RoleScribe) is checked against the
-// SAME per-entity visibility policy the entities plugin itself applies, via
-// EntityVisibilityFilter — never a cheaper approximation, so a session page
-// can't disagree with the entity page about what is hidden.
+// unchanged. A Player or anonymous viewer (role < RoleScribe) is checked
+// against the SAME per-entity visibility policy the entities plugin itself
+// applies, via EntityVisibilityFilter — never a cheaper approximation, so a
+// session page can't disagree with the entity page about what is hidden.
 func (s *sessionService) FilterEntitiesForViewer(ctx context.Context, campaignID string, ents []SessionEntity, role int, userID string) ([]SessionEntity, error) {
 	if role >= permissions.RoleScribe || len(ents) == 0 {
 		return ents, nil
@@ -544,9 +535,9 @@ func (s *sessionService) CreateRSVPTokens(ctx context.Context, sessionID, userID
 	return acceptToken, declineToken, nil
 }
 
-// ValidateRSVPToken resolves + checks an RSVP token WITHOUT applying it
-// (C-SCHED-P3 0b). Used by the GET confirm page so a mail prefetcher's fetch is a
-// pure read; the POST (ApplyRSVPToken) is what records the RSVP.
+// ValidateRSVPToken resolves + checks an RSVP token WITHOUT applying it. Used
+// by the GET confirm page so a mail prefetcher's fetch is a pure read; the
+// POST (ApplyRSVPToken) is what records the RSVP.
 func (s *sessionService) ValidateRSVPToken(ctx context.Context, tokenStr string) (*RSVPToken, error) {
 	token, err := s.repo.FindRSVPToken(ctx, tokenStr)
 	if err != nil {
@@ -562,19 +553,15 @@ func (s *sessionService) ValidateRSVPToken(ctx context.Context, tokenStr string)
 }
 
 // ApplyRSVPToken validates, CONSUMES, then applies an RSVP token. State-changing,
-// so it only runs from the POST route (C-SCHED-P3 0b — no GET-driven auto-RSVP
-// from link prefetchers).
+// so it only runs from the POST route (no GET-driven auto-RSVP from link
+// prefetchers).
 //
-// THE ORDER IS THE POINT. It used to apply first and consume afterwards, with a
-// consume that could not report having consumed nothing — so two submissions of
-// one single-use link both validated, both applied, and neither knew it had
-// lost. Consuming FIRST makes the atomic `used_at IS NULL` UPDATE the gate: the
-// loser is refused before it can write anything.
-//
-// Consuming first also means a failure BETWEEN the two steps burns the link
-// without recording the RSVP. That trade is deliberate and it is the right way
-// round: the member is shown the "already used" page and can still answer in
-// the app, whereas the other order lets a link be replayed indefinitely.
+// Order matters: consuming first makes the atomic `used_at IS NULL` UPDATE
+// the gate, so on two submissions of one single-use link the loser is
+// refused before it can write anything. A failure between the two steps
+// burns the link without recording the RSVP — the right trade, since the
+// member can still answer in the app, whereas applying first would let a
+// link be replayed indefinitely.
 func (s *sessionService) ApplyRSVPToken(ctx context.Context, tokenStr string) (*RSVPToken, error) {
 	token, err := s.ValidateRSVPToken(ctx, tokenStr)
 	if err != nil {
@@ -614,14 +601,13 @@ func (s *sessionService) generateNextOccurrence(ctx context.Context, completed *
 	}
 
 	next := &Session{
-		ID:                  generateUUID(),
-		CampaignID:          completed.CampaignID,
-		Name:                completed.Name,
-		Summary:             completed.Summary,
-		ScheduledDate:       &nextDate,
-		// Carry the wall-clock time forward so a recurring session keeps its slot
-		// (e.g. every Saturday at 7:00 PM) — recurrence parity for C-SCHED-P3; only
-		// the date advances.
+		ID:            generateUUID(),
+		CampaignID:    completed.CampaignID,
+		Name:          completed.Name,
+		Summary:       completed.Summary,
+		ScheduledDate: &nextDate,
+		// Carry the wall-clock time forward so a recurring session keeps its
+		// slot (e.g. every Saturday at 7:00 PM); only the date advances.
 		ScheduledTime:       completed.ScheduledTime,
 		Status:              StatusPlanned,
 		IsRecurring:         true,

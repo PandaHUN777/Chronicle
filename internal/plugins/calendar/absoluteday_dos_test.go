@@ -5,19 +5,15 @@ import (
 	"time"
 )
 
-// C-SWEEP-R4 stage 21 — backend/cal-worldstate-year-dos.
-//
-// `?year` on the world-state seed is unauthenticated and unbounded, and it
-// reached Calendar.AbsoluteDay, whose year term used to be a loop from 0. The
-// two tests below are the pair that keeps the fix honest: the first proves the
-// closed form still computes the loop's exact number for every shape of
-// calendar the model can express, the second proves it is no longer linear.
+// This file pins the fix for a CPU-exhaustion DoS: `?year` on the world-state
+// seed is unauthenticated and unbounded, and reaches Calendar.AbsoluteDay,
+// whose year term must stay closed-form rather than a loop from 0. The tests
+// below prove the closed form matches the loop's exact number for every shape
+// of calendar the model can express, and that it is no longer linear.
 
-// absDayLoopReference is the ORIGINAL O(year) implementation, kept here as the
-// oracle. The closed form is only allowed to be faster — never different — so
-// the test asserts equality against this rather than against baked-in numbers,
-// which would not have caught a leap-count off-by-one at an offset the author
-// happened not to tabulate.
+// absDayLoopReference is the original O(year) implementation, kept as the
+// oracle: the closed form must match it exactly, so tests assert equality
+// against this rather than against baked-in numbers.
 func absDayLoopReference(c *Calendar, year, month, day int) int {
 	total := 0
 	for y := 0; y < year; y++ {
@@ -95,16 +91,10 @@ func TestAbsoluteDayClosedFormMatchesLoop(t *testing.T) {
 }
 
 // absDayWithinBudget runs work and reports whether it finished inside budget.
-//
-// THE GOROUTINE IS THE POINT, not ceremony. A linear AbsoluteDay at
-// year=2000000000 takes 53 s per call, so a plain `start := time.Now(); work();
-// time.Since(start) > budget` check does not FAIL when the regression returns —
-// it HANGS until `go test`'s own deadline shoots it, half an hour of CI later,
-// with a stack dump instead of the sentence that says what broke. Racing the
-// work against a timer turns the regression into a fast, legible failure. The
-// abandoned goroutine finishes into a buffered channel nobody reads and is
-// collected when the process exits; that is acceptable in a test whose only
-// other option is to wait for it.
+// It races work against a timer, rather than measuring elapsed time after the
+// fact, so a regression to linear time fails fast instead of hanging until
+// `go test`'s own deadline. The abandoned goroutine, if any, is collected
+// when the process exits.
 func absDayWithinBudget(budget time.Duration, work func() int) (int, time.Duration, bool) {
 	type result struct {
 		sink    int
@@ -121,13 +111,10 @@ func absDayWithinBudget(budget time.Duration, work func() int) (int, time.Durati
 	}
 }
 
-// TestAbsoluteDayClosedFormIsNotLinear is the DoS regression proper.
-//
-// It asserts a WALL-CLOCK BUDGET rather than an instruction count because the
-// defect was wall-clock: one unauthenticated GET pinned a core for the better
-// part of a minute. The budget is loose (a full second for ten thousand calls
-// at the largest year) so a loaded CI box cannot flake it — the loop is six
-// orders of magnitude away from passing, not a factor of two.
+// TestAbsoluteDayClosedFormIsNotLinear is the DoS regression: it asserts a
+// wall-clock budget, since the defect was wall-clock (an unauthenticated
+// `?year` could pin a core for the better part of a minute). The budget is
+// loose so a loaded CI box cannot flake it.
 func TestAbsoluteDayClosedFormIsNotLinear(t *testing.T) {
 	cal := dosFixtureCalendar(4, 0)
 
@@ -154,13 +141,10 @@ func TestAbsoluteDayClosedFormIsNotLinear(t *testing.T) {
 	}
 }
 
-// TestAbsoluteDayHugeYearIsExact guards the half of the fix a timing budget
-// cannot see: that the fast path is still ARITHMETICALLY right at the sizes
-// that motivated it. These totals are derived by hand from the fixture
-// (12 months summing to 366 common days, one leap day every 4 years from
-// year 0, month 6 → five whole months of 31+30+31+30+31 in a leap year, day 15)
-// rather than captured from the implementation, so a regression in the closed
-// form cannot quietly rewrite its own expectation.
+// TestAbsoluteDayHugeYearIsExact pins the closed form's arithmetic at large
+// years. The expected totals are derived by hand from the fixture, not
+// captured from the implementation, so a regression can't rewrite its own
+// expectation.
 func TestAbsoluteDayHugeYearIsExact(t *testing.T) {
 	cal := dosFixtureCalendar(4, 0)
 	cases := []struct {

@@ -15,10 +15,10 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/widgets/tags"
 )
 
-// Service is the top-level entry point. PR-B's campaigns handler
-// constructs one of these per request and calls Generate. The
-// dependencies are narrow Service interfaces (see interfaces.go)
-// so the orchestrator is testable without a database.
+// Service is the top-level entry point. The campaigns handler constructs
+// one of these per request and calls Generate. Dependencies are narrow
+// interfaces (see interfaces.go) so the orchestrator is testable without a
+// database.
 type Service struct {
 	Entities  EntityLister
 	Notes     NoteLister
@@ -49,21 +49,18 @@ func NewService(
 	}
 }
 
-// Generate runs every enabled Category renderer and returns the
-// assembled markdown. The token-estimate placeholder in the header
-// is substituted with the final count once the body is rendered.
+// Generate runs every enabled Category renderer and returns the assembled
+// markdown. The token-estimate placeholder in the header is substituted
+// with the final count once the body is rendered.
 //
-// Resilience: a single category's failure never aborts the export. The
-// bad section is logged and replaced with a short "could not be exported"
-// note, then the remaining categories render as normal. This is what makes
-// "export everything" degrade to a partial document instead of the generic
-// error modal the owner previously hit when one private entity carried
-// HTML the converter rejected. (Per-field conversion failures are absorbed
-// even lower down, in bodyOrSkip.)
+// A single category's failure never aborts the export: the bad section is
+// logged and replaced with a short "could not be exported" note, so the
+// export degrades to a partial document instead of failing outright.
+// (Per-field conversion failures are absorbed lower down, in bodyOrSkip.)
 //
-// Caller responsibility: ownerID + campaignID are the operator's
-// authenticated identity; this method trusts them. The owner-gate
-// check lives in the campaigns handler (PR-B) before this is called.
+// ownerID and campaignID are the operator's authenticated identity; this
+// method trusts them — the owner-gate check happens in the campaigns
+// handler before this is called.
 func (s *Service) Generate(ctx context.Context, campaignName, ownerID, campaignID string, opts Options) (string, error) {
 	if campaignID == "" {
 		return "", fmt.Errorf("aiexport: campaignID required")
@@ -75,10 +72,7 @@ func (s *Service) Generate(ctx context.Context, campaignName, ownerID, campaignI
 		section, err := s.renderCategory(ctx, c, ownerID, campaignID, opts)
 		if err != nil {
 			// One category's lister/DB failure must not blank the whole
-			// export. Log for triage, drop a visible note so the owner
-			// knows the section was skipped, and continue. (The calendar
-			// branch already skips on error; this extends the same
-			// tolerance to every category.)
+			// export: log for triage, drop a visible note, and continue.
 			slog.Warn("aiexport: skipping category after render error",
 				slog.String("category", string(c)),
 				slog.String("campaign_id", campaignID),
@@ -113,9 +107,7 @@ func (s *Service) renderCategory(
 		if s.Entities == nil {
 			return "", fmt.Errorf("entities lister not wired")
 		}
-		// Page through the whole campaign. A single PerPage:10000 request
-		// was silently clamped to 24 by entityService.List, so "export
-		// everything" only ever emitted the first 24 entities.
+		// Page through the whole campaign; see listAllEntities for why.
 		ents, err := s.listAllEntities(ctx, campaignID, role, ownerID)
 		if err != nil {
 			return "", err
@@ -128,10 +120,9 @@ func (s *Service) renderCategory(
 			return "", err
 		}
 
-		// Per operator decision (2026-05-26 AskUserQuestion 1): maps OUT
-		// of v1. Per decision 2 (relations both endpoints): one query per
-		// entity, accept the N+1 because entity count is bounded (100-300
-		// per typical campaign per scoping report §1).
+		// Relations rendered on both endpoints means one query per entity;
+		// the N+1 is accepted because entity count is bounded (100-300 per
+		// typical campaign).
 		relByEntity := map[string][]relations.Relation{}
 		if s.Relations != nil {
 			for _, e := range ents {
@@ -170,13 +161,10 @@ func (s *Service) renderCategory(
 		return RenderNotes(ctx, list, opts)
 
 	case CategoryCalendarEvents:
-		// CALV5-PLACEHOLDER: this case loaded the campaign's calendar and every
-		// event on it, then grouped them by in-world month (RenderCalendarEvents).
-		// The calendar is being rebuilt (V5) and its tables are dropped.
-		//
-		// It says so instead of returning "" — an empty section reads as "this
-		// campaign has no events", which is a different and false statement, and
-		// the operator would carry it into whatever they paste the export into.
+		// CALV5-PLACEHOLDER: V5 must restore loading the campaign's calendar
+		// and grouping events by in-world month (RenderCalendarEvents). Until
+		// then this says so explicitly rather than returning "", which would
+		// falsely read as "this campaign has no events".
 		return "# Calendar Events\n\n_The calendar is being rebuilt (V5). No calendar" +
 			" events are available for export._\n\n", nil
 
@@ -237,12 +225,11 @@ const exportPageSize = 100
 const exportMaxPages = 500
 
 // listAllEntities pages through every entity visible at the given role and
-// returns them all. It exists because a single request for PerPage:10000 was
-// clamped to 24 by entityService.List, silently truncating "export
-// everything" to the first 24 entities. Rows are de-duplicated by ID so a
-// same-name reorder at a page boundary (the default ORDER BY is name-only)
-// can't double-count, and paging stops as soon as a page is short or adds
-// nothing new.
+// returns them all, since a single request larger than exportPageSize would
+// be silently clamped to 24 by entityService.List (see exportPageSize).
+// Rows are de-duplicated by ID so a same-name reorder at a page boundary
+// (ORDER BY is name-only) can't double-count; paging stops as soon as a
+// page is short or adds nothing new.
 func (s *Service) listAllEntities(ctx context.Context, campaignID string, role int, ownerID string) ([]entities.Entity, error) {
 	seen := make(map[string]struct{})
 	var all []entities.Entity

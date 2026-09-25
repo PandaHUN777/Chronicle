@@ -278,23 +278,15 @@ type CampaignSyncStats struct {
 	RecentErrors  int        `json:"recent_errors"`
 }
 
-// --- Calendar Date Beacon (C-SYNC-DATE-BEACON) ---
+// --- Calendar Date Beacon ---
 
-// CalendarDateBeacon records the date Foundry last SAW when a Bearer-authed
-// module read GET /calendar/date. Deliberately named "served", not
-// "applied" or "synced": this is a diagnostic echo of what the module last
-// read, never a claim about what it did with it. One row per campaign — see
-// migrations/005_calendar_date_beacon.up.sql for why a new table was
-// needed (no existing syncapi row is per-campaign grain).
-//
-// C-SYNC-APPLIED-BEACON (migrations/006_calendar_date_beacon_applied.up.sql)
-// extends the same row with the "applied" half: the date the module
-// actually applied to its own calendar after a confirm
-// (POST /calendar/date/confirm). Applied* fields are pointers because they
-// may be unset — either no confirm has ever landed for this campaign, or
-// (create-on-confirm case) a confirm arrived before any served-date GET,
-// so AppliedAt != nil is the "has this campaign ever confirmed" signal,
-// independent of whether Year/Month/Day (the served half) are populated.
+// CalendarDateBeacon records, per campaign, the date Foundry last SAW when a
+// Bearer-authed module read GET /calendar/date ("served"), and separately
+// the date it last actually applied via POST /calendar/date/confirm
+// ("applied"). Applied* fields are pointers because they may be unset — no
+// confirm has landed yet, or one arrived before any served-date GET — so
+// AppliedAt != nil is the "has this campaign ever confirmed" signal,
+// independent of whether the served fields are populated.
 type CalendarDateBeacon struct {
 	CampaignID string    `json:"campaign_id"`
 	Year       int       `json:"last_served_year"`

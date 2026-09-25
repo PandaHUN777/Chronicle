@@ -35,7 +35,7 @@ type mockSessionRepo struct {
 	createRSVPTokenFn     func(ctx context.Context, token *RSVPToken) error
 	findRSVPTokenFn       func(ctx context.Context, tokenStr string) (*RSVPToken, error)
 	markRSVPTokenUsedFn   func(ctx context.Context, tokenStr string) error
-	// Availability (C-SCHED-P1).
+	// Availability.
 	listUserAvailabilityFn          func(ctx context.Context, campaignID, userID string) ([]AvailabilityBlock, error)
 	listCampaignAvailabilityFn      func(ctx context.Context, campaignID string) ([]AvailabilityBlock, error)
 	replaceUserAvailabilityFn       func(ctx context.Context, campaignID, userID, tz string, blocks []AvailabilityBlock) error
@@ -46,7 +46,7 @@ type mockSessionRepo struct {
 	countUserExceptionsFn           func(ctx context.Context, campaignID, userID string) (int, error)
 	replaceDayExceptionsFn          func(ctx context.Context, campaignID, userID, onDate string, excs []AvailabilityException) error
 	deleteExceptionFn               func(ctx context.Context, campaignID, userID, exceptionID string) error
-	// Proposals + notifications (C-SCHED-P2).
+	// Proposals + notifications.
 	createProposalFn          func(ctx context.Context, p *SlotProposal, options []SlotProposalOption) error
 	getProposalFn             func(ctx context.Context, campaignID, proposalID string) (*SlotProposal, []SlotProposalOption, error)
 	findProposalByIDFn        func(ctx context.Context, proposalID string) (*SlotProposal, error)
@@ -192,7 +192,7 @@ func (m *mockSessionRepo) MarkRSVPTokenUsed(ctx context.Context, tokenStr string
 	return nil
 }
 
-// --- Availability (C-SCHED-P1) ---
+// --- Availability ---
 
 func (m *mockSessionRepo) ListUserAvailability(ctx context.Context, campaignID, userID string) ([]AvailabilityBlock, error) {
 	if m.listUserAvailabilityFn != nil {
@@ -264,7 +264,7 @@ func (m *mockSessionRepo) ReplaceDayExceptions(ctx context.Context, campaignID, 
 	return nil
 }
 
-// --- Proposal + notification mock stubs (C-SCHED-P2). ---
+// --- Proposal + notification mock stubs ---
 
 func (m *mockSessionRepo) CreateProposal(ctx context.Context, p *SlotProposal, options []SlotProposalOption) error {
 	if m.createProposalFn != nil {

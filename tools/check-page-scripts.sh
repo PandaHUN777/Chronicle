@@ -3,45 +3,37 @@
 #
 # PAGE-SIDE <script src> RATCHET.
 #
-# THE RULE, AND WHY IT IS A RULE. The App layout renders `{children...}` inside
-# `<main id="main-content">`. Every sidebar link in internal/templates/layouts/app.templ
-# is `hx-boost="true" hx-target="#main-content" hx-select="#main-content"
-# hx-swap="innerHTML"`, and static/js/boot.js sets `htmx.config.allowScriptTags = false`.
-# At that setting htmx's makeFragment does not merely decline to EXECUTE script
-# tags in the swapped fragment — it REMOVES them from the DOM before the swap.
+# The App layout renders `{children...}` inside `<main id="main-content">`.
+# Every sidebar link in internal/templates/layouts/app.templ is
+# `hx-boost="true" hx-target="#main-content" hx-select="#main-content"
+# hx-swap="innerHTML"`, and static/js/boot.js sets
+# `htmx.config.allowScriptTags = false`. At that setting htmx's makeFragment
+# does not merely decline to execute script tags in the swapped fragment — it
+# removes them from the DOM before the swap. So a `<script src>` inside a
+# page templ is delivered on a direct page load and silently dropped when the
+# same page is reached through the sidebar.
 #
-# So a `<script src>` inside a page templ is delivered on a direct page load and
-# is NOT delivered when the same page is reached through the sidebar. The failure
-# is invisible: `<link rel=stylesheet>` in the same region is untouched by that
-# code path, so the page renders pixel-identically and simply does nothing. This
-# is the defect that shipped the Calendar Bench with a dead day card and a dead
-# Permissions button for anyone who navigated to it instead of typing the URL.
-#
-# THE FIX IS ALWAYS THE SAME: contribute the script to the plugin BODY-SCRIPT
-# REGISTRY (internal/app/routes.go's `pluginBodyScripts` →
+# The fix is always the same: contribute the script to the plugin body-script
+# registry (internal/app/routes.go's `pluginBodyScripts` →
 # layouts.SetPluginBodyScripts → internal/templates/layouts/base.templ), which
 # emits after `{children...}` — outside the swapped region, and therefore
-# identical on both navigation paths. Do NOT flip allowScriptTags (it is a
-# deliberate security posture) and do NOT put hx-boost="false" on the link (that
-# hides the defect on one route and leaves it on every other).
+# identical on both navigation paths. Do NOT flip allowScriptTags (a
+# deliberate security posture) and do NOT put hx-boost="false" on the link
+# (that hides the defect on one route and leaves it on every other).
 #
-# THIS GUARD IS A RATCHET, NOT AN AUDIT. It does not claim the survivors in
-# tools/page-script-allowlist.txt are all broken — whether a given one is
-# depends on where its templ renders and whether its module re-inits on
-# htmx:afterSettle. It claims only that the count may never grow. The sweep of
-# the survivors is tracked in issue #616 (C-HTMX-SCRIPT-SWEEP).
+# This guard is a RATCHET, not an audit: it does not claim the survivors in
+# tools/page-script-allowlist.txt are all broken, only that their count may
+# never grow. TODO(keyxmakerx/Chronicle#616): sweep the remaining survivors
+# into the body-script registry.
 #
-# WHOLE-TREE, NOT DIFF-SCOPED, and deliberately so. The sibling guards
-# (check-plugin-isolation.sh, check-v2-motion-discipline.sh) scope to the PR diff
-# because their baselines are unwritten. This one has a written baseline, so it
-# can do the stronger thing: it fails on a file that is not in the allowlist at
-# all, on a count above its allowlisted number, AND on a count BELOW it — because
-# a stale-high entry is slack in the ratchet, i.e. a hole a script can be put
-# back through without anything noticing.
+# Whole-tree, not diff-scoped, deliberately: unlike the sibling guards that
+# scope to the PR diff (unwritten baseline), this one has a written baseline,
+# so it can fail on a file not in the allowlist, a count above its allowlisted
+# number, AND a count below it — a stale-high entry is slack in the ratchet, a
+# hole a script can be put back through unnoticed.
 #
-# SELF-TEST: every run first executes the comparison core against fixtures in a
-# temp dir, so "OK" always means the rule can actually fire — a guard that
-# cannot fail is worse than no guard, because it reads as coverage. Run just the
+# SELF-TEST: every run first executes the comparison core against fixtures in
+# a temp dir, so "OK" always means the rule can actually fire. Run just the
 # self-test with: --self-test-only
 #
 # Exit codes:
@@ -68,23 +60,17 @@ marker="${stag} src="
 #   Prints the number of script OPEN TAGS in <file> that carry a `src`
 #   attribute.
 #
-# ATTRIBUTE-ORDER-BLIND, BY NAME (C-SWEEP-R3, page-script-ratchet-attr-order).
-# This used to be `grep -o` for the literal `${marker}`, i.e. for `<script`
-# followed by exactly one space followed by `src=`. Measured, `<script defer
-# src={ … }>`, `<script type="module" src={ … }>` and a newline-split `<script\n
-# src={ … }>` all walked straight through it — the file did not even enter the
-# inventory, so NEW/GREW could not fire — and all three are valid templ that
-# `templ fmt` leaves alone, so the evasion survived `make templ` and CI. The harm
-# is order-blind: htmx's makeFragment removes scripts BY TAG NAME
-# (allowScriptTags=false), so a guard that is order-sensitive is weaker than the
-# failure it is guarding.
+# Matches attribute-name, not attribute-order: `<script defer src={ … }>`,
+# `<script type="module" src={ … }>` and a newline-split `<script\n src={ … }>`
+# must all count, since htmx's makeFragment removes scripts by tag name
+# (allowScriptTags=false) regardless of attribute order, and all three are
+# valid templ that `templ fmt` leaves alone.
 #
 # It walks the open tag a character at a time rather than matching a line,
 # because the tag may span lines and because a `>` inside a quoted value or a
-# templ `{ … }` expression must not close it early — the same walk
-# tools/check-calendar-v4-lints.sh does for B3/B4. Bodies are never inspected, so
-# an inline `<script>…</script>` (a different rule, policed elsewhere) is not
-# counted.
+# templ `{ … }` expression must not close it early. Bodies are never
+# inspected, so an inline `<script>…</script>` (a different rule, policed
+# elsewhere) is not counted.
 count_src_tags() {
   awk -v stag="${stag}" '
     BEGIN { SQ = sprintf("%c", 39); tag = tolower(substr(stag, 2)); TL = length(tag); n = 0 }
@@ -192,8 +178,8 @@ compare() {
 #
 # Six fixtures, proving each verdict fires and that a clean tree stays quiet.
 # Exercises inventory() (including the exemption, the occurrences-not-lines
-# count, and — since C-SWEEP-R3 — that the scan is ATTRIBUTE-ORDER-BLIND and
-# still ignores inline script bodies) and compare() as they actually run.
+# count, that the scan is attribute-order-blind, and that it still ignores
+# inline script bodies) and compare() as they actually run.
 self_test() {
   local tmp fail=0
   tmp="$(mktemp -d)"
@@ -207,10 +193,11 @@ self_test() {
   printf '%s"x.js"> %s"y.js">\n' "${marker}" "${marker}" > "${tmp}/tree/pkg/two.templ"
   printf '%s"z.js">\n' "${marker}" > "${tmp}/tree/pkg/one.templ"
   printf '<div>no scripts here</div>\n' > "${tmp}/tree/pkg/clean.templ"
-  # THE THREE FORMS THAT USED TO WALK THROUGH: an attribute before `src`, an
-  # attribute before `src` with a quoted value holding a `/`, and an open tag
-  # split across lines with `src` on neither the first nor the last. All three
-  # are valid templ that `templ fmt` does not normalise to src-first.
+  # Three forms an attribute-order-sensitive scan would miss: an attribute
+  # before `src`, an attribute before `src` with a quoted value holding a `/`,
+  # and an open tag split across lines with `src` on neither the first nor the
+  # last. All three are valid templ that `templ fmt` does not normalise to
+  # src-first.
   { printf '%s defer src={ layouts.AssetURL("/static/js/a.js") }>\n' "${stag}"
     printf '%s type="module" src="/static/js/b.js">\n' "${stag}"
     printf '%s\n\t\tsrc={ u }\n\t\tasync\n\t>\n' "${stag}"

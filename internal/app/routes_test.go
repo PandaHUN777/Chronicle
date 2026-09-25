@@ -15,11 +15,9 @@ type captureBus struct {
 
 func (b *captureBus) Publish(msg *ws.Message) { b.last = msg }
 
-// TestPublishLayerEvent_RoutesByEventType locks in the contract that
-// every layer-lifecycle event gets its own MessageType, instead of
-// flattening to MsgLayerUpdated. Pre-C-MAP-EVT the adapter silently
-// dropped created/deleted into "updated," which forced Foundry into a
-// pessimistic refetch. Test guards against the flatten regressing.
+// TestPublishLayerEvent_RoutesByEventType locks in the contract that every
+// layer-lifecycle event gets its own MessageType instead of flattening to
+// MsgLayerUpdated, which would force Foundry into a pessimistic refetch.
 func TestPublishLayerEvent_RoutesByEventType(t *testing.T) {
 	cases := []struct {
 		event   string

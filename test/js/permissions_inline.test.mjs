@@ -1,9 +1,9 @@
-// permissions_inline.test.mjs — C-ENTITY-PERMISSIONS-UX Part 2. The
-// permissions widget's inline layout (data-layout="inline"): it builds a
-// summary trigger over a collapsible in-flow panel (NOT a body-attached
-// slide-in card), expands/collapses in place, and tears down cleanly. The
-// default (non-inline) layout still builds the right-edge slide-in card +
-// backdrop on <body> (regression guard). Visual feel is the operator's gate.
+// permissions_inline.test.mjs — pins the permissions widget's inline layout
+// (data-layout="inline"): it builds a summary trigger over a collapsible
+// in-flow panel (not a body-attached slide-in card), expands/collapses in
+// place, and tears down cleanly. Also pins that the default (non-inline)
+// layout still builds the right-edge slide-in card + backdrop on <body>.
+// Visual feel is the operator's gate.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -186,7 +186,7 @@ test('destroy cleans up inline mount state', () => {
   assert.equal(el._permState, undefined, 'state cleared on destroy');
 });
 
-// --- C-PERM-W1-TAG-GRANTS: effective-visibility in the inline editor ---
+// --- effective-visibility in the inline editor ---
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
 

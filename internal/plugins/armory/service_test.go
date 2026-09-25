@@ -10,18 +10,12 @@ import (
 
 // --- Mocks ---
 //
-// TEST HONESTY (see internal/app/error_handler_api_type_test.go's header,
-// and internal/app/armory_npcs_visibility_leak_test.go): these mocks stub
-// away the REPOSITORY's SQL and the entities plugin's real visibility
-// predicate, so nothing here proves the real SQL enforces visibility — that
-// is what the real-database test in internal/app proves, against the real
-// entities repository. What IS legitimately unit-testable here, without a
-// database, is the SERVICE's own orchestration: does it call the visibility
-// filter for the right roles, does it fail closed with no filter wired, and
-// do ListItems/CountItems agree with each other for the same inputs. These
-// tests are the ones that would NOT have caught the original leak (a mock of
-// the predicate is exactly as trustworthy as the mock says it is) — they
-// only guard the code that decides WHEN to consult the real predicate.
+// These mocks stub the REPOSITORY's SQL and the entities plugin's real
+// visibility predicate, so nothing here proves the real SQL enforces
+// visibility — see the real-database test in internal/app for that. What
+// IS unit-testable here is the SERVICE's own orchestration: whether it
+// calls the visibility filter for the right roles, fails closed with no
+// filter wired, and whether ListItems/CountItems agree for the same inputs.
 
 type mockArmoryRepo struct {
 	listIDsFn    func(ctx context.Context, campaignID string, typeIDs []int, opts ItemListOptions) ([]string, error)
@@ -259,25 +253,16 @@ func TestGetItemTypes_Success(t *testing.T) {
 	}
 }
 
-// --- Visibility orchestration tests (finding 2 regression coverage) ---
+// --- Visibility orchestration tests ---
 
-// TestVisibleItemIDs_OnlyOwnerBypassesFilter pins the bypass at OWNER, and the
-// history matters. The fix for finding 2 originally bypassed at Scribe, on the
-// reading that Scribe behaviour was out of scope. It is not the same question:
-// the out-of-scope item is whether a co-DM should be PROMOTED in these plugins
-// (booked in .ai/todo.md), and a co-DM arrives here as RolePlayer, below both
-// thresholds either way.
-//
-// Scribe must go through the filter because the canonical policy says so.
-// visibilityFilter (entities/repository.go:1177) returns an empty predicate
-// only for role >= RoleOwner; for a Scribe it still evaluates, and its custom
-// branch requires a matching grant. So a visibility='custom' entity is NOT
-// automatically visible to a Scribe. Bypassing here would have left the
-// gallery showing a Scribe the name and artwork of a page they cannot open --
-// the same disagreement finding 2 was about, in a narrower audience.
-//
-// A Scribe still sees every is_private page, because the filter's default
-// branch admits role >= 2. Only custom-without-grant is withheld.
+// TestVisibleItemIDs_OnlyOwnerBypassesFilter pins the bypass at OWNER, not
+// Scribe: visibilityFilter (entities/repository.go) returns an empty
+// predicate only for role >= RoleOwner. For a Scribe it still evaluates,
+// and its custom branch requires a matching grant, so a visibility='custom'
+// entity is NOT automatically visible to a Scribe — bypassing at Scribe
+// would show them the name and artwork of a page they cannot open. A
+// Scribe still sees every plain is_private page (the filter's default
+// branch admits role >= 2); only custom-without-grant is withheld.
 func TestVisibleItemIDs_OnlyOwnerBypassesFilter(t *testing.T) {
 	t.Run("owner bypasses entirely", func(t *testing.T) {
 		repo := &mockArmoryRepo{

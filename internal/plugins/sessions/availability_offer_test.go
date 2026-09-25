@@ -1,12 +1,12 @@
 package sessions
 
-// Temporary offered availability (C-CAL-RSVP-P2).
+// Temporary offered availability.
 //
-// The whole reason this code exists is one invariant: exception rows REPLACE the
-// recurring pattern for a date (effectiveBlocks, availability_overlay.go). So an
-// "I could also do Tuesday evening" offer that wrote only the offered window
-// would leave the member LESS available than before — the exact opposite of what
-// they just said. Every test below is some form of that claim.
+// The invariant: exception rows REPLACE the recurring pattern for a date
+// (effectiveBlocks, availability_overlay.go), so an "I could also do Tuesday
+// evening" offer must compose with the existing day rather than writing only
+// the offered window, which would leave the member less available than
+// before. Every test below is some form of that claim.
 
 import (
 	"reflect"

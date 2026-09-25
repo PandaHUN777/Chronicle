@@ -5,12 +5,11 @@ package entities
 // current order, clamps the index into [0, len], and reinserts it there.
 //
 // The result is exactly the order a dense re-sequence (ResequenceSiblings /
-// ResequenceNodes / ResequenceChildTypes) should persist as sort_order 0..N-1,
-// so the (sort_order, name) tiebreak in the render can never snap a dragged
-// item back to its old position — the silent-revert bug class #477 fixed for
-// entity rows. This helper is the shared, tested primitive so the folder-node
-// and sub-category-type reorder paths behave identically to entity reorder
-// (whose reinsert is inlined in ReorderEntity for historical reasons).
+// ResequenceNodes / ResequenceChildTypes) should persist as sort_order
+// 0..N-1, so the (sort_order, name) tiebreak in the render can never snap a
+// dragged item back to its old position. This helper is the shared, tested
+// primitive so the folder-node and sub-category-type reorder paths behave
+// identically to entity reorder (whose reinsert is inlined in ReorderEntity).
 //
 // If `moved` is absent from `ordered` (e.g. a freshly created row not yet in
 // the listed sibling set) it is still inserted at the clamped index.

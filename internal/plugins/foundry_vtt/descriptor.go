@@ -9,9 +9,8 @@ import (
 )
 
 // descriptorFilename is the canonical name of the descriptor file
-// foundry_vtt reads from the extracted install dir. Defined by the
-// FM-PKG-DESCRIPTOR contract on the Foundry side; do not change
-// without coordinated bump.
+// foundry_vtt reads from the extracted install dir. Do not change
+// without a coordinated bump on the Foundry side.
 const descriptorFilename = "chronicle-package.json"
 
 // errDescriptorNotFound is returned by loadDescriptor when no
@@ -21,8 +20,8 @@ const descriptorFilename = "chronicle-package.json"
 //
 // Distinct from a parse / schema error: a missing descriptor is
 // expected (most current Foundry releases don't ship one yet); a
-// PRESENT-BUT-INVALID descriptor is an upstream bug and fails the
-// install loudly per the C-FMC-5b agreement.
+// present-but-invalid descriptor is an upstream bug and fails the
+// install loudly.
 var errDescriptorNotFound = errors.New("chronicle-package.json not found in install dir")
 
 // loadDescriptor reads chronicle-package.json from the extracted

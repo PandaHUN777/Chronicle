@@ -8,15 +8,11 @@ import (
 	"time"
 )
 
-// TestCleanupOrphans_SkipsSymlinks pins the defense-in-depth check
-// added after a gosec G122 (TOCTOU in filepath.Walk) advisory. The
-// CleanupOrphans walker must refuse to delete symlinks even when
-// they would otherwise look like orphans (not present in
-// ListAllFilenames). Without the guard, a symlink planted into the
-// media directory by another process could be unlinked unexpectedly;
-// even though os.Remove on a symlink unlinks the symlink itself
-// (not its target), leaving symlinks in place gives the operator
-// signal that something unusual is in the media tree.
+// TestCleanupOrphans_SkipsSymlinks pins that the CleanupOrphans walker
+// refuses to delete symlinks even when they look like orphans (not present
+// in ListAllFilenames) — a symlink planted into the media directory by
+// another process should stay in place as a signal, not be unlinked
+// silently (gosec G122, TOCTOU in filepath.Walk).
 func TestCleanupOrphans_SkipsSymlinks(t *testing.T) {
 	dir := t.TempDir()
 

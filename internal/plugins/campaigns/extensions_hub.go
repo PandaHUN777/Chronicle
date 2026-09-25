@@ -1,30 +1,20 @@
-// extensions_hub.go — C-EXT-HUB Phase 1 backing types + per-request
-// helpers for the top-level Extensions hub at
-// `GET /campaigns/:id/extensions`.
+// extensions_hub.go — backing types + per-request helpers for the
+// top-level Extensions hub at `GET /campaigns/:id/extensions`.
 //
-// The Extensions hub is the operator's new top-level entry point to
-// every per-campaign feature ("extension"): one card per addon,
-// owner-gated enable/disable via the existing addons-store toggle
-// (`PUT /campaigns/:id/addons/:addonID/toggle`), and — Phase 2 — an
-// inline-expandable dashboard panel slot per card. The hub absorbs
-// and retires the Features Settings tab; Content Packs (per-campaign
-// installable packs from the admin install surface) becomes one card
-// inside the hub instead of a standalone page at the same path.
+// The Extensions hub is the operator's top-level entry point to every
+// per-campaign feature ("extension"): one card per addon, owner-gated
+// enable/disable via the existing addons-store toggle
+// (`PUT /campaigns/:id/addons/:addonID/toggle`), and an inline-expandable
+// dashboard panel slot per card. Content Packs (per-campaign installable
+// packs from the admin install surface) is one card inside the hub
+// instead of a standalone page.
 //
-// Architecture refinement vs. the dispatch's literal "extend
-// PluginInfo" instruction:
-//
-// The C-EXT-HUB-PHASE-1 dispatch directed extending the admin-side
-// `PluginInfo` registry (`internal/plugins/admin/plugin_registry.go`)
-// with HasDashboard / HasEntitySetup / OperatorFacing flags. In
-// implementation the operator-facing catalog is `PluginHubAddon` via
-// `AddonLister.ListForPluginHub` — not `PluginInfo`, which feeds the
-// admin Plugins page and over-includes infrastructure plugins (auth,
-// audit, syncapi, ...). To keep a single source of truth, the
-// capability flags live on `PluginHubAddon` and are populated by the
-// addons-side adapter from the slug tables below. `OperatorFacing` is
-// implicit — every addon `ListForPluginHub` returns is operator-facing
-// by construction.
+// The capability flags (HasDashboard / HasEntitySetup) live on
+// `PluginHubAddon` (via `AddonLister.ListForPluginHub`), not on the
+// admin-side `PluginInfo` registry, which feeds the admin Plugins page
+// and over-includes infrastructure plugins (auth, audit, syncapi, ...).
+// They are populated by the addons-side adapter from the slug tables
+// below.
 
 package campaigns
 
@@ -36,29 +26,25 @@ import (
 )
 
 // extensionDashboardSlugs marks which extension slugs ship an inline
-// dashboard fragment, registered via Phase 2's
-// `RegisterExtensionDashboard` factory. Today only calendar; timeline
-// joins after C-TIMELINE-V2 lands.
+// dashboard fragment, registered via `RegisterExtensionDashboard`.
+// Today only calendar.
 var extensionDashboardSlugs = map[string]bool{
 	"calendar": true,
 }
 
 // extensionEntitySetupSlugs marks which extension slugs ship a
-// per-entity setup card (Phase 4 work; surfaced here so the catalog
-// already carries the capability metadata when Phase 4 begins). Today
-// only calendar; maps already has its setup card and isn't a Phase 4
-// build target.
+// per-entity setup card. Today only calendar; maps already has its own
+// setup card outside this mechanism.
 var extensionEntitySetupSlugs = map[string]bool{
 	"calendar": true,
 }
 
 // extensionDashboardPages maps an addon slug to a DEDICATED dashboard page
 // (a full route), as opposed to the inline-panel fragment. When an entry
-// exists, the hub's "Open dashboard" affordance navigates to the page instead
-// of HTMX-swapping the inline panel (E1: the Calendars dashboard is a
-// dedicated page per operator sign-off). Other apps keep the inline panel
-// until they gain a dedicated page. The value is a path template taking the
-// campaign ID. See ExtensionDashboardPageURL.
+// exists, the hub's "Open dashboard" affordance navigates to the page
+// instead of HTMX-swapping the inline panel. Other apps keep the inline
+// panel until they gain a dedicated page. The value is a path template
+// taking the campaign ID. See ExtensionDashboardPageURL.
 var extensionDashboardPages = map[string]string{
 	"calendar": "/campaigns/%s/apps/calendar",
 }
@@ -84,8 +70,7 @@ func HasExtensionDashboard(slug string) bool {
 }
 
 // HasExtensionEntitySetup reports whether the given addon slug exposes
-// a per-entity setup card (Phase 4). Same wiring path as
-// HasExtensionDashboard.
+// a per-entity setup card. Same wiring path as HasExtensionDashboard.
 func HasExtensionEntitySetup(slug string) bool {
 	return extensionEntitySetupSlugs[slug]
 }

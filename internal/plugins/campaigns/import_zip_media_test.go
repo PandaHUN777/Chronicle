@@ -1,29 +1,7 @@
-// import_zip_media_test.go pins the ruling on "Export ZIP (with media)"
-// (sweep R4 stage 17).
-//
-// Fix id: promises/export-zip-media-dropped.
-//
-// The export side was never broken: the zip really does contain campaign.json
-// plus a media/ folder of real bytes. Two things made it read as a promise
-// that round-trips:
-//
-//  1. The import form's accept attribute was ".json,application/json", so the
-//     file picker would not even offer the .zip the operator had just been
-//     told to make. The handler could parse a zip; the UI could not deliver
-//     one.
-//  2. Every media entry in an accepted zip was dropped with a single
-//     slog.Info and the operator was redirected to a campaign whose images
-//     were all broken, with nothing on screen saying so.
-//
-// The ruling taken here is "stop promising, book the rest by name" rather
-// than "make it round-trip": restoring media correctly means remapping every
-// old media ID across entity image_path, map image_id, token image_path and
-// every /media/<id> in entry_html, and a half-done remap restores the files
-// while leaving every image broken — a new quiet lie in place of the old.
-// That work is booked whole as C-IMPORT-MEDIA-RESTORE.
-//
-// So what is pinned here is honesty: the zip is accepted, and its unrestored
-// media is counted and named in the response.
+// import_zip_media_test.go pins that a media ZIP export is accepted on
+// import and its unrestored media is counted and named in the response,
+// rather than silently dropped. Full media restore (remapping old media IDs
+// across entity/map/token image paths and entry_html) is TODO(keyxmakerx/Chronicle#612).
 package campaigns
 
 import (

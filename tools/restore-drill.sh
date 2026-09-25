@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 # tools/restore-drill.sh -- Prove a Chronicle backup actually restores.
 #
-# Per cordinator/plans/2026-07-10-beta-transition-plan.md §2 item 0.6: the
-# beta plan's single largest data-loss risk is that a restore has NEVER been
-# verified, even once. This is the one command that closes that gap.
-#
 # What it does, every run:
 #   1. Finds the newest backup (or a --file you name).
 #   2. Spins up a brand-new, disposable MariaDB container -- never the live
@@ -32,10 +28,8 @@
 # Exit codes: 0 PASS / 1 FAIL (verification or restore failed) /
 #             2 precondition (docker missing, no backups found, bad --file).
 #
-# Cites: cordinator/decisions/2026-05-21-core-tenets.md §T-O1 (this script
-# verifies rather than assumes a backup is good), §T-B1 (never widens the
-# live DB's attack surface -- no host port, no shared network, no reused
-# credentials).
+# Security: never widens the live DB's attack surface -- no host port, no
+# shared network, no reused credentials.
 
 set -euo pipefail
 
@@ -228,10 +222,8 @@ done
 [[ "$READY" == "1" ]] || fail "throwaway MariaDB container did not become healthy within 60s" 2
 
 # Recent mariadb images ship only the `mariadb` client binary, not the
-# `mysql`-named compat symlink older images carried (confirmed by CI: this
-# broke on the real mariadb:latest even though it worked fine against a
-# locally-installed MariaDB 10.11, which still has both names). Resolve
-# once, use everywhere below.
+# `mysql`-named compat symlink older images carried. Resolve once, use
+# everywhere below.
 CLIENT_BIN="$(docker exec "$DRILL_NAME" sh -c 'command -v mariadb || command -v mysql' 2>/dev/null | head -n1)"
 CLIENT_BIN="$(basename "${CLIENT_BIN:-mysql}")"
 
@@ -256,10 +248,9 @@ esac
 
 # --- 4a. Migrations table present and at a plausible version ---
 # Delimiter is a literal '|', not a SQL '\t' escape: MariaDB's non-interactive
-# client does not expand backslash escapes in -e query text (confirmed by
-# direct testing -- CONCAT(...,'\t',...) round-trips as the literal two
-# characters '\' 't', not a tab byte), so splitting on $'\t' here would
-# silently produce garbage on every run.
+# client does not expand backslash escapes in -e query text, so
+# CONCAT(...,'\t',...) round-trips as the literal characters '\' 't', not a
+# tab byte -- splitting on $'\t' here would silently produce garbage.
 MIGROW="$(drill_sql "SELECT CONCAT(version,'|',dirty) FROM schema_migrations LIMIT 1" || true)"
 [[ -n "$MIGROW" ]] || fail "schema_migrations table missing or empty -- this doesn't look like a Chronicle database dump" 1
 MIG_VERSION="${MIGROW%%|*}"

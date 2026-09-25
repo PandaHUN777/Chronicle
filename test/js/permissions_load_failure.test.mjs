@@ -1,23 +1,14 @@
-// permissions_load_failure.test.mjs — ADR-057 slice 2, the Scribe defect.
+// permissions_load_failure.test.mjs — ADR-057: a failed (non-2xx, or
+// network-failed) permissions load must never render a mode at all — no mode
+// word in the trigger, no mode badge, no glance dot, no mode-driven body
+// content — since static/js/widgets/permissions.js's init defaults
+// ('Everyone') would otherwise render as an actively wrong claim about who
+// can see the page for a user the load route 403s (e.g. non-Owner). Only the
+// existing perm-error styling may speak. Draft mode has no endpoint and is
+// not a failed load, and must keep showing its mode.
 //
-// static/js/widgets/permissions.js seeds its state with defaults
-// (visibility: 'default', isPrivate: false — i.e. "Everyone") and then
-// load() fires GET .../permissions, a route that is Owner-only. For a
-// Scribe (or anyone else the route 403s) the request fails, the widget
-// swallowed the error, and getMode() fell through to the untouched init
-// defaults — rendering "Permissions · Everyone" on a page that may in fact
-// be DM-only. An actively wrong claim about who can see the page.
-//
-// The fix: a failed (non-2xx, or network-failed) load must never render a
-// mode at all — no mode word in the trigger, no mode badge, no glance dot,
-// and no mode-driven body content (picker or read-only badge). Only the
-// existing perm-error styling may speak, since it already carries the
-// server's real message. Draft mode has no endpoint and is NOT a failed
-// load, and must keep showing its (legitimate, local-only) mode.
-//
-// Harness mirrors test/js/permissions_inline.test.mjs exactly (same
-// dependency-free mini-DOM, same vm sandbox) — no new test framework, no
-// new dependency, per the slice's constraints.
+// Harness mirrors test/js/permissions_inline.test.mjs (same dependency-free
+// mini-DOM, same vm sandbox).
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -31,9 +22,7 @@ const jsPath = join(here, '..', '..', 'static', 'js', 'widgets', 'permissions.js
 
 // Minimal DOM: a node whose className and classList share one token set, so
 // the widget's mix of `el.className = …` and `el.classList.add(…)` stays
-// consistent and queryable. (Copied verbatim from permissions_inline.test.mjs
-// — this file does not introduce a shared harness module, matching how that
-// file already keeps its own copy rather than factoring one out.)
+// consistent and queryable.
 function makeNode(tag) {
   const classes = new Set();
   const node = {
@@ -213,26 +202,19 @@ test('draft mode is NOT treated as a failed load and keeps showing its mode', as
   assert.equal(findByClass(body, 'perm-error'), null, 'draft mode has no endpoint — that is not a failure');
 });
 
-// --- Adversarial-review follow-up (three defects found in the loadFailed
-// guard above). Each test below is written to FAIL against the code as it
-// stood after c59cf778, before the corresponding fix — see
-// /tmp/claude-0/-home-user/aefdc6fa-45d6-58bc-b8bd-da5c2e1b397b/scratchpad/p1fix-js-red.txt
-// for the red run.
+// --- Three more defects in the loadFailed guard above. ---
 
 test('DEFECT 1: a fetch that has not resolved yet shows no mode word (renderTrigger must guard on state.loading too)', () => {
   const { sandbox } = boot();
   const impl = sandbox.Chronicle._impls.permissions;
   const el = makeNode('div');
   impl.init(el, { editable: true, endpoint: '/campaigns/c1/entities/e1/permissions' });
-  // Deliberately no `await` at all: Chronicle.apiFetch's promise has not
-  // resolved yet at this point (its .then callback is a microtask that has
-  // not run), so this is exactly the in-flight window init() -> renderTrigger()
-  // -> load() leaves open before the request settles. The old code only
-  // guarded on state.loadFailed (set inside load()'s .catch), never on
-  // state.loading (true from init until the request settles either way) —
-  // so it fell through to getMode() against the untouched init defaults
-  // (visibility: 'default', isPrivate: false) and painted "Everyone" for
-  // the whole duration of the request.
+  // Deliberately no `await`: Chronicle.apiFetch's promise has not resolved
+  // yet, so this is the in-flight window init() -> renderTrigger() -> load()
+  // leaves open before the request settles. renderTrigger must guard on
+  // state.loading (true from init until the request settles either way), not
+  // only on state.loadFailed (set inside load()'s .catch), or it falls
+  // through to the untouched init defaults and paints "Everyone".
   const trigger = findByClass(el, 'perm-trigger');
   assert.ok(trigger, 'trigger renders synchronously');
   const text = gatherText(trigger);
@@ -247,7 +229,7 @@ test('DEFECT 1 (draft-mode guard rail): draft mode must keep showing its mode im
   // Draft mode has no endpoint, never "loads" in the network sense, and owns
   // its mode locally from init -- a naive `if (state.loading)` guard in
   // renderTrigger() would blank it too, since state.loading defaults to true
-  // for every mode including draft. This must keep passing after the fix.
+  // for every mode including draft.
   const { sandbox, apiCalls } = boot();
   const impl = sandbox.Chronicle._impls.permissions;
   const el = makeNode('div');
@@ -267,11 +249,10 @@ test('DEFECT 2: a failed load does not offer a dismiss that empties the panel', 
   const err = findByClass(body, 'perm-error');
   assert.ok(err, 'the failure is reported');
 
-  // Chosen fix: a failed-load error offers no dismiss button at all, because
-  // there is no loaded content behind it to reveal -- dismissing it used to
-  // null state.error, re-render, and fall straight into renderBody()'s
-  // `if (state.loadFailed) return;`, leaving the panel completely empty with
-  // no way back inside the widget.
+  // A failed-load error must offer no dismiss button, because there is no
+  // loaded content behind it to reveal: dismissing it would null state.error,
+  // re-render, and fall into renderBody()'s `if (state.loadFailed) return;`,
+  // leaving the panel completely empty with no way back into the widget.
   const dismiss = findByClass(err, 'perm-error-dismiss');
   assert.equal(dismiss, null, 'a failed-load error must not be dismissible into an empty panel');
 });

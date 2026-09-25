@@ -1,9 +1,9 @@
-// service_test.go — C-WIDGET-BINDING-P1-SPINE acceptance coverage:
-// binding CRUD, default-vs-bound resolution, the precedence chain
-// (own > entity-type template > default), the DIRECTIONAL cascade guard
-// (a type-template must NOT override an entity's own binding — Foundry #9818),
-// the orphan guard (render-time + delete-hook + sweep), campaign-scope
-// enforcement on BOTH host and resolved instance, and the source layer.
+// Pins binding CRUD, default-vs-bound resolution, the precedence chain
+// (own > entity-type template > default), the directional cascade guard (a
+// type-template must never override an entity's own binding — see Foundry
+// VTT #9818 for the class of bug this guards against), the orphan guard
+// (render-time + delete-hook + sweep), campaign-scope enforcement on both
+// host and resolved instance, and the source layer.
 package widgetbindings
 
 import (

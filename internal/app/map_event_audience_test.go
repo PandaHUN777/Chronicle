@@ -1,29 +1,13 @@
-// map_event_audience_test.go — S1: pins that mapEventPublisherAdapter
-// actually computes the WebSocket audience from a marker/drawing's
-// VisibilityRules, not just its dm_only bit.
+// map_event_audience_test.go pins that mapEventPublisherAdapter's
+// PublishMarkerEvent/PublishDrawingEvent compute the WebSocket audience from
+// a marker/drawing's VisibilityRules, not just its dm_only bit, by asserting
+// what lands on the wire-bound Message (AllowedUsers/DeniedUsers/RequiresDM).
 //
-// This is the companion to internal/websocket/hub_visibility_test.go,
-// which drives a REAL Hub to prove the broadcast loop enforces
-// AllowedUsers/DeniedUsers once they're set on a ws.Message. That test
-// constructs the Message by hand, so it says nothing about whether the
-// production adapter in THIS file's package ever sets those fields
-// correctly from a real *maps.Marker / *maps.Drawing. This test closes
-// that gap: it drives the actual PublishMarkerEvent/PublishDrawingEvent
-// methods and asserts what lands on the wire-bound Message.
-//
-// It reuses the captureBus fixture already established by
-// TestPublishFogEvent_RoutesByEventType (routes_test.go) for the same
-// reason that one is legitimate: the assertion here is on the adapter's
-// OWN output (which fields did it set on the message), not on delivery —
-// delivery is what the hub test proves, against the real Hub, not a
-// fake. Together the two tests cover the full path without either one
-// pretending to be the other.
-//
-// Honesty check: this test fails if routes.go's publishWithAudience (or
-// its PublishMarkerEvent/PublishDrawingEvent callers) stops parsing
-// VisibilityRules and populating AllowedUsers/DeniedUsers/RequiresDM —
-// regardless of whether hub.go's gate is correct. It does NOT fail if
-// hub.go's gate is broken; that half is hub_visibility_test.go's job.
+// Companion to internal/websocket/hub_visibility_test.go, which proves the
+// real Hub enforces those fields once set but constructs the Message by
+// hand; this test proves the adapter actually sets them from a real
+// *maps.Marker / *maps.Drawing. It does not cover whether the hub's gate
+// itself is correct — that is hub_visibility_test.go's job.
 package app
 
 import (
@@ -104,10 +88,7 @@ func TestPublishMarkerEvent_ComputesAudienceFromVisibilityRules(t *testing.T) {
 }
 
 // TestPublishDrawingEvent_ComputesAudienceFromVisibilityRules is the
-// drawing-side twin, added once Drawing gained VisibilityRules
-// (maps/drawing.go) — the second half of the S1 leak, where a drawing's
-// rules previously had no field to live in at all, so nothing could ever
-// reach this adapter to be parsed in the first place.
+// drawing-side twin, covering Drawing.VisibilityRules (maps/drawing.go).
 func TestPublishDrawingEvent_ComputesAudienceFromVisibilityRules(t *testing.T) {
 	cases := []struct {
 		name           string

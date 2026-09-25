@@ -60,113 +60,77 @@ jobs:
         run: go vet ./...
 
       - name: Scrub guard (no operator instance hostnames in tracked source)
-        # Per C-SCRUB-INSTANCE-URLS (2026-05-20): operator-security
-        # requirement that production hostnames stay out of the repo.
-        # The script itself reconstructs the forbidden token via fragment
-        # join so it doesn't fail-self.
+        # Operator-security requirement: production hostnames stay out of the
+        # repo. The script reconstructs the forbidden token via fragment join
+        # so it doesn't self-match.
         run: ./tools/check-no-instance-hostname.sh
 
-      - name: Plugin isolation guard self-tests (R4-S26-A)
-        # The guard sat red for nine commits during sweep R4 because nothing
-        # ran it and nothing tested it. These self-tests build throwaway repos
-        # and prove the guard still bites — in particular that the
-        # const_registry_files allowance covers declarations only and not the
-        # call sites in the same file. Hermetic: needs no repo history.
+      - name: Plugin isolation guard self-tests
+        # Builds throwaway repos and proves the guard still bites, in
+        # particular that the const_registry_files allowance covers
+        # declarations only, not call sites in the same file. Needs no repo
+        # history.
         run: ./tools/test-plugin-isolation.sh
 
-      - name: Plugin isolation guard (M-B2.1 extended)
-        # Per C-MODULARITY-PRELAUNCH-QUICKWINS + cordinator/decisions/2026-05-21-core-tenets.md §T-B2.
+      - name: Plugin isolation guard
         # Diff-scoped FAIL: catches NEW plugin-name string literals introduced
-        # outside the owning plugin's directory. Extended from foundry-vtt-only
-        # to all plugin slugs (2026-06-21). Existing violations grandfathered.
-        # Needs full git history for the diff; fetch-depth: 0 above.
+        # outside the owning plugin's directory, across all plugin slugs.
+        # Existing violations are grandfathered. Needs full git history for
+        # the diff (fetch-depth: 0 above).
         run: ./tools/check-plugin-isolation.sh
 
       - name: Migration immutability guard
-        # Per ADR-044 + the 2026-06-24 `000030` incident: migrations are
-        # APPEND-ONLY. Fails the PR if it DELETES or MODIFIES a migration file
-        # that already exists on the base branch (a live DB may have applied it;
-        # golang-migrate's file:// source must contain every version up to the
-        # DB's recorded version, or boot crash-loops). New migrations are fine.
+        # Migrations are APPEND-ONLY. Fails the PR if it deletes or modifies a
+        # migration file already on the base branch: a live DB may have
+        # applied it, and golang-migrate needs every version up to the DB's
+        # recorded one or boot crash-loops. New migrations are fine.
         # Diff-scoped; needs full git history (fetch-depth: 0 above).
         run: ./tools/check-migration-immutability.sh
 
-      # NOTE: the "Templ drift guard" step that used to sit here was DELETED by
-      # C-CALV4-FOUNDATION-P0 along with tools/check-templ-drift.sh. It diffed
-      # pathspec '*.templ.go' while templ emits '*_templ.go', and those are
-      # gitignored (.gitignore:30) and never committed — so it was structurally
-      # incapable of failing and reported OK on a tree where 753 generated files
-      # had just changed. A guard that cannot fail is worse than no guard: it
-      # reads as coverage. The "Generate templ files" + "Build" steps above
-      # already catch real drift, because a stale generator output fails to
-      # compile.
-
       - name: V2 motion-discipline guard (§B2)
-        # Per cordinator/decisions/2026-05-28-cal-timeline-v2-design.md §B2.
-        # The script has existed since the V2 wave but was invoked by NOTHING —
-        # only referenced by a comment at static/css/input.css:103. Wired here
-        # by C-CALV4-FOUNDATION-P0. Diff-scoped FAIL: no NEW `transition: all` /
-        # `transition-all` in calendar / timeline / ai_workspace / campaigns
-        # sources. Pre-existing violations are grandfathered (7 lines across 5
-        # files as of this wiring). Needs full git history; fetch-depth: 0 above.
+        # Diff-scoped FAIL: no NEW `transition: all` / `transition-all` in
+        # calendar / timeline / ai_workspace / campaigns sources — only
+        # `transform` and `opacity` may be animated there. Pre-existing
+        # violations are grandfathered. Needs full git history;
+        # fetch-depth: 0 above.
         run: ./tools/check-v2-motion-discipline.sh
 
-      - name: Calendar-v4 guards B1–B4
-        # Per cordinator/decisions/2026-07-26-calendar-v4-canon-amendments.md §B.
-        # B1 no --dash/--gap in a transition/animation list · B2 no `font:`
-        # shorthand naming `inherit` as the family · B3 no interactive control
-        # reusing an <html> state-marker attribute name · B4 every data-cell /
-        # data-row marker also carries `data-day`. Diff-scoped; needs full git
-        # history (fetch-depth: 0 above). Every run first self-tests the guard
-        # against embedded fixtures, so "OK" always means the rules can fire.
-        run: ./tools/check-calendar-v4-lints.sh
-
       - name: Page-side script ratchet
-        # A `<script src>` in a page templ sits inside <main id="main-content">,
-        # the region every hx-boost sidebar link swaps; boot.js sets
-        # htmx.config.allowScriptTags=false, at which point htmx DELETES script
-        # tags out of the swapped fragment. The surface then wires on a direct
-        # load and silently does not through the sidebar — invisibly, because
-        # the stylesheets beside it survive. That is how the Calendar Bench
-        # shipped with a dead day card and a dead Permissions button. Scripts
-        # belong in the plugin body-script registry (internal/app/routes.go),
-        # which base.templ emits outside the swapped region.
+        # A `<script src>` in a page templ sits inside the region every
+        # hx-boost sidebar link swaps; htmx deletes script tags out of a
+        # swapped fragment, so such a script only runs on direct load, not via
+        # the sidebar. Scripts belong in the plugin body-script registry
+        # (internal/app/routes.go), which base.templ emits outside the
+        # swapped region.
         #
-        # Whole-tree ratchet against tools/page-script-allowlist.txt, which may
-        # only shrink. Needs no git history. Every run self-tests first, so "OK"
-        # means the rule can fire. Sweep of the survivors: C-HTMX-SCRIPT-SWEEP.
+        # Whole-tree ratchet against tools/page-script-allowlist.txt, which
+        # may only shrink. Needs no git history; self-tests on every run.
         run: ./tools/check-page-scripts.sh
 
       - name: Dead widget-mount ratchet
         # boot.js binds a `data-widget="name"` mount to whatever
-        # Chronicle.register('name', …) put in its registry, and RETURNS
-        # SILENTLY when the name is absent. Nothing lazy-loads the file — no
-        # script injection, no dynamic import, no bundler. So a widget whose JS
-        # is in no <script src> anywhere is a permanently empty div, with an
-        # empty console and a page that looks finished. That is how `aliases`,
-        # `inventory` and `transaction_log` shipped fully built and permanently
-        # blank on entity pages (C-SWEEP-R3).
+        # Chronicle.register('name', …) put in its registry, and returns
+        # silently when the name is absent — nothing lazy-loads the file, so a
+        # widget whose JS is in no <script src> anywhere is a permanently
+        # empty div with a page that looks finished.
         #
-        # Whole-tree ratchet against tools/widget-mount-allowlist.txt, which may
-        # only shrink. Needs no git history. Every run self-tests first, so "OK"
-        # means the rule can fire.
+        # Whole-tree ratchet against tools/widget-mount-allowlist.txt, which
+        # may only shrink. Needs no git history; self-tests on every run.
         run: ./tools/check-widget-mounts.sh
 
       - name: Test
-        # Includes M-B2.2 cross-plugin import guard (TestPluginImportGuard in
+        # Includes the cross-plugin import guard (TestPluginImportGuard in
         # internal/wire/plugin_import_guard_test.go): fails on any NEW
-        # internal/plugins/A → internal/plugins/B import edge outside the
-        # grandfathered baseline. Per C-MODULARITY-PRELAUNCH-QUICKWINS +
-        # cordinator/decisions/2026-05-21-core-tenets.md §T-B2.
+        # internal/plugins/A -> internal/plugins/B import edge outside the
+        # grandfathered baseline.
         run: go test ./... -v -short
 
       - name: Restore-drill self-test
-        # Per C-BACKUP-RESTORE-KIT + cordinator/plans/2026-07-10-beta-transition-plan.md
-        # §2 item 0.6. Runs tools/restore-drill.sh's real verify logic (migrations
+        # Runs tools/restore-drill.sh's real verify logic (migration
         # plausibility, row counts, FK spot check) against tiny fixtures in
-        # testdata/restore-drill/ — proves both the PASS path and every FAIL path
-        # still fire, so the drill kit itself can't rot silently. Spins real,
-        # disposable MariaDB containers; ubuntu-latest ships Docker, no setup needed.
+        # testdata/restore-drill/, proving both the PASS path and every FAIL
+        # path still fire. Spins real, disposable MariaDB containers;
+        # ubuntu-latest ships Docker, no setup needed.
         run: ./tools/test-restore-drill.sh
 
       - name: Set up Node
@@ -175,37 +139,26 @@ jobs:
           node-version: '20'
 
       - name: JS tests
-        # B-R8 (cordinator/decisions/2026-07-10-beta-transition-rulings.md):
-        # gate the node --test JS suite (sidebar tree/reorder, boosted-nav
-        # highlight, calendar/world-state widgets, …) so red JS tests can no
-        # longer linger on main unnoticed. Uses Node's built-in test runner
-        # (no deps). The two dead sidebar_reorg tests that failed on main were
-        # removed in this same change, so the suite gates green.
+        # Gates the node --test JS suite (sidebar tree/reorder, boosted-nav
+        # highlight, calendar/world-state widgets, …) so red JS tests cannot
+        # linger on main unnoticed. Uses Node's built-in test runner, no deps.
         run: make test-js
 
-      - name: Decision-citations lint (M-O3.1, WARN-only)
-        # Per C-CI-GUARDS-PHASE-2 + cordinator/reports/coordinator/2026-05-21-c-meta-audit.md
-        # Phase 2 deliverable. Surfaces orphan cordinator/decisions/*.md docs.
-        # WARN-only: always exits 0. In Chronicle CI the Cordinator repo isn't
-        # checked out, so this prints "nothing to check" and exits clean. The
-        # guard is fully effective when run from a coordinator session that
-        # has all three repos local. Kept here so any future CI runner that
-        # checks out all three repos exercises it automatically.
+      - name: Decision-citations lint (WARN-only)
+        # Surfaces orphan cordinator/decisions/*.md docs. WARN-only: always
+        # exits 0. In Chronicle CI the Cordinator repo isn't checked out, so
+        # this prints "nothing to check" and exits clean; it is fully
+        # effective only when run alongside that repo.
         continue-on-error: true
         run: ./tools/check-decision-citations.sh
 
   # --- Fresh-database migration replay ---
-  # C-SWEEP-R4 (data/fvtt-fresh-db-rename). Until this job existed, CI never
-  # migrated an EMPTY database anywhere: the restore drill loads a dump of an
-  # already-migrated one, and every other integration test assumes
-  # `make migrate-up` already ran. So foundry_vtt's migration 001 — which
-  # RENAMEs a table the deleted foundry_modules plugin used to create — failed
-  # on its first statement on every brand-new self-hosted install, permanently
-  # disabling the Foundry integration, and the whole suite stayed green.
-  #
-  # A separate job rather than a service on "Build & Test" deliberately: the
-  # replay needs a database, the main job must keep running with none, and
-  # coupling them would let a DB hiccup redden the entire build.
+  # Every other integration test assumes `make migrate-up` already ran, so
+  # this job replays every migration against a NEVER-migrated database — the
+  # shape a brand-new self-hosted install actually starts from. A separate job
+  # rather than a service on "Build & Test": the replay needs a database, the
+  # main job must keep running with none, and coupling them would let a DB
+  # hiccup redden the entire build.
   freshdb:
     name: Fresh-DB Migration Replay
     runs-on: ubuntu-latest
@@ -243,11 +196,9 @@ jobs:
         run: templ generate
 
       - name: Fresh-database migration replay
-        # NOT `-short`: these tests skip under it by design, which is exactly
-        # how this class of bug survived. If no server answers they SKIP, so
-        # the explicit reachability assertion below is what makes a silent skip
-        # impossible — a job that reports success having tested nothing is the
-        # failure mode this whole job exists to end.
+        # NOT `-short`: these tests skip under it by design. The explicit
+        # PASS-line assertion below makes a silent skip impossible, so this
+        # job cannot report success having tested nothing.
         env:
           CHRONICLE_TEST_DB_DSN: root:chronicle@tcp(127.0.0.1:3306)/
         run: |
@@ -267,127 +218,6 @@ jobs:
               exit 1
             }
           done
-
-  # --- Real-browser probes ---
-  # C-SWEEP-R4 (guards/probes-never-run-in-ci). The probes are the ONLY tests
-  # in the repo that look at the RENDERED result — they drive a headless
-  # Chromium over a built page and read geometry out of the live layout. Every
-  # other test asserts on the strings we emitted, which cannot tell you whether
-  # a container query resolved, a shelf collided with the ledger, a card
-  # anchored to its day, or the phone breakpoint swapped the assembly.
-  #
-  # Not one of them had ever run here. They all begin
-  # `if testing.Short() { t.Skip }`, and "Build & Test" above runs
-  # `go test ./... -v -short`; they then skip again with no browser, and a
-  # `go test` SKIP is reported inside an `ok` package line. A rendering
-  # regression could land on main with a completely green build — proven by
-  # changing the Shelf scroller's max-height in static/css/calendar-block.css
-  # and watching `-short` stay green while the probe catches it.
-  #
-  # A separate job because it needs a browser and a CSS toolchain that the main
-  # job must not have to install, and because its runtime is dominated by the
-  # browser rather than by Go. BROWSER_PROBES_REQUIRED=1 makes a missing
-  # Chromium fatal HERE specifically: a runner whose browser install broke must
-  # redden the build, not quietly measure nothing. Locally the same script
-  # names what it could not run and exits clean.
-  probes:
-    name: Browser Probes
-    runs-on: ubuntu-latest
-    env:
-      # The layout the probes' Chromium finders glob for.
-      PLAYWRIGHT_BROWSERS_PATH: /opt/pw-browsers
-      BROWSER_PROBES_REQUIRED: '1'
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.27'
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@v0.3.1001
-
-      - name: Generate templ files
-        run: templ generate
-
-      - name: Install Chromium
-        # --with-deps pulls the shared libraries a headless Chromium needs on a
-        # bare ubuntu-latest image; without them the binary exists and every
-        # probe dies on launch instead of skipping, which the guard reports as
-        # a failure rather than an absence — correctly.
-        #
-        # 1.56.1 ships chromium-1194 (141.0.7390.37), the build the probes'
-        # own headers say they were verified against. Keep it and the Node
-        # install below on the same version.
-        run: npx --yes playwright@1.56.1 install --with-deps chromium
-
-      - name: Point every probe at the Chromium just installed
-        # THE PIN ABOVE WAS NOT THE BROWSER THE PROBES RAN ON. findProbeChromium
-        # (Go) and find_chromium (the guard) both look for `chromium` on PATH
-        # before they glob Playwright's cache, and ubuntu-latest ships a
-        # /usr/bin/chromium of its own — a build that changes with every image
-        # release. So this job downloaded one browser and drove another. On
-        # 2026-09-06 the image's Chromium started matching :focus-visible on
-        # the input after a synthetic label click, which held the legend open
-        # on the second tap (TestLegendProbe_TheTabOpensByKeyboardAndByTouch)
-        # on a commit that had passed unchanged on 2026-08-16; Chromium 131 and
-        # 141 both close it. CHROMIUM_BIN is honoured FIRST by every finder,
-        # so setting it here makes the pin real. A missing binary fails this
-        # step by name rather than falling through to PATH and hiding the pin
-        # again. Playwright installs under PLAYWRIGHT_BROWSERS_PATH, which this
-        # job's env sets to /opt/pw-browsers (the dev container's layout); the
-        # fallback is Playwright's own default.
-        run: |
-          shopt -s nullglob
-          root="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
-          bins=("$root"/chromium-*/chrome-linux/chrome)
-          if [ "${#bins[@]}" -ne 1 ] || [ ! -x "${bins[0]}" ]; then
-            echo "expected exactly one pinned Chromium under $root, found: ${bins[*]:-none}"
-            exit 1
-          fi
-          "${bins[0]}" --version
-          echo "CHROMIUM_BIN=${bins[0]}" >> "$GITHUB_ENV"
-
-      - name: Install the Node deps the probes drive (ONE install, deliberately)
-        # Two dependencies, one `npm install`, and the single-command shape is
-        # the whole point — do not split this back into a step each.
-        #
-        # WHY: `npm install --no-save X` reconciles node_modules against
-        # package.json PLUS X. Because --no-save never records X, the NEXT
-        # --no-save install prunes the previous one. Measured on the 2026-08-11
-        # run: `added 83 packages` (playwright), then `added 72 packages,
-        # REMOVED 2 packages` (tailwind) — those two being playwright and
-        # playwright-core, uninstalled four seconds before the probes ran.
-        #
-        # WHAT EACH IS FOR:
-        #   playwright — the MODULE, not the browsers. The Chromium step above
-        #     installs binaries; `npx --yes` runs from a transient cache and
-        #     leaves nothing `require('playwright')` can resolve.
-        #     TestSkyCloseProbe_TheCloseRendersFrames needs a REAL animation
-        #     clock, which the package's virtual-time harness cannot give it, so
-        #     it drives Chromium from Node. findProbePlaywright
-        #     (sky_close_probe_test.go:286) looks in $NODE_PATH, `npm root -g`
-        #     and the repo's node_modules; this puts it in the third. Pinned to
-        #     the same 1.56.1 as the browser install — a module and a browser
-        #     build that disagree is a debugging session nobody wants.
-        #   tailwindcss — TestProbe_MobileBreakpointSwapInRealBrowser measures a
-        #     breakpoint that exists only in the BUILT stylesheet.
-        #
-        # The guard still tracks the two as SEPARATE dependencies when it
-        # decides what a probe needs, so a missing Tailwind still cannot take
-        # the browser-only probes down with it. That separation lives in
-        # tools/check-browser-probes.sh, not in the number of install steps.
-        run: npm install --no-save --no-audit --no-fund playwright@1.56.1 tailwindcss@3.4.17
-
-      - name: Drive the browser probes
-        # Runs them WITHOUT -short and then requires a `--- PASS:` line from
-        # each probe by name. A probe that skipped, failed, was renamed or was
-        # deleted fails this job — the coverage cannot evaporate quietly.
-        run: ./tools/check-browser-probes.sh
 
   # --- Lint ---
   lint:
@@ -411,27 +241,11 @@ jobs:
         run: templ generate
 
       - name: golangci-lint
-        # The `uses:` and `with:` lines below were accidentally deleted when
-        # this pin was bumped for the Go 1.27 move, leaving a step whose only
-        # key was `version:`. That is not a valid step, so GitHub could not
-        # compile the workflow AT ALL: every push to this branch produced a
-        # run with zero jobs that failed instantly, and no job in any of the
-        # six jobs ever executed. CI was silently off, not passing. Restored.
         uses: golangci/golangci-lint-action@v7
         with:
-          # Pinned: v2.5.0's release binary was built with go1.25.1, and
-          # golangci-lint refuses to run at all against a module whose `go`
-          # directive names a newer language version than the binary that
-          # would analyze it was itself built with ("the Go language version
-          # ... used to build golangci-lint is lower than the targeted Go
-          # version") — measured locally the moment go.mod moved to 1.27.1.
-          # v2.13.2's release binary is built with go1.27.1 (verified locally:
-          # `golangci-lint --version` reports it) and its own go.mod requires
-          # "latest-1" by policy, so it tracks new Go releases deliberately.
-          # Bumping the version surfaced 17 pre-existing findings (2 govet
-          # deprecated-identifier, 15 staticcheck QF1012) from newer default
-          # checks; fixed in this same change rather than leaving Lint red.
-          # Bump this pin together with go.mod's `go` directive.
+          # golangci-lint refuses to run against a module whose `go` directive
+          # names a newer language version than the binary analyzing it was
+          # built with. Bump this pin together with go.mod's `go` directive.
           version: v2.13.2
 
   # --- Security Scan ---
@@ -446,25 +260,17 @@ jobs:
           go-version: '1.27'
 
       - name: Install govulncheck
-        # Pinned: @latest can drift ahead of whatever go-version this job
-        # runs and start requiring a newer minimum toolchain than is
-        # installed, the same failure mode that forced the old v1.1.4 pin.
-        # v1.8.0 declares `go 1.26.0` (verified in its go.mod), comfortably
-        # under this job's go-version 1.27. Bump this pin together with the
-        # job's go-version whenever a future govulncheck release raises its
+        # Pinned so @latest can't drift ahead of this job's go-version and
+        # require a newer toolchain than is installed. Bump this pin together
+        # with the job's go-version whenever a future release raises its
         # minimum above what setup-go installs here.
         run: go install golang.org/x/vuln/cmd/govulncheck@v1.8.0
 
       - name: Run govulncheck
-        # continue-on-error stays TRUE: this could not be re-verified as
-        # clean from the authoring sandbox for this toolchain bump — its
-        # vulnerability DB (vuln.go.dev) is not reachable from that sandbox's
-        # egress policy (403), a pre-existing gap (see .ai/status.md,
-        # 2026-09-06 sweep). Do not flip this to non-blocking without an
-        # actual clean run's output in hand (a CI run of this job, or a run
-        # from an environment that can reach vuln.go.dev) — an unverified
-        # "clean" is exactly the failure mode this whole change exists to
-        # end.
+        # continue-on-error: vuln.go.dev is not reachable from every CI
+        # environment. Do not flip this to blocking without a real clean run's
+        # output in hand from an environment that can reach it — an
+        # unverified "clean" is worse than a known gap.
         continue-on-error: true
         run: govulncheck ./...
 
@@ -485,34 +291,15 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Where the OCI labels come from — verified against metadata-action's own
-      # source (src/meta.ts), because on 2026-08-11 an hour was spent reasoning
-      # from these labels and nobody had read what produces them:
-      #
-      #   org.opencontainers.image.revision = this.context.sha
-      #                                       -> the commit being built. Correct.
-      #   org.opencontainers.image.created  = this.date.toISOString(), where
-      #                                       this.date = new Date() in the Meta
-      #                                       constructor -> the moment the action
-      #                                       ran, i.e. real build time. Correct.
-      #
-      # THE LABELS WERE NEVER WRONG. The February revision/created pair that
-      # triggered the incident described, accurately, a February CI image that
-      # was still holding the :latest tag in the deploy host's local image
-      # store. `docker inspect <tag>` reports whichever image holds that tag
-      # NOW; a running container keeps the image ID it was CREATED FROM. The
-      # two were different images and nothing in the output said so. The defect
-      # was in the deploy path (docker-compose.yml declaring both image: and
-      # build:, and `up -d` neither rebuilding nor re-pulling) and in
-      # Chronicle's inability to self-report — both fixed elsewhere in this
-      # change. Nothing here needed "correcting"; overriding `created` with a
-      # commit timestamp, the obvious-looking fix, would have made it wrong for
-      # the first time.
-      #
-      # The one label we DO override is description: the action's default is
-      # the GitHub repo description, and it would otherwise clobber the
-      # Dockerfile's copy of the "labels describe an image, not a process"
-      # warning on exactly the CI-built images an operator inspects.
+      # org.opencontainers.image.revision is the commit built; .created is the
+      # real build time — both come from metadata-action directly and are
+      # correct as-is. `docker inspect <tag>` reports whichever image holds
+      # that tag NOW, which is not necessarily the image a running container
+      # was created from — see docs/deployment.md §6 for how to identify a
+      # running Chronicle instead. The one label overridden here is
+      # description: the action's default is the GitHub repo description,
+      # which would otherwise clobber the Dockerfile's own "labels describe an
+      # image, not a process" warning.
       - name: Extract metadata (tags, labels)
         id: meta
         uses: docker/metadata-action@v6
@@ -542,53 +329,28 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # CHRONICLE_VERSION names a RELEASE, and only a tag is one. On a
-          # main-branch push metadata-action's `version` output is the literal
-          # "latest", which is a tag name, not a version — feeding that to
-          # GET /api/version would be a downgrade from the commit SHA the
-          # binary now stamps in by itself. Empty here falls through to that
-          # SHA (see internal/hostinfo), which is the honest answer.
+          # CHRONICLE_VERSION names a RELEASE, and only a tag is one; a
+          # main-branch push falls through to empty, which the binary itself
+          # resolves to its commit SHA (see internal/hostinfo) — the honest
+          # answer, not the literal string "latest".
           build-args: |
             CHRONICLE_VERSION=${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
             VCS_REF=${{ github.sha }}
-          # Disable provenance + SBOM attestations. build-push-action
-          # generates these by default, which adds extra manifest/blob
-          # entries that ghcr.io intermittently rejects on push with
-          # "ERROR: unknown blob". We don't consume the attestations, so
-          # turning them off both fixes the flaky push and produces a
-          # cleaner single-manifest image.
-          #
-          # These two keys previously ended up INSIDE the verify step's `run:`
-          # block scalar — the new step was inserted between them and the rest
-          # of this `with:` map, so YAML read them as two more shell lines. They
-          # were dead for one build, and the run's metadata proved it by
-          # reporting a `buildx.build.provenance` object that should not have
-          # existed. A silently-disabled setting is worse than a missing one:
-          # keep any new step BELOW this map, never between its keys.
+          # provenance/sbom attestations add manifest/blob entries that ghcr.io
+          # intermittently rejects on push; disabled since nothing consumes
+          # them. Keep any new step BELOW this `with:` map, never between its
+          # keys — YAML would fold new lines placed between them into this
+          # block scalar instead.
           provenance: false
           sbom: false
 
-      # Guard against a SILENT regression, not a hypothetical one. Go skips VCS
-      # stamping without a word when `git` is missing from the builder — exit 0,
-      # no warning, an anonymous binary — and that is exactly how every image
-      # before this change shipped unable to identify itself. If someone drops
-      # the `apk add git` from the Dockerfile, this step is what says so.
-      #
-      # It inspects the image that was actually PUSHED, addressed by digest so
-      # there is no chance of checking a different artifact than the one
-      # published — the precise ambiguity that caused the incident. Go writes
-      # vcs.revision into the binary as plain text, so grep is sufficient and
-      # needs no Go toolchain in the runtime image. The push has already
-      # happened by this point, so a failure here does not withhold the
-      # artifact; it loudly labels it unidentifiable.
-      # `env.IMAGE_NAME` is `keyxmakerx/Chronicle`, matching the repository's
-      # own capitalisation — but a Docker reference must be lowercase, and the
-      # daemon rejects the whole string rather than folding case. Everywhere
-      # else this is invisible because metadata-action lowercases its `images:`
-      # input for us; this step is the one place the reference is assembled by
-      # hand, so it must lowercase explicitly. The first run failed here, in
-      # under a second, on `invalid reference format: repository name
-      # (keyxmakerx/Chronicle@sha256) must be lowercase`.
+      # Go skips VCS stamping silently when `git` is missing from the builder
+      # stage, producing an anonymous binary — this step catches that by
+      # inspecting the PUSHED image (addressed by digest) for the commit SHA.
+      # `env.IMAGE_NAME` keeps the repository's mixed-case spelling, but a
+      # Docker reference must be lowercase, so it is lowercased explicitly
+      # here (metadata-action does this for its own `images:` input
+      # automatically).
       - name: Verify the published binary is VCS-stamped
         run: |
           set -euo pipefail

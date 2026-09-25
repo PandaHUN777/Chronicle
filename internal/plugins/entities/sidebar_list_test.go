@@ -1,16 +1,11 @@
-// sidebar_list_test.go — regression pin for the "creating a folder does nothing"
-// bug in the sidebar drill panel.
-//
+// sidebar_list_test.go pins that SidebarEntityList advertises the drilled
+// category's own typeID via data-entity-type-id, not results[0].EntityTypeID.
 // A drilled category rolls up its sub-type entities into the listing
-// (expandTypeIDsForListing), so results[0] can be an entity of a SUB-type, not
-// the category's own type. sidebar_tree.js reads the tree container's
-// data-entity-type-id when creating an empty folder (a sidebar_nodes row). When
-// that attribute was derived from results[0].EntityTypeID it could be a sub-type;
-// the new node was then scoped to the sub-type and vanished on the next refresh
-// (SearchAPI reloads folder nodes via ListByType(categoryTypeID), an exact
-// match), silently orphaning the dropped entities. SidebarEntityList now takes
-// the drilled category typeID explicitly and advertises THAT, keeping folder
-// create and reload in sync.
+// (expandTypeIDsForListing), so results[0] can be a SUB-type; sidebar_tree.js
+// reads that attribute when creating an empty folder, and a sub-type-scoped
+// folder vanishes on the next refresh (SearchAPI reloads folder nodes via
+// ListByType(categoryTypeID), an exact match), orphaning the dropped
+// entities.
 package entities
 
 import (

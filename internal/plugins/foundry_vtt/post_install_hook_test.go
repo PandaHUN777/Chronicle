@@ -1,6 +1,6 @@
-// Tests for PostInstallHook — the operator's version-stale bug fix.
-// The hook reads chronicle-package.json (or falls back) and rewrites
-// module.json's version field. These tests pin the contract:
+// Tests for PostInstallHook. The hook reads chronicle-package.json
+// (or falls back) and rewrites module.json's version field. These
+// tests pin the contract:
 //
 //   - Hook reports the right PackageType.
 //   - Fallback path: missing descriptor → defaults → module.json
@@ -21,8 +21,8 @@ import (
 )
 
 // TestPostInstallHook_PackageType pins the hook's PackageType
-// declaration. Failure here would cause the packages plugin's
-// dispatcher to skip the hook entirely, masking version-stale bugs.
+// declaration; a wrong value causes the packages plugin's dispatcher
+// to skip the hook entirely.
 func TestPostInstallHook_PackageType(t *testing.T) {
 	h := NewPostInstallHook()
 	if h.PackageType() != packages.PackageTypeFoundryModule {
@@ -30,13 +30,11 @@ func TestPostInstallHook_PackageType(t *testing.T) {
 	}
 }
 
-// TestPostInstallHook_FallbackRewritesModuleJSON — no descriptor on
-// disk → defaults apply → hook reads "module.json" at the install
-// root and overwrites the version field with the installed version.
-//
-// This is THE test for the version-stale bug fix. If this fails,
-// Foundry will continue to see the upstream GitHub release's
-// version string instead of what Chronicle reports as installed.
+// TestPostInstallHook_FallbackRewritesModuleJSON: with no descriptor
+// on disk, defaults apply and the hook reads "module.json" at the
+// install root, overwriting the version field with the installed
+// version — otherwise Foundry sees the upstream release's version
+// string instead of what Chronicle actually installed.
 func TestPostInstallHook_FallbackRewritesModuleJSON(t *testing.T) {
 	dir := t.TempDir()
 	// Upstream module.json with the stale upstream version baked in.
@@ -113,8 +111,7 @@ func TestPostInstallHook_InvalidDescriptorFailsLoudly(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected hook to fail on invalid descriptor, got nil error")
 	}
-	// Verify the categorized error shape — Foundry's FM-CSU-DIAG
-	// will read this format.
+	// Verify the categorized error shape downstream diagnostics rely on.
 	fe := AsError(err)
 	if fe == nil {
 		t.Fatalf("expected *Error, got %T", err)

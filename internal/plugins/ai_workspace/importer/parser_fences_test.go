@@ -1,11 +1,10 @@
 package importer
 
-// parser_fences_test.go — pins the fence-classification fix (operator,
-// 2026-06-12: "failed to parse due to incorrect --- formatting"). The
-// old splitter paired `---` fences blindly odd/even, so ONE horizontal
-// rule in a body — or one unclosed front-matter block — shifted the
-// pairing and corrupted every page after it. Fences are now classified
-// by content: opener iff followed by a YAML key line; divider otherwise.
+// parser_fences_test.go pins fence classification: a `---` fence is an
+// opener only when followed by a YAML key line, otherwise a divider.
+// Pairing fences blindly odd/even would let one horizontal rule in a
+// body, or one unclosed front-matter block, shift the pairing and
+// corrupt every page after it.
 
 import (
 	"strings"

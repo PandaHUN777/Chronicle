@@ -104,10 +104,10 @@ func TestPrune_KeepNewestNAndFoundrySkipped(t *testing.T) {
 	svc, slugDir := prunePkgEnv(t, "0.13.4", []string{"0.11.0", "0.12.0", "0.13.0", "0.13.4"})
 	svc.loadedDirsFn = func() map[string]bool { return nil }
 
-	// Foundry package with on-disk version dirs — must be ignored.
-	// Derive the on-disk fragment from the PackageTypeFoundryModule enum
-	// rather than a bare slug literal so this cross-plugin reference passes
-	// through the PackageType constant (M-B2.1 plugin-isolation guard, T-B2).
+	// Foundry package with on-disk version dirs — must be ignored. Derive
+	// the on-disk fragment from the PackageTypeFoundryModule enum rather
+	// than a bare slug literal so the plugin-isolation guard doesn't flag
+	// this cross-plugin reference.
 	repo := svc.repo.(*fakeRepo)
 	fDir := filepath.Join(svc.packagesDir(), string(PackageTypeFoundryModule), "0.1.0")
 	if err := os.MkdirAll(fDir, 0o755); err != nil {
@@ -134,11 +134,11 @@ func TestPrune_KeepNewestNAndFoundrySkipped(t *testing.T) {
 	_ = slugDir
 }
 
-// TestPrune_TakesPerPackageInstallLock pins the concurrency fix: prune must
-// hold the same per-package installLocks mutex InstallVersion takes, so a
-// reclaim can't RemoveAll a version dir an install is mid-extract into.
-// While the lock is held (as an in-flight install would), prune must block
-// and touch nothing; once released it proceeds and reclaims the stale dir.
+// TestPrune_TakesPerPackageInstallLock pins that prune holds the same
+// per-package installLocks mutex InstallVersion takes, so a reclaim can't
+// RemoveAll a version dir an install is mid-extract into: while the lock is
+// held, prune must block and touch nothing; once released it reclaims the
+// stale dir.
 func TestPrune_TakesPerPackageInstallLock(t *testing.T) {
 	svc, slugDir := prunePkgEnv(t, "0.13.0", []string{"0.0.7", "0.13.0"})
 	svc.loadedDirsFn = func() map[string]bool { return nil }

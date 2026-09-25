@@ -142,13 +142,11 @@ func (r *entityTypeRepository) Create(ctx context.Context, et *EntityType) error
 // FindByID retrieves an entity type by its auto-increment ID.
 //
 // ParentTypeName (the Category › Sub-category lineage line in the entity
-// editor — C-ENTITY-PERMISSIONS-UX Part 3) is resolved in a second, cheap
-// PK lookup only when the type actually has a parent. That keeps this read
-// on the single shared scanEntityType path with every other entity-type
-// read — the whole point of entityTypeColumns — instead of carrying a
-// bespoke JOIN+scan that would reintroduce the column/scan drift risk.
-// External behavior is unchanged: top-level types still get a nil name, and
-// a parent deleted between the two reads degrades gracefully to nil.
+// editor) is resolved in a second, cheap PK lookup only when the type
+// actually has a parent. That keeps this read on the single shared
+// scanEntityType path with every other entity-type read instead of a bespoke
+// JOIN+scan that would reintroduce column/scan drift. Top-level types get a
+// nil name, and a parent deleted between the two reads degrades to nil.
 func (r *entityTypeRepository) FindByID(ctx context.Context, id int) (*EntityType, error) {
 	query := `SELECT ` + entityTypeColumns + ` FROM entity_types WHERE id = ?`
 
@@ -1158,22 +1156,22 @@ func tagFilterClause(tagSlugs []string) (string, []any) {
 //   - "default": uses the legacy is_private flag (Scribe+ sees all, Player sees public only)
 //   - "custom": checks entity_permissions for explicit grants to the user, their
 //     role level, or the 'public' subject
-//   - tag grants (additive, C-PERM-W1-TAG-GRANTS): an otherwise-hidden entity
-//     becomes visible if any tag it bears carries a tag_permissions grant whose
-//     subject matches the viewer (role/user/group/public). This branch can only
-//     WIDEN visibility — it never hides anything — so it sits as a top-level OR.
+//   - tag grants (additive): an otherwise-hidden entity becomes visible if any
+//     tag it bears carries a tag_permissions grant matching the viewer
+//     (role/user/group/public). This branch can only WIDEN visibility, so it
+//     sits as a top-level OR.
 //
 // Role-tier matching uses subject_id <= role, so a grant to RolePlayer (1) is
 // visible to Player and above but NOT to an anonymous/public viewer (role 0).
 // The 'public' subject matches every viewer including anonymous, giving owners
-// an explicit "reveal to everyone" target distinct from "Players"
-// (C-PERM-ANON-IDENTITY).
+// an explicit "reveal to everyone" target distinct from "Players".
 //
-// SECURITY-SENSITIVE — MIRRORED VERBATIM in
-// internal/plugins/calendar/entity_ties_repository.go::entityVisibilityFilter
-// (rule 8 forbids importing another plugin's repo, so the policy is replicated).
-// Any change here MUST be applied identically there, and both test suites +
-// the cross-mirror sync pin (TestEntityVisibilityFilter) updated. cordinator#32/#455.
+// SECURITY-SENSITIVE. Was mirrored verbatim in the calendar plugin's
+// entity_ties_repository.go (rule 8 forbids importing another plugin's
+// repo, so the policy was replicated); that file was deleted with the
+// rest of the pre-V5 calendar plugin. CALV5-PLACEHOLDER: V5 must
+// re-mirror this policy wherever it re-ties calendar events to
+// entities, and add a cross-mirror sync test (#741).
 func visibilityFilter(role int, userID string) (string, []any) {
 	if role >= permissions.RoleOwner {
 		return "", nil
@@ -1219,12 +1217,11 @@ func visibilityFilter(role int, userID string) (string, []any) {
 // per-viewer visibility policy (visibilityFilter — the same predicate List /
 // Search / the mention-graph use). Batched: one query, no per-row N+1.
 //
-// WHY this exists: the entity widgets (relation lists, relations graph) must hide
-// private-entity targets/nodes from viewers who cannot see them, but widgets may
-// not touch the entities repo directly (plugin-isolation, rule 8). This method is
-// the batched building block the entity service exposes for that. Cross-campaign
-// IDs are excluded for free by the `campaign_id = ?` scope. Cites: cordinator/
-// dispatches/chronicle/C-PUBLIC-VIEW-FIX-R2.md; 2026-05-21-core-tenets §T-B1.
+// Entity widgets (relation lists, relations graph) must hide private-entity
+// targets/nodes from viewers who cannot see them, but may not touch the
+// entities repo directly (plugin isolation, rule 8); this is the batched
+// building block the entity service exposes for that. Cross-campaign IDs are
+// excluded for free by the `campaign_id = ?` scope.
 func (r *entityRepository) FilterViewableEntityIDs(ctx context.Context, campaignID string, entityIDs []string, role int, userID string) (map[string]bool, error) {
 	viewable := make(map[string]bool, len(entityIDs))
 	if len(entityIDs) == 0 {
@@ -1347,8 +1344,7 @@ func (r *entityRepository) ListByCampaign(ctx context.Context, campaignID string
 // name/icon/color are populated for the card grid.
 //
 // Visibility filtering is intentionally absent — see the interface
-// docstring. The (campaign_id, owner_user_id) composite index from
-// migration 000022 backs this query.
+// docstring. Backed by the (campaign_id, owner_user_id) composite index.
 func (r *entityRepository) ListByOwner(ctx context.Context, campaignID, ownerUserID string) ([]Entity, error) {
 	query := `SELECT ` + entitySelectColumns + `
 	          FROM entities e
@@ -1617,22 +1613,16 @@ func (r *entityRepository) FindChildren(ctx context.Context, parentID string, ro
 // ordered from immediate parent to furthest ancestor. Uses a recursive CTE
 // with a depth limit of 20 to prevent infinite loops from data corruption.
 func (r *entityRepository) FindAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
-	// The breadcrumb used to print this chain unfiltered, so a hidden PARENT's
-	// name and link rendered to anyone who could see the CHILD -- exactly what
-	// ADR-055 rule 3 forbids ("hidden content is absent, not greyed, not
-	// counted, not named"). FindChildren, two functions above, was fixed for
-	// this class under ADR-057/P1FIX; FindAncestors was missed.
+	// SECURITY: a hidden ancestor must be absent from this chain, never named
+	// (ADR-055 rule 3) — the breadcrumb renders every row it gets back.
 	//
 	// The OUTER select aliases the CTE as `e`, not `a`, so visibilityFilter's
-	// `e.`-qualified predicate applies verbatim. That is deliberate: it reuses
-	// the one canonical predicate instead of hand-rolling a second copy of the
-	// policy, which is the mistake that produced three separate leaks in this
-	// repository already.
+	// `e.`-qualified predicate applies verbatim — reusing the one canonical
+	// predicate instead of a second hand-rolled copy of the policy.
 	//
-	// The filter goes on the OUTER select, never inside the recursion. Pruning
-	// mid-recursion would drop every ancestor ABOVE a hidden one too, hiding
-	// pages the viewer is entitled to see. Filtering outside means a hidden
-	// link in the chain is simply absent and its visible parent still shows.
+	// The filter must stay on the OUTER select, never inside the recursion:
+	// pruning mid-recursion would drop every ancestor ABOVE a hidden one too,
+	// hiding pages the viewer is entitled to see.
 	visFilter, visArgs := visibilityFilter(role, userID)
 	where := ""
 	if visFilter != "" {
@@ -1826,14 +1816,13 @@ func (r *entityRepository) UpdateEntityType(ctx context.Context, entityID string
 
 // backlinksWhere builds the WHERE clause + args for FindBacklinks.
 //
-// Split out as a pure helper (mirroring visibilityFilter's shape) so the
-// campaign scope can be pinned without a database — see
-// backlinks_scope_test.go. The `e.campaign_id = ?` term is SECURITY-SENSITIVE:
-// mention IDs are campaign-agnostic UUIDs, so without it a lookup for an
-// entity id matched every campaign's entry_html, and an Owner-role viewer
-// (empty visibilityFilter fragment) collected other campaigns' private
-// entities too. Same scoping FilterViewableEntityIDs / FindAllMentionLinks
-// already apply. (C-SWEEP-R3)
+// Split out as a pure helper so the campaign scope can be pinned without a
+// database — see backlinks_scope_test.go. The `e.campaign_id = ?` term is
+// SECURITY-SENSITIVE: mention IDs are campaign-agnostic UUIDs, so without it
+// a lookup for an entity id matches every campaign's entry_html, and an
+// Owner-role viewer (empty visibilityFilter fragment) would collect other
+// campaigns' private entities too. Same scoping FilterViewableEntityIDs /
+// FindAllMentionLinks apply.
 func backlinksWhere(campaignID, entityID string, role int, userID string) (string, []any) {
 	where := `WHERE e.campaign_id = ? AND e.entry_html LIKE ? AND e.id != ?`
 	escaped := strings.NewReplacer("%", `\%`, "_", `\_`).Replace(entityID)

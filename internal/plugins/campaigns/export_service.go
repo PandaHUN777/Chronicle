@@ -414,15 +414,14 @@ func (s *ExportImportService) Export(ctx context.Context, campaignID string) (*C
 
 // Import creates a new campaign from a CampaignExport. Returns the newly
 // created campaign and a report of everything that could not be restored.
-// The import processes data in dependency order:
-// 1. Campaign metadata → 2. Entity types + entities + tags + relations →
-// 3. Calendar → 4. Timelines → 5. Sessions → 6. Maps → 7. Notes → 8. Addons
+// Processes data in dependency order: campaign metadata, entity types +
+// entities + tags + relations, calendar, timelines, sessions, maps, notes,
+// addons.
 //
-// Import is best-effort by design: a single bad row must not abandon a
-// half-built campaign. The returned *ImportReport is how that stays honest —
-// it is never nil, and a non-zero Count() means the caller MUST tell the
-// operator that the restore is partial and what was lost. Returning it
-// unused is the bug this signature exists to prevent.
+// Import is best-effort: a single bad row must not abandon a half-built
+// campaign. The returned *ImportReport is never nil; a non-zero Count()
+// means the caller MUST tell the operator the restore is partial and what
+// was lost.
 func (s *ExportImportService) Import(ctx context.Context, userID string, data *CampaignExport) (*Campaign, *ImportReport, error) {
 	report := NewImportReport()
 	// Create the new campaign.
@@ -438,10 +437,10 @@ func (s *ExportImportService) Import(ctx context.Context, userID string, data *C
 
 	// Apply campaign settings if present.
 	if len(data.Campaign.SidebarConfig) > 0 {
-		// A pre-C-NAV-V3 export carries the legacy sidebar fields; convert it to
-		// the unified items model on the way in. A modern export is already on
-		// items and unmarshals directly. Either way we write only the unified
-		// fields (Items + hidden sets).
+		// A legacy export carries the old sidebar fields; convert it to the
+		// unified items model on the way in. A modern export is already on
+		// items and unmarshals directly. Either way we write only the
+		// unified fields (Items + hidden sets).
 		cfg, converted := convertLegacySidebarConfig(string(data.Campaign.SidebarConfig))
 		if !converted {
 			var parsed SidebarConfig

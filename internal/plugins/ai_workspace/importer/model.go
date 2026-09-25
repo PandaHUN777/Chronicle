@@ -1,30 +1,19 @@
 // Package importer parses AI-generated markdown into per-page
 // ParsedPage structs, classifies each (full / defaults / conflict /
 // new category / parse error), and prepares the review-screen data
-// the operator inspects before committing.
-//
-// V1 Phase 4 ships parse + review only. The commit handler (which
-// actually creates entities + categories) lands in Phase 5
-// (C-AI-WORKSPACE-V1-D's sibling). This package's public surface is
-// designed so Phase 5 consumes ParsedPage + ReviewRow without
-// re-parsing.
-//
-// SEC-6-AMENDED is inherited at the markdown→HTML boundary (see
-// markdown_html.go's MarkdownToHTML; pipes goldmark output through
-// sanitize.HTML before any storage hand-off). The AST structural
-// pin enforcing the funnel lands in Phase 5 alongside the committer.
-//
-// Per cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §1.4 (HTML→ProseMirror — recommendation A), §2.2 (review screen),
-// §3.3 (front-matter schema), §3.8 (per-category create-once).
+// the operator inspects before committing. The commit handler
+// (committer.go) consumes ParsedPage + the operator's decisions to
+// create entities and categories. The markdown→HTML boundary
+// (markdown_html.go's MarkdownToHTML) pipes goldmark output through
+// sanitize.HTML before any storage hand-off — the SEC-6 funnel, with
+// an AST structural pin in committer_sanitize_test.go.
 package importer
 
 import "time"
 
 // FrontMatter is the YAML preamble that AI tools emit between
-// `---` fences above each page. Matches scoping §3.3 schema exactly;
-// every field is optional — missing fields fall back to bulk
-// defaults or the H1 / filename for Name.
+// `---` fences above each page. Every field is optional — missing
+// fields fall back to bulk defaults or the H1 / filename for Name.
 //
 // Unknown YAML keys are tolerated by yaml.v3's loose unmarshalling
 // + surfaced as a warning chip on the review row (handled by the
@@ -35,23 +24,19 @@ type FrontMatter struct {
 	Subcategory string   `yaml:"subcategory"` // TypeLabel value
 	Visibility  string   `yaml:"visibility"`  // "private" | "dm_only" | "public"
 	Tags        []string `yaml:"tags"`
-	Description string   `yaml:"description"` // V2 candidate; tolerated in V1
-	// Action (V1.5 / C-AI-WORKSPACE-V1-G) declares the AI's intent for
-	// this row: "create" (default; existing V1 behavior), "update" (load
-	// existing entity by name; replace metadata + body — same semantic
-	// as V1's ConflictMode=overwrite), or "delete" (load existing; remove).
-	// Empty string defaults to "create" so pages from V1-era AI prompts
-	// without the field continue to work. Validated by the parser
-	// against the {create, update, delete} enum; invalid value yields
-	// StatusParseError with a friendly message.
+	Description string   `yaml:"description"`
+	// Action declares the AI's intent for this row: "create" (default,
+	// same as ConflictMode=overwrite semantics), "update" (load
+	// existing entity by name, replace metadata + body), or "delete"
+	// (load existing, remove). Empty defaults to "create". Validated
+	// by the parser against the {create, update, delete} enum;
+	// invalid value yields StatusParseError.
 	Action string `yaml:"action"`
 }
 
-// Front-matter action values (V1.5 verb-set extension per C-AI-WORKSPACE-V1-G;
-// Q-V2-AI-1 vocabulary locked 2026-05-28). The corresponding committer
-// dispatch lives in committer.go; the review-screen UI exposes them as
-// per-row chips. Empty Action defaults to ActionCreate at parse time so
-// V1-era AI prompts (no `action:` field) continue to work unchanged.
+// Front-matter action values. The corresponding committer dispatch
+// lives in committer.go; the review-screen UI exposes them as
+// per-row chips. Empty Action defaults to ActionCreate at parse time.
 const (
 	ActionCreate = "create"
 	ActionUpdate = "update"
@@ -67,7 +52,7 @@ const (
 	// conflict exists. Default-include.
 	StatusNew ParseStatus = "new"
 	// StatusConflict means a campaign entity with the same slug
-	// already exists. Operator picks Skip / Rename / Overwrite per
+	// already exists. Operator picks Skip / Rename / Update per
 	// row. Default-include with default-mode = Rename.
 	StatusConflict ParseStatus = "conflict"
 	// StatusNewCategory means the page parses BUT references an
@@ -79,18 +64,18 @@ const (
 	// Default-EXCLUDE; the operator must fix the source markdown
 	// or skip the row.
 	StatusParseError ParseStatus = "parse_error"
-	// StatusActionMismatch (V1.5 / C-AI-WORKSPACE-V1-G) means the
-	// row's `action:` directive is incompatible with live campaign
-	// state — e.g. `action: update` or `action: delete` targeting an
-	// entity that doesn't exist. Default-EXCLUDE; operator can either
-	// fix the source or override the action via per-row controls.
+	// StatusActionMismatch means the row's `action:` directive is
+	// incompatible with live campaign state — e.g. `action: update` or
+	// `action: delete` targeting an entity that doesn't exist.
+	// Default-EXCLUDE; operator can fix the source or override the
+	// action via per-row controls.
 	StatusActionMismatch ParseStatus = "action_mismatch"
 )
 
 // ParsedPage is one page detected in the multi-page input. The
 // parser produces a slice of these; the review screen renders one
-// row per ParsedPage; Phase 5's committer iterates the operator-
-// confirmed selection to create entities.
+// row per ParsedPage; the committer iterates the operator-confirmed
+// selection to create entities.
 type ParsedPage struct {
 	// SourceIndex is the page's position in the input (0-based),
 	// used for stable React-style keys on the review row.
@@ -114,8 +99,9 @@ type ParsedPage struct {
 	HasFrontMatter bool
 
 	// Body is the markdown body (everything after the front-matter
-	// fence, or the whole input if no FM). Phase 5 converts this
-	// to HTML via MarkdownToHTML + then to ProseMirror JSON.
+	// fence, or the whole input if no FM). The commit handler
+	// converts this to HTML via MarkdownToHTML + then to ProseMirror
+	// JSON.
 	Body string
 
 	// Status classifies the page; see ParseStatus.

@@ -1,15 +1,9 @@
-// availability_labels.test.mjs — guard for C-CAL-BETA-RESCUE #3:
-// "the reserve/proposal flow renders 'all h's'".
-//
-// STATUS: could NOT be reproduced in the current code. hourLabel() (availability.js
-// :42) and every one of its callers — the my-availability axis, the team-overlay
-// hour axis, the per-member lane titles, and the DM slot-builder chips — render
-// correct 12-hour clock strings ("12 AM" … "11 PM", "6 PM–10 PM"). No path emits a
-// literal 'h'. The server-side proposal/RSVP labels are separately unit-tested
-// (proposals_service_test.go: TimeLabel == "7:00 PM – 9:00 PM").
-//
-// This suite pins that contract so a future regression that reintroduces a stray
-// 'h' (e.g. a 24h "18h" style, or a moment-style "hh:mm" leaking in) is caught.
+// availability_labels.test.mjs — pins that hourLabel() and its callers (the
+// my-availability axis, the team-overlay hour axis, per-member lane titles,
+// DM slot-builder chips) render correct 12-hour clock strings ("12 AM" …
+// "11 PM", "6 PM–10 PM"), never a stray 'h' (a 24h "18h" or "hh:mm" leak).
+// Server-side proposal/RSVP labels are pinned separately in
+// proposals_service_test.go.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

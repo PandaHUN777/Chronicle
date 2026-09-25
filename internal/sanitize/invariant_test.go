@@ -1,54 +1,19 @@
-// invariant_test.go pins the sanitization-on-write invariant from the
-// C-SECURITY-AUDIT §3 G-C4: every plugin/widget service.go that accepts
-// HTML-typed user input via a function parameter or input struct field
-// MUST call sanitize.HTML somewhere in the file. The 8 plugins that
-// already follow this convention (per audit §1.3) are the green
-// baseline; this test pins them + catches a future plugin author who
-// adds an HTML input field without the matching sanitize call.
+// Pins the sanitization-on-write invariant (T-B1): every plugin/widget
+// service.go that accepts HTML-typed user input via a function parameter or
+// input struct field must call sanitize.HTML somewhere in the file.
 //
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-22-c-security-audit.md §3 G-C4,
-// §5 Chunk 7, §1.3.
+// This is a file-level, not method-level, invariant: if a service.go
+// declares any HTML-typed parameter or struct field, the file must contain
+// at least one sanitize.HTML call. It does not trace flow (renamed params,
+// locals, helper-wrapped sanitization) — it catches a plugin author adding
+// an HTML input field with no matching sanitize call anywhere in the file.
 //
-// SCOPE — focused-invariant pattern, mirrors C-SEC-CHUNK-2's reshape.
-//
-// The dispatch (C-SEC-CHUNK-7) called for a full AST walker that
-// finds Create*/Update* Service methods, identifies HTML-typed
-// params, traces variable assignments, and asserts sanitize.HTML
-// is called on each. That's a flow-analysis problem (params can be
-// renamed, fields can be unpacked into locals, sanitization can
-// happen via helpers).
-//
-// This file ships a coarser-but-meaningful invariant:
-//
-//   FILE-LEVEL: if a service.go declares any HTML-typed parameter
-//   OR struct field, the file MUST contain at least one
-//   sanitize.HTML call.
-//
-// This catches the regression case the audit cared about: a new
-// plugin author adding an Update method with an EntryHTML param +
-// forgetting to sanitize.
-//
-// A snapshot file (sanitize_invariant_snapshot.txt) lists the
-// per-file inventory so the curated baseline is auditable: which
-// files have HTML inputs + how many sanitize calls. Adding HTML
-// input to a file with zero sanitize calls trips the test; the
-// snapshot diff makes the intent explicit at review time.
-//
-// To regenerate the snapshot after intentionally adding sanitize
+// A snapshot file (sanitize_invariant_snapshot.txt) lists the per-file
+// inventory of HTML inputs and sanitize-call counts, so a new gap is
+// explicit at review time. Regenerate after intentionally adding sanitize
 // surface:
 //
 //	UPDATE_SANITIZE_SNAPSHOT=1 go test ./internal/sanitize/...
-//
-// Same pattern as internal/wire/wire_contract_test.go.
-//
-// Deferred for a future C-SEC-CHUNK-7-PHASE-2 dispatch:
-//   - Method-level invariant (per-Create/Update; flow analysis)
-//   - Helper-function tracing (sanitize.HTML wrapped in a plugin-
-//     local helper, called from the Create/Update method)
-//   - Auto-detect what an "HTML-typed param" means beyond name-
-//     ending-in-HTML (e.g. param of type Content where Content.HTML
-//     exists)
 package sanitize
 
 import (
@@ -214,11 +179,10 @@ func walkServiceFiles(t *testing.T) []fileInventory {
 		inv := inventoryFile(t, abs, rel)
 
 		// Augment with struct-field detections from the package's
-		// model.go (if present). Chronicle's convention puts Input /
-		// Request struct definitions in model.go; the Update method
-		// signature in service.go takes an *Input pointer and reads
-		// its HTML fields via input.EntryHTML. Without scanning
-		// model.go, the file-scoped detection misses these.
+		// model.go, if present: Input/Request structs live there, and
+		// service.go's Update methods take an *Input pointer, so the
+		// file-scoped detection would otherwise miss HTML fields
+		// declared on the struct.
 		dir := filepath.Dir(abs)
 		modelPath := filepath.Join(dir, "model.go")
 		if _, err := os.Stat(modelPath); err == nil {

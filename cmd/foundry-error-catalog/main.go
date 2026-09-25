@@ -1,22 +1,12 @@
-// foundry-error-catalog regenerates the canonical JSON artifact
-// describing every error code the foundry_vtt plugin can emit.
+// foundry-error-catalog regenerates the canonical JSON artifact describing
+// every error code the foundry_vtt plugin can emit, consumed by Foundry-side
+// docs that cross-reference the Chronicle error contract.
 //
-// Run via `make foundry-error-catalog` from the repo root. Writes
-// the JSON to internal/plugins/foundry_vtt/error-catalog.json by
-// default; pass -o to redirect. The output is consumed by:
-//
-//   - Foundry-side docs that cross-reference the Chronicle error
-//     contract (FM-CSU-DIAG-FIX classifier; FM-DOC-CONTRACT
-//     manifest endpoint reference).
-//   - A future FM-DRIFT-GUARD on the Foundry side that fetches
-//     this artifact and asserts the categorizer covers every code.
-//
-// Drift detection is the test path; this binary is the
-// regeneration path. The two stay in sync by sharing
-// internal/plugins/foundry_vtt/errors_catalog.go's parser.
-//
-// See internal/plugins/foundry_vtt/.ai.md "Adding a new error
-// code" runbook for the developer workflow.
+// Run via `make foundry-error-catalog` from the repo root. Writes the JSON to
+// internal/plugins/foundry_vtt/error-catalog.json by default; pass -o to
+// redirect. Shares its parser with errors_catalog.go so generation and drift
+// checks stay in sync. See internal/plugins/foundry_vtt/.ai.md "Adding a new
+// error code".
 package main
 
 import (

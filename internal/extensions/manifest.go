@@ -164,7 +164,7 @@ type ReferenceCategory struct {
 
 // WidgetContribution declares a browser-side widget that an extension provides.
 // Widget JS files are loaded into campaign pages when the extension is enabled.
-// Widgets register via Chronicle.registerWidget() and mount to data-widget elements.
+// Widgets register via Chronicle.register() and mount to data-widget elements.
 type WidgetContribution struct {
 	Slug        string              `json:"slug"`
 	Name        string              `json:"name"`

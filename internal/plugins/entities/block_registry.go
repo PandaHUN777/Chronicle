@@ -257,12 +257,10 @@ func (r *BlockRegistry) Render(goCtx context.Context, ctx BlockRenderContext) te
 		return nil
 	}
 
-	// Skip blocks whose addon is disabled for this campaign. Diagnostic
-	// logging on both branches: a Debug line on the silent-skip path
-	// (so an operator can flip to debug level and immediately see why
-	// a block isn't rendering) and a Warn line on the checker-error
-	// path (previously swallowed via `if err == nil`, which masked any
-	// DB outage hitting the addon-gate query).
+	// Skip blocks whose addon is disabled for this campaign. Log a Debug
+	// line on the silent-skip path (so an operator can see why a block
+	// isn't rendering) and a Warn line when the checker itself errors,
+	// so a DB outage on the addon-gate query isn't swallowed silently.
 	if entry.meta.Addon != "" && r.addonChecker != nil && ctx.CC != nil {
 		enabled, err := r.addonChecker.IsEnabledForCampaign(goCtx, ctx.CC.Campaign.ID, entry.meta.Addon)
 		if err != nil {
@@ -422,11 +420,11 @@ func RenderBlock(goCtx context.Context, block TemplateBlock, cc *campaigns.Campa
 	if reg.IsSingleton(block.Type) && !markRenderedSingleton(goCtx, block.Type) {
 		return blockSingletonDuplicateError(block.Type)
 	}
-	// BUG FIX 2 (C-CAL-ENTITY-PAGE-EMBED): entity pages are template-context.
-	// A REGISTERED block that is dashboard-only (wrong context here) or has a
-	// nil renderer would otherwise render a silent blank — show a clear
-	// placeholder instead. Unregistered/removed types still drop silently
-	// (intentional, e.g. the retired map_preview), handled by reg.Render→nil.
+	// Entity pages are template-context. A REGISTERED block that is
+	// dashboard-only (wrong context here) or has a nil renderer would
+	// otherwise render a silent blank — show a clear placeholder instead.
+	// Unregistered/removed types still drop silently (e.g. map_preview),
+	// handled by reg.Render -> nil.
 	if reg.IsValid(block.Type) && (!reg.IsValidForContext(block.Type, "template") || !reg.HasRenderer(block.Type)) {
 		return blockUnavailablePlaceholder(block.Type)
 	}

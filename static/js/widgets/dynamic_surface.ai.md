@@ -1,6 +1,5 @@
 # dynamic_surface.js — the dynamic-surface frame (`Chronicle.surface`)
 
-Wave-1 of the dynamic-surface vision (Cordinator `plans/2026-06-21-dynamic-widget-ui-framework-design.md`).
 A frame-owned, system-agnostic toolkit for building dynamic sheets: a motion-preset
 library, an overlay stack, an expand/collapse box primitive, a shared data provider,
 a mini→full launch, and a schema-driven mount. Vanilla browser JS, loaded after
@@ -55,6 +54,6 @@ Browser JS; **esbuild** transform-validated (es2015); the `templ`+`go build` wir
 `app.css`/`*_templ.go` are gitignored, rebuilt at deploy. **Look-and-feel is browser-verified by the
 operator** — no node/jsdom test harness (project is node-free apart from build tooling).
 
-## Not yet (next)
-A System adopter (the Draw Steel character sheet registering its box renderers + emitting the schema),
-and the server-side surface schema authoring (extend `layout_json`). The frame is complete and adopter-ready.
+## Open work
+
+Open work: #683 (a System adopter — e.g. Draw Steel — registering box renderers and emitting the schema; server-side surface schema authoring via `layout_json`).

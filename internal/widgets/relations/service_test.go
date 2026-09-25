@@ -633,7 +633,7 @@ func TestGetCommonTypes_AllPairsHaveBothLabels(t *testing.T) {
 	}
 }
 
-// --- Graph visibility filtering (C-PUBLIC-VIEW-FIX-R2) ---
+// --- Graph visibility filtering ---
 
 // graphFixture: a public entity linked to a private entity. Both endpoints and
 // the edge are visible today (leak); after filtering, the private node + edge

@@ -1,44 +1,14 @@
 // Package systems — operator_diag_campaign.go is the CAMPAIGN half of the
-// operator diagnostic catalog: "why does MY campaign look like this?"
+// operator diagnostic catalog: "why does MY campaign look like this?" — as
+// opposed to the host.* family, which answers WHICH CODE IS RUNNING.
 //
-// WHY IT EXISTS. The host.* family answers WHICH CODE IS RUNNING. On
-// 2026-08-11 an operator reported three things about their phone — no RSVP on
-// the calendar, no real moon on the real calendar, and a skybox that was still
-// there — and answering them took a five-lane source investigation. The
-// catalog scored 0 for 3, because every diagnostic in it reads process state,
-// on-disk or embedded bytes, or entity rows, and NOT ONE reads `campaign_addons`,
-// `campaigns.dashboard_layout` / `sidebar_config`, the `calendars` /
-// `calendar_moons` tables, the route table, or any render decision. The one
-// reachable move was `host.deploy-check data-bench-rsvp`, which would have
-// answered "✓ found in the executable" — true, and the wrong answer.
+// Two diagnostics live here, both reading campaign CONFIG: `campaign.surfaces`
+// (which live route serves a URL, and where the sidebar points) and
+// `campaign.config` (enabled addons and every block a campaign has placed).
 //
-// The blind spot is THREE axes, not one:
-//
-//   - campaign CONFIG (addons, layouts, sidebar),
-//   - per-VIEWER state (`block_layers`, `bench_sections` — both
-//     `(user_id, campaign_id)`-grained, both defaulting to something other
-//     than nothing), and
-//   - PRODUCER RULES ([SKY-1], benchClassify) that exist only as Go comments.
-//
-// THE MIRROR, STATED UP FRONT BECAUSE IT IS THIS FILE'S ONE REAL RISK.
-// `benchClassify`, `resolveBenchSections`, the [SKY-1] seat arguments and the
-// Almanac gate are all UNEXPORTED inside `internal/plugins/calendar`, and
-// `internal/systems` must not import a plugin package. So `calendar.render`
-// re-derives them here from the same inputs — it is a MIRROR of the producer,
-// not a call into it. A mirror that silently goes stale would be a second
-// opinion that disagrees with the page precisely while somebody is using it to
-// decide what the page did, which is the worst available failure. Two things
-// hold it honest:
-//
-//  1. Every mirrored rule carries its source file and the exact line it copies,
-//     and `operator_diag_campaign_mirror_test.go` reads that source and fails
-//     when the line changes.
-//  2. The render trace SAYS it is a mirror, in its own output, every time.
-//
-// DEGRADE LOUDLY. An unwired provider prints "provider not wired"; a read that
-// failed prints the error. A plausible-looking empty answer is the one thing
-// none of these may ever produce — "no moons" and "nobody could read the moons
-// table" must never render the same.
+// DEGRADE LOUDLY. An unwired provider prints "provider not wired"; a read
+// that failed prints the error. A plausible-looking empty answer is the one
+// thing neither of these may ever produce.
 package systems
 
 import (
@@ -49,114 +19,6 @@ import (
 )
 
 // ── the injected window ─────────────────────────────────────────────────────
-
-// DiagCalendar is one calendar as the Bench's own loaders return it.
-//
-// MoonRowsStored and MoonsRendered are DELIBERATELY TWO FIELDS. Since
-// 2026-08-11 the Block spine synthesizes THE Moon for a real-life calendar
-// with no authored moons (`moon_fallback.go`), so "how many moons does this
-// calendar declare" and "how many moons does the grid draw" are different
-// numbers, and the gap between them is exactly what a GM asking "where is my
-// moon" needs to see. Collapsing them into one count would hide the answer.
-type DiagCalendar struct {
-	ID   string
-	Name string
-	Mode string // "fantasy" | "reallife"
-
-	IsDefault      bool
-	TracksRealTime bool
-	RealTimeZone   string
-	Visibility     string
-
-	Months    int
-	Weekdays  int
-	Seasons   int
-	Eras      int
-	Cycles    int
-	Festivals int
-
-	// MoonRowsStored is the `calendar_moons` row count (the calendar service's
-	// own eager load, which applies no fallback). Empty when the provider could
-	// not read it — see StoredCountNote.
-	MoonRowsStored  int
-	StoredCountNote string
-
-	// MoonsRendered is len(cal.Moons) as the Block spine hands it to the
-	// renderer, i.e. AFTER the real-Moon fallback.
-	MoonsRendered int
-	MoonNames     []string
-
-	// SynthesizedMoon reports that MoonsRendered includes a body with no
-	// database row.
-	SynthesizedMoon bool
-}
-
-// ViewerFacts is who a render trace was run for.
-type ViewerFacts struct {
-	UserID     string
-	Supplied   bool // false when the arg carried no `:userId`
-	Found      bool // a campaign_members row resolved
-	MemberRole int  // the raw membership role (RequireRole compares this)
-	DmGranted  bool
-	Role       int // the VISIBILITY role — cc.VisibilityRole(): RoleOwner when DmGranted
-	Note       string
-}
-
-// CampaignCalendarFacts is everything `calendar.render` and `calendar.config`
-// read. One provider call serves both: the expensive part is the calendar list
-// plus its sub-resource counts, and both diagnostics need it.
-type CampaignCalendarFacts struct {
-	Found        bool
-	CampaignID   string
-	CampaignName string
-
-	// AddonEnabled is nil when the addons service could not be read. Every
-	// calendar route rides RequireAddon(addonSvc, "calendar"), so `false` here
-	// means the whole feature is unreachable and no other line below matters.
-	AddonEnabled *bool
-	AddonNote    string
-
-	// SpineInstalled is calendar.BlockSpine() != nil. A nil spine renders NO
-	// Block at all — every calendar falls back to a subordinate row.
-	SpineInstalled bool
-
-	Viewer ViewerFacts
-
-	// ListVia names which of the Bench's two list calls this viewer gets
-	// (buildBench keeps them separate to preserve the W5a visibility split).
-	ListVia string
-	ListErr string
-
-	// All is every calendar in the campaign, hydrated, in the Bench's own
-	// order. Visible is the same list filtered to what the viewer may see, and
-	// is nil when no viewer was supplied.
-	All     []DiagCalendar
-	Visible []DiagCalendar
-
-	// ActiveID is the viewer's `calendar_active` pointer (empty when none).
-	ActiveID   string
-	ActiveNote string
-
-	// DefaultID is what GetCalendar(campaignID) resolves to — the campaign
-	// default, which is what the syncapi and the Foundry module are served.
-	DefaultID   string
-	DefaultNote string
-
-	// SectionsStored is the viewer's stored CLOSED set for the four Bench
-	// disclosures; SectionsNeverChosen is the nil case, which is NOT the same
-	// as an empty list ([BR2-4]).
-	SectionsStored      []string
-	SectionsNeverChosen bool
-	SectionsNote        string
-
-	// LayersStored is the viewer's stored Block layer set, same nil-vs-empty
-	// discipline.
-	LayersStored      []string
-	LayersNeverChosen bool
-	LayersNote        string
-
-	Notes []string
-}
 
 // RouteFact is one row of the LIVE Echo route table.
 //
@@ -243,10 +105,9 @@ type CampaignConfigFacts struct {
 
 // CampaignDiagProvider is the injected read-only window into per-campaign
 // state. Implemented by the app layer (dependency inversion — systems must not
-// import the calendar / campaigns / addons plugins), wired once at startup by
+// import the campaigns / addons / entities plugins), wired once at startup by
 // SetCampaignDiagProvider, exactly as SetInstalledPackagesProvider does.
 type CampaignDiagProvider interface {
-	CalendarFacts(ctx context.Context, campaignID, userID string) (CampaignCalendarFacts, error)
 	SurfaceFacts(ctx context.Context, campaignID string) (CampaignSurfaceFacts, error)
 	ConfigFacts(ctx context.Context, campaignID string) (CampaignConfigFacts, error)
 }
@@ -254,39 +115,14 @@ type CampaignDiagProvider interface {
 var campaignDiagProvider CampaignDiagProvider
 
 // SetCampaignDiagProvider wires the per-campaign read window for the
-// calendar.* / campaign.* diagnostics.
+// campaign.* diagnostics.
 func SetCampaignDiagProvider(p CampaignDiagProvider) { campaignDiagProvider = p }
 
 // ── catalog entries ─────────────────────────────────────────────────────────
 
-// calendarRenderDiagnostic is rank 1 of the 2026-08-11 proposals. Four
-// independent causes currently render as one identical unfilled Bench, and
-// three investigation lanes independently ended on "I cannot distinguish them".
-func calendarRenderDiagnostic() Diagnostic {
-	return Diagnostic{
-		Name:    "calendar.render",
-		Title:   "Why does the calendar page look like this for THIS viewer?",
-		Desc:    "The v4 Bench's render trace: which calendar is Primary vs real-world and by which rule, whether each Block carries a sky, how many moons each draws and whether the Almanac register was built, the four disclosure sections and WHY each is open or closed, and the viewer's role. Run this before concluding a feature is missing — `host.deploy-check` can only say the code shipped.",
-		ArgHint: "<campaignId>[:<userId>]",
-		Run:     renderCalendarRender,
-	}
-}
-
-// calendarConfigDiagnostic is rank 2: no viewer, one question — "is the data
-// there at all?". Nothing in the catalog counted moon rows before this.
-func calendarConfigDiagnostic() Diagnostic {
-	return Diagnostic{
-		Name:    "calendar.config",
-		Title:   "What do this campaign's calendars actually contain?",
-		Desc:    "One row per calendar — id, name, mode, is_default, tracks_real_time — with counts of months / weekdays / MOONS / seasons / eras, plus which calendar each surface resolves to. THE check for 'I don't see the moon': it prints stored moon rows and rendered moons separately, so a synthesized real Moon is never mistaken for a row you can edit.",
-		ArgHint: "<campaignId>[:<calId>]",
-		Run:     renderCalendarConfig,
-	}
-}
-
-// campaignSurfacesDiagnostic is rank 3. Both calendar surfaces are Templ
-// compiled into one binary, so neither appears in host.assets or host.embedded
-// and nothing anywhere exposed the route table.
+// campaignSurfacesDiagnostic exposes the live route table: Templ pages are
+// compiled into the binary, so they never appear in host.assets or
+// host.embedded.
 func campaignSurfacesDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "campaign.surfaces",
@@ -297,538 +133,22 @@ func campaignSurfacesDiagnostic() Diagnostic {
 	}
 }
 
-// campaignConfigDiagnostic is rank 4, and the ONLY way to establish whether a
-// legacy `skybox` block was hand-placed: it is in no default layout and no
-// migration seeds it.
+// campaignConfigDiagnostic shows enabled addons and the block types a
+// campaign has placed, to establish whether a block was hand-placed vs seeded
+// by a default layout or migration.
 func campaignConfigDiagnostic() Diagnostic {
 	return Diagnostic{
 		Name:    "campaign.config",
 		Title:   "Enabled addons + the blocks this campaign has PLACED",
-		Desc:    "Which addons are enabled (a disabled `calendar` makes every calendar route vanish), and the block TYPES placed in dashboard_layout / owner_dashboard_layout and on each entity template. THE check for 'the skybox is still there': a `skybox` block is in no default layout and no migration seeds it, so it can only be operator-placed.",
+		Desc:    "Which addons are enabled, and the block TYPES placed in dashboard_layout / owner_dashboard_layout and on each entity template. THE check for 'the skybox is still there': a `skybox` block is in no default layout and no migration seeds it, so it can only be operator-placed.",
 		ArgHint: "<campaignId>",
 		Run:     renderCampaignConfig,
 	}
 }
 
-// ── the mirrored producer rules ─────────────────────────────────────────────
-//
-// Each of these copies ONE rule out of internal/plugins/calendar. Every one
-// names the file and the line it copies, and operator_diag_campaign_mirror_test.go
-// reads that source and fails when the copied line changes.
-
-// benchSeat is one classified seat on the Bench.
-type benchSeat struct {
-	Seat   string // "PRIMARY" | "REAL-WORLD" | "ROW"
-	Cal    DiagCalendar
-	Clause string // which rule selected it, in the producer's own terms
-}
-
-// mirrorBenchClassify mirrors benchClassify (bench.go:1390-1428).
-//
-// PRIMARY is the calendar a reader means when they say "the campaign
-// calendar": the campaign default, else the viewer's active one, else the
-// first in-world calendar, else the default at all, else the first row.
-// REAL-WORLD is the first real-life calendar that is not already the primary.
-// EVERYTHING ELSE IS A ROW.
-//
-// Reproduced rather than called because it is unexported and systems may not
-// import the plugin. The CLAUSE STRINGS are the reason this is worth
-// mirroring at all: the producer decides silently, and "which clause fired"
-// is the fact that separates "signed behaviour, adding a moon will not help"
-// from "adding one moon fixes it".
-func mirrorBenchClassify(cals []DiagCalendar, activeID string) []benchSeat {
-	if len(cals) == 0 {
-		return nil
-	}
-	pick := func(match func(DiagCalendar) bool) int {
-		for i := range cals {
-			if match(cals[i]) {
-				return i
-			}
-		}
-		return -1
-	}
-	inWorld := func(c DiagCalendar) bool { return !isRealLifeMode(c.Mode) }
-
-	primary, clause := pick(func(c DiagCalendar) bool { return c.IsDefault && inWorld(c) }),
-		"campaign default AND in-world (`IsDefault && inWorld`)"
-	if primary < 0 && activeID != "" {
-		if primary = pick(func(c DiagCalendar) bool { return c.ID == activeID && inWorld(c) }); primary >= 0 {
-			clause = "the viewer's ACTIVE calendar, and in-world (`c.ID == activeID && inWorld`)"
-		}
-	}
-	if primary < 0 {
-		if primary = pick(inWorld); primary >= 0 {
-			clause = "the first in-world calendar (no default, no active)"
-		}
-	}
-	if primary < 0 {
-		if primary = pick(func(c DiagCalendar) bool { return c.IsDefault }); primary >= 0 {
-			clause = "the campaign default — THIS CAMPAIGN HAS NOTHING BUT REAL-WORLD CALENDARS, so the real-world one is promoted to Primary and DOES get a sky"
-		}
-	}
-	if primary < 0 {
-		primary, clause = 0, "the first calendar in the list (nothing else matched)"
-	}
-
-	realWorld := pick(func(c DiagCalendar) bool {
-		return isRealLifeMode(c.Mode) && c.ID != cals[primary].ID
-	})
-
-	out := []benchSeat{{Seat: seatPrimary, Cal: cals[primary], Clause: clause}}
-	if realWorld >= 0 {
-		out = append(out, benchSeat{
-			Seat:   seatRealWorld,
-			Cal:    cals[realWorld],
-			Clause: "the first real-life calendar that is not the Primary",
-		})
-	}
-	for i := range cals {
-		if i == primary || i == realWorld {
-			continue
-		}
-		out = append(out, benchSeat{Seat: seatRow, Cal: cals[i], Clause: "everything else is a subordinate ROW — no Block, no sky, no moons"})
-	}
-	return out
-}
-
-const (
-	seatPrimary   = "PRIMARY"
-	seatRealWorld = "REAL-WORLD"
-	seatRow       = "ROW"
-)
-
-// isRealLifeMode mirrors Calendar.IsRealLife (model.go) — `Mode == "reallife"`.
-func isRealLifeMode(mode string) bool { return mode == "reallife" }
-
-// mirrorSeatRender mirrors the two [SKY-1] seat calls in buildBench:
-//
-//	bench.go:1129  h.benchBlock(…, primary,   …, false, true,  …)  → noShelf=false, sky=true
-//	bench.go:1143  h.benchBlock(…, realWorld, …, true,  false, …)  → noShelf=true,  sky=false
-//
-// ONE SKY PER SURFACE, on the Primary Block and nowhere else. This is signed
-// behaviour, not an oversight — a fix that seats a sky on the real-world Block
-// would AMEND [SKY-1].
-func mirrorSeatRender(seat string) (skyOn, shelfHidden bool) {
-	switch seat {
-	case seatPrimary:
-		return true, false
-	case seatRealWorld:
-		return false, true
-	default:
-		return false, false // a ROW renders no Block at all
-	}
-}
-
-// mirrorAlmanacBuilt mirrors the Almanac gate (block_geometry.go:773):
-//
-//	if (!in.ShelfHidden || !in.SkyHidden) && len(cal.Moons) > 0 {
-//
-// with SkyHidden = !SkyOn (block_projection.go:166). TWO READERS, NAMED
-// SEPARATELY ([SKY-7]): either the Shelf or the sky header asking is enough.
-func mirrorAlmanacBuilt(skyOn, shelfHidden bool, moonsRendered int) bool {
-	return (!shelfHidden || skyOn) && moonsRendered > 0
-}
-
-// benchSectionKeysMirror mirrors bench_sections.go:41 — the CLOSED registry of
-// collapsible Bench sections, in the page's contract order.
-var benchSectionKeysMirror = []string{"ribbon", "rsvp", "nextup", "rows"}
-
-// benchSectionLabels names each key for a reader who has never seen the page.
-// `rsvp` is the one the 2026-08-11 operator met: its summary line reads
-// "Session & availability", and the ONLY link to /schedule in the entire
-// product sits inside it (bench.templ:715).
-var benchSectionLabels = map[string]string{
-	"ribbon": "the whole ribbon (session tile, next-up, sync pill, attention rows)",
-	"rsvp":   `"Session & availability" — the RSVP panel, and the only link to /schedule in the product`,
-	"nextup": "the NEXT UP cross-calendar index",
-	"rows":   "the subordinate-calendar row grid",
-}
-
-// mirrorResolveBenchSections mirrors resolveBenchSections (bench_sections.go:68-81).
-//
-//	stored == nil          never chosen   → all four CLOSED  ([BR2-4] SIGNED)
-//	stored == []string{}   closed nothing → all four OPEN
-//	stored == [rsvp rows]  → those two closed, the other two open
-//
-// The nil case is the whole point: "the operator never touched it" and "the
-// operator closed nothing" are different states that the page renders
-// oppositely, and a diagnostic that printed only the resolved booleans would
-// lose the distinction that explains the complaint.
-func mirrorResolveBenchSections(stored []string, neverChosen bool) map[string]bool {
-	closed := make(map[string]bool, len(benchSectionKeysMirror))
-	if neverChosen {
-		for _, k := range benchSectionKeysMirror {
-			closed[k] = true
-		}
-		return closed
-	}
-	for _, k := range stored {
-		for _, known := range benchSectionKeysMirror {
-			if k == known {
-				closed[k] = true
-			}
-		}
-	}
-	return closed
-}
-
-// ── calendar.render ─────────────────────────────────────────────────────────
-
-// renderCalendarRender prints the Bench's render trace for one viewer.
-// Arg: "<campaignId>[:<userId>]".
-func renderCalendarRender(arg string) string {
-	var b strings.Builder
-	b.WriteString("## calendar.render\n\n")
-	campaignID, userID := splitArgOpt2(arg)
-	if campaignID == "" {
-		b.WriteString("_Usage: `<campaignId>[:<userId>]` — run `campaigns.list` for the id. Without a user id this traces the OWNER path, which is not what a player sees._\n")
-		return b.String()
-	}
-	if campaignDiagProvider == nil {
-		b.WriteString(providerNotWired)
-		return b.String()
-	}
-	f, err := campaignDiagProvider.CalendarFacts(context.Background(), campaignID, userID)
-	if err != nil {
-		fmt.Fprintf(&b, "- Error: %v\n", err)
-		return b.String()
-	}
-	if !f.Found {
-		fmt.Fprintf(&b, "_No campaign `%s` (check the id with `campaigns.list`)._\n", campaignID)
-		return b.String()
-	}
-
-	fmt.Fprintf(&b, "campaign **%s** (`%s`) — the v4 Bench at `/campaigns/%s/apps/calendar`\n\n", f.CampaignName, f.CampaignID, f.CampaignID)
-	writeMirrorWarning(&b)
-
-	writeRenderViewer(&b, f)
-	if !writeRenderGate(&b, f) {
-		return b.String()
-	}
-	writeRenderSeats(&b, f)
-	writeRenderSections(&b, f)
-	writeRenderLayers(&b, f)
-	writeNotes(&b, f.Notes)
-	return b.String()
-}
-
 // providerNotWired is the ONE degraded string these diagnostics may print. It
 // says "nobody is answering", never "the answer is empty".
-const providerNotWired = "_Campaign provider not wired — the app layer did not inject it at startup, so NOTHING WAS READ. This is NOT an empty result: it is not \"this campaign has no calendars / no addons / no blocks\", it is \"nobody was asked\". Fix the wiring in RegisterRoutes before drawing any conclusion._\n"
-
-// writeMirrorWarning states the mirror in the output, every time. It is the
-// second of the two things that keep the mirror honest (the first is the
-// source-pin test); a reader who trusts this trace absolutely, and is wrong,
-// is a worse outcome than one who checks.
-func writeMirrorWarning(b *strings.Builder) {
-	b.WriteString("> **This trace RE-DERIVES the producer's rules; it does not call it.** `benchClassify`, `resolveBenchSections`, the `[SKY-1]` sky seat and the Almanac gate are unexported inside the calendar plugin and this package may not import it. Each mirrored rule below names the source line it copies, and a CI test reads that source and fails if the line moves. If a claim here contradicts the page, trust the page and report the mirror.\n\n")
-}
-
-// writeRenderViewer prints WHO the trace is for. Role is printed before any
-// gate, because three of the Bench's branches are role floors and a trace that
-// buried the role would make its own conclusions unreadable.
-func writeRenderViewer(b *strings.Builder, f CampaignCalendarFacts) {
-	b.WriteString("### 1. The viewer\n\n")
-	if !f.Viewer.Supplied {
-		b.WriteString("- **No user id supplied**, so this traces the OWNER path (`ListCalendars`, every calendar visible, every owner-only control present). A player's page can differ in what it LISTS as well as in what it renders. Re-run as `<campaignId>:<userId>` to trace a real viewer.\n\n")
-		return
-	}
-	fmt.Fprintf(b, "- user `%s` — ", f.Viewer.UserID)
-	if !f.Viewer.Found {
-		b.WriteString("**NOT A MEMBER of this campaign** (no `campaign_members` row). Anonymous and non-member visitors are RoleNone, which is below every role floor on the page.\n")
-		if f.Viewer.Note != "" {
-			fmt.Fprintf(b, "- %s\n", f.Viewer.Note)
-		}
-		b.WriteString("\n")
-		return
-	}
-	fmt.Fprintf(b, "membership role **%d** (%s)\n", f.Viewer.MemberRole, roleName(f.Viewer.MemberRole))
-	fmt.Fprintf(b, "- DM grant: **%t** → visibility role **%d** (%s). `cc.VisibilityRole()` returns RoleOwner for a DM-grantee; `RequireRole` compares the MEMBERSHIP role. The page uses both, for different gates.\n",
-		f.Viewer.DmGranted, f.Viewer.Role, roleName(f.Viewer.Role))
-	fmt.Fprintf(b, "- calendar list read via **%s**\n", fallback(f.ListVia, "unknown"))
-	if f.ListErr != "" {
-		fmt.Fprintf(b, "- **list FAILED**: %s — the Bench renders its LoadError card and nothing else.\n", f.ListErr)
-	}
-	if f.Viewer.Note != "" {
-		fmt.Fprintf(b, "- %s\n", f.Viewer.Note)
-	}
-	b.WriteString("\n")
-}
-
-// writeRenderGate prints the two conditions under which NOTHING below applies,
-// and reports whether the trace should continue.
-func writeRenderGate(b *strings.Builder, f CampaignCalendarFacts) bool {
-	b.WriteString("### 2. Can this page render at all?\n\n")
-	ok := true
-	switch {
-	case f.AddonEnabled == nil:
-		fmt.Fprintf(b, "- calendar addon: **UNKNOWN** — %s\n", fallback(f.AddonNote, "the addons service could not be read"))
-	case !*f.AddonEnabled:
-		b.WriteString("- calendar addon: **DISABLED for this campaign**. Every calendar route rides `addons.RequireAddon(addonSvc, \"calendar\")`, so the whole feature — Bench, schedule, settings, the V2 shell — is unreachable. Nothing below this line is what the operator is looking at. Enable it in the campaign's addon settings first.\n\n")
-		ok = false
-	default:
-		b.WriteString("- calendar addon: **enabled**\n")
-	}
-	if !ok {
-		return false
-	}
-	if !f.SpineInstalled {
-		b.WriteString("- Block spine: **NOT INSTALLED** (`calendar.BlockSpine()` is nil — the plugin is degraded). Every calendar falls back to a subordinate ROW: no Block, no sky, no moons, on any seat. That is the whole explanation for an empty-looking page.\n")
-	} else {
-		b.WriteString("- Block spine: installed\n")
-	}
-	visible, caveat := viewerCalendars(f)
-	fmt.Fprintf(b, "- calendars: **%d** in the campaign, **%d** on this viewer's own list\n", len(f.All), len(visible))
-	if caveat != "" {
-		fmt.Fprintf(b, "- ⚠ %s\n", caveat)
-	}
-	if len(visible) == 0 {
-		b.WriteString("\n_This viewer sees NO calendars, so the Bench renders its empty state. If the campaign has calendars, they are hidden by per-calendar visibility (`calendars.visibility` / `visibility_rules`) — run `calendar.config` to see them all._\n")
-		return false
-	}
-	b.WriteString("\n")
-	return true
-}
-
-// viewerCalendars returns the list the classification must run over, plus a
-// caveat when that list is not really the viewer's.
-//
-// The ambiguity it removes is worth naming: a nil Visible can mean "no viewer
-// was supplied" or "the viewer's own list could not be read". Those look
-// identical in the struct and must NOT look identical in the output — silently
-// classifying the full campaign list for a player would report seats they
-// cannot see, which is a confident wrong answer about the exact thing they
-// asked about.
-func viewerCalendars(f CampaignCalendarFacts) (cals []DiagCalendar, caveat string) {
-	if !f.Viewer.Supplied {
-		return f.All, ""
-	}
-	if f.Visible != nil {
-		return f.Visible, ""
-	}
-	return f.All, "**this viewer's own calendar list was not resolved**, so the seats below are classified over the FULL campaign list and may include calendars they cannot see. Treat the classification as an upper bound."
-}
-
-// writeRenderSeats prints the classification and what each seat renders.
-func writeRenderSeats(b *strings.Builder, f CampaignCalendarFacts) {
-	visible, _ := viewerCalendars(f)
-	b.WriteString("### 3. Which calendar took which seat, and what each seat renders\n\n")
-	if f.ActiveNote != "" {
-		fmt.Fprintf(b, "_active-calendar read: %s_\n\n", f.ActiveNote)
-	}
-	fmt.Fprintf(b, "viewer's active calendar: %s\n\n", codeOr(f.ActiveID, "none stored"))
-
-	for _, s := range mirrorBenchClassify(visible, f.ActiveID) {
-		fmt.Fprintf(b, "#### %s — **%s** (`%s`)\n", s.Seat, s.Cal.Name, s.Cal.ID)
-		fmt.Fprintf(b, "- selected by: %s\n", s.Clause)
-		fmt.Fprintf(b, "- mode `%s`%s%s\n", s.Cal.Mode,
-			boolSuffix(s.Cal.IsDefault, " · campaign default"),
-			boolSuffix(s.Cal.TracksRealTime, " · tracks_real_time"))
-
-		if s.Seat == seatRow {
-			b.WriteString("- renders as a ROW: a one-line entry with a date label. **No Block, so no sky, no moon discs and no Almanac** — this is not a fault, it is what a subordinate calendar is on this page.\n\n")
-			continue
-		}
-		if !f.SpineInstalled {
-			b.WriteString("- the spine is not installed, so this seat FALLS BACK TO A ROW.\n\n")
-			continue
-		}
-
-		skyOn, shelfHidden := mirrorSeatRender(s.Seat)
-		fmt.Fprintf(b, "- SkyOn: **%t**, ShelfHidden: **%t** — `[SKY-1]` SIGNED seats the sky on the PRIMARY Block only.\n", skyOn, shelfHidden)
-		if s.Seat == seatRealWorld {
-			b.WriteString("  - So the real-world Block on this page has **no sky band at all**, by design. Adding a moon to it changes nothing visible here. That is the answer to \"I don't see the real moon on the real calendar\" whenever a campaign has BOTH an in-world and a real-world calendar.\n")
-		}
-		writeSeatMoons(b, s.Cal, skyOn, shelfHidden)
-		b.WriteString("\n")
-	}
-}
-
-// writeSeatMoons prints the moon facts for one seated Block: what the calendar
-// stores, what the Block draws, what the grid's cap allows, and whether the
-// Almanac register — the only surface that carries the fourth body — was built.
-func writeSeatMoons(b *strings.Builder, c DiagCalendar, skyOn, shelfHidden bool) {
-	if c.StoredCountNote != "" {
-		fmt.Fprintf(b, "- stored moon rows: **unknown** — %s\n", c.StoredCountNote)
-	} else {
-		fmt.Fprintf(b, "- stored `calendar_moons` rows: **%d**\n", c.MoonRowsStored)
-	}
-	fmt.Fprintf(b, "- moons the Block receives: **%d**%s\n", c.MoonsRendered, moonNameSuffix(c.MoonNames))
-	if c.SynthesizedMoon {
-		b.WriteString("  - one of these has **no database row**: a real-life calendar with no authored moons is given THE Moon, phase computed from the real synodic cycle. Adding any moon row REPLACES it — that is deliberate, the operator's declaration wins whole.\n")
-	}
-	if c.MoonsRendered > benchMoonCapMirror {
-		fmt.Fprintf(b, "  - the month grid draws at most **%d** discs per day; %d declared bodies means %d is drawn in the grid nowhere and appears only in the Almanac.\n",
-			benchMoonCapMirror, c.MoonsRendered, c.MoonsRendered-benchMoonCapMirror)
-	}
-	built := mirrorAlmanacBuilt(skyOn, shelfHidden, c.MoonsRendered)
-	fmt.Fprintf(b, "- Almanac register built: **%t** — gate is `(!ShelfHidden || SkyOn) && moons > 0` = `(!%t || %t) && %d > 0`\n", built, shelfHidden, skyOn, c.MoonsRendered)
-	if !built && c.MoonsRendered == 0 {
-		b.WriteString("  - no moons, so nothing to register. `calendar.config` prints every calendar's moon count.\n")
-	}
-	if !built && c.MoonsRendered > 0 {
-		b.WriteString("  - the calendar HAS moons and the register was still not built, because neither reader asked for it on this seat.\n")
-	}
-}
-
-// benchMoonCapMirror mirrors benchMoonCap (bench.go:60) — the Bench passes 3,
-// matching the renderer's own ceiling and the governing render's three discs.
-const benchMoonCapMirror = 3
-
-// writeRenderSections prints the four disclosures and, for each, WHY.
-func writeRenderSections(b *strings.Builder, f CampaignCalendarFacts) {
-	b.WriteString("### 4. The four collapsible sections — open or closed, and why\n\n")
-	if f.SectionsNote != "" {
-		fmt.Fprintf(b, "_%s_\n\n", f.SectionsNote)
-	}
-	switch {
-	case !f.Viewer.Supplied:
-		b.WriteString("_No user id supplied. The disclosure state is per-(user, campaign) and cannot be traced without one._\n\n")
-		return
-	case f.SectionsNeverChosen:
-		b.WriteString("**Provenance: NO STORED ROW — this viewer has never opened or closed anything.** `resolveBenchSections(nil)` marks all four CLOSED, at every width ([BR2-4] SIGNED, Option A). A server-rendered `open` attribute cannot vary by viewport, so one default had to be chosen and closed is it.\n\n")
-	default:
-		fmt.Fprintf(b, "**Provenance: a stored row** — closed set = %s. An EMPTY stored list is a real choice (\"closed nothing\") and renders all four OPEN; it is not the same as no row.\n\n", codeList(f.SectionsStored))
-	}
-	closed := mirrorResolveBenchSections(f.SectionsStored, f.SectionsNeverChosen)
-	for _, k := range benchSectionKeysMirror {
-		state := "OPEN"
-		if closed[k] {
-			state = "CLOSED"
-		}
-		fmt.Fprintf(b, "- `%s` — **%s** · %s\n", k, state, benchSectionLabels[k])
-	}
-	if closed["rsvp"] {
-		b.WriteString("\n**The `rsvp` section is closed, and that is worth saying plainly.** The RSVP panel IS on the page and its controls DO meet the phone tap floor; it is behind a chevron whose summary says \"Session & availability\", and the only link to `/schedule` in the entire product is inside it. A viewer who has never opened it will report that RSVP is not built into the calendar — and they are also right for a second, separate reason: the calendar widget carries zero RSVP markup by design, and `/schedule` mounts no calendar. Opening the chevron does not merge them.\n")
-	}
-	b.WriteString("\n")
-}
-
-// writeRenderLayers prints the per-viewer Block layer set, which has the same
-// nil-vs-empty discipline and the same ability to explain a "missing" feature.
-func writeRenderLayers(b *strings.Builder, f CampaignCalendarFacts) {
-	b.WriteString("### 5. The viewer's Block layer set\n\n")
-	if f.LayersNote != "" {
-		fmt.Fprintf(b, "_%s_\n\n", f.LayersNote)
-	}
-	if !f.Viewer.Supplied {
-		b.WriteString("_No user id supplied; the layer set is per-(user, campaign)._\n\n")
-		return
-	}
-	if f.LayersNeverChosen {
-		b.WriteString("- **no stored row** — the host's seed renders. The Bench seeds five layers (era bands, week gutter, moons, docked Ledger, Shelf).\n\n")
-		return
-	}
-	fmt.Fprintf(b, "- stored: %s — this OVERRIDES the host seed. A viewer who turned `moons` off has no discs and no Almanac, and nothing on the page says so.\n\n", codeList(f.LayersStored))
-}
-
-// ── calendar.config ─────────────────────────────────────────────────────────
-
-// renderCalendarConfig prints per-calendar contents. Arg: "<campaignId>[:<calId>]".
-func renderCalendarConfig(arg string) string {
-	var b strings.Builder
-	b.WriteString("## calendar.config\n\n")
-	campaignID, calID := splitArgOpt2(arg)
-	if campaignID == "" {
-		b.WriteString("_Usage: `<campaignId>[:<calId>]` — run `campaigns.list` for the id._\n")
-		return b.String()
-	}
-	if campaignDiagProvider == nil {
-		b.WriteString(providerNotWired)
-		return b.String()
-	}
-	f, err := campaignDiagProvider.CalendarFacts(context.Background(), campaignID, "")
-	if err != nil {
-		fmt.Fprintf(&b, "- Error: %v\n", err)
-		return b.String()
-	}
-	if !f.Found {
-		fmt.Fprintf(&b, "_No campaign `%s` (check the id with `campaigns.list`)._\n", campaignID)
-		return b.String()
-	}
-	fmt.Fprintf(&b, "campaign **%s** (`%s`)\n\n", f.CampaignName, f.CampaignID)
-	if f.AddonEnabled != nil && !*f.AddonEnabled {
-		b.WriteString("> **The `calendar` addon is DISABLED for this campaign**, so none of the data below is reachable from any page. Run `campaign.config` for the addon list.\n\n")
-	}
-	if f.ListErr != "" {
-		fmt.Fprintf(&b, "- **calendar list FAILED**: %s\n", f.ListErr)
-		return b.String()
-	}
-	if len(f.All) == 0 {
-		b.WriteString("_This campaign has NO calendars._ The Bench renders its empty state and offers the builder wizard at `/calendars/new`.\n")
-		return b.String()
-	}
-
-	shown := 0
-	for _, c := range f.All {
-		if calID != "" && c.ID != calID {
-			continue
-		}
-		shown++
-		writeCalendarConfigRow(&b, c)
-	}
-	if shown == 0 {
-		fmt.Fprintf(&b, "_No calendar `%s` in this campaign. Re-run without the `:calId` to list them all._\n", calID)
-		return b.String()
-	}
-
-	writeCalendarResolution(&b, f)
-	writeNotes(&b, f.Notes)
-	return b.String()
-}
-
-// writeCalendarConfigRow prints one calendar's identity and sub-resource counts.
-func writeCalendarConfigRow(b *strings.Builder, c DiagCalendar) {
-	fmt.Fprintf(b, "### %s — `%s`\n", c.Name, c.ID)
-	fmt.Fprintf(b, "- mode **%s** · is_default **%t** · tracks_real_time **%t**%s · visibility `%s`\n",
-		c.Mode, c.IsDefault, c.TracksRealTime, tzSuffix(c.RealTimeZone), fallback(c.Visibility, "everyone"))
-	fmt.Fprintf(b, "- months **%d** · weekdays **%d** · seasons **%d** · eras **%d** · cycles **%d** · festivals **%d**\n",
-		c.Months, c.Weekdays, c.Seasons, c.Eras, c.Cycles, c.Festivals)
-
-	if c.StoredCountNote != "" {
-		fmt.Fprintf(b, "- **moons: stored count UNKNOWN** — %s\n", c.StoredCountNote)
-	} else {
-		fmt.Fprintf(b, "- **moons: %d stored row(s)", c.MoonRowsStored)
-		if c.MoonsRendered != c.MoonRowsStored {
-			fmt.Fprintf(b, ", %d rendered", c.MoonsRendered)
-		}
-		fmt.Fprintf(b, "**%s\n", moonNameSuffix(c.MoonNames))
-	}
-	switch {
-	case c.SynthesizedMoon:
-		b.WriteString("  - the rendered moon has **no database row**: a real-life calendar with no authored moons is given THE Moon, its phase computed from the real synodic cycle. There is nothing to edit in Settings → Moons, and adding a row REPLACES it.\n")
-	case c.MoonRowsStored == 0 && !isRealLifeMode(c.Mode):
-		b.WriteString("  - an in-world calendar declares its own sky and is seeded with none: `seedDefaults` seeds months, weekdays and event categories and deliberately never calls `SetMoons`. Add moons at Settings → Moons (Owner only).\n")
-	case c.MoonRowsStored == 0:
-		b.WriteString("  - no rows AND no synthesized body — check the months count above: the real-Moon fallback needs a month list to place its anchor date.\n")
-	}
-	if c.Months == 0 {
-		b.WriteString("- ⚠ **zero months** — this calendar cannot resolve a date at all, and every surface that prints one will show a fault instead.\n")
-	}
-	b.WriteString("\n")
-}
-
-// writeCalendarResolution answers "which calendar does each surface pick?",
-// which is the half of the question that a per-calendar listing cannot.
-func writeCalendarResolution(b *strings.Builder, f CampaignCalendarFacts) {
-	b.WriteString("### Which calendar each surface resolves to\n\n")
-	if f.DefaultNote != "" {
-		fmt.Fprintf(b, "- campaign default: **unknown** — %s\n", f.DefaultNote)
-	} else {
-		fmt.Fprintf(b, "- **campaign default** (`GetCalendar`) → %s — this is what the Foundry sync API and every default-calendar surface are served.\n", codeOr(f.DefaultID, "none"))
-	}
-	if seats := mirrorBenchClassify(f.All, ""); len(seats) > 0 {
-		fmt.Fprintf(b, "- **the v4 Bench's PRIMARY** → `%s` (%s) — selected by: %s\n", seats[0].Cal.ID, seats[0].Cal.Name, seats[0].Clause)
-		for _, s := range seats {
-			if s.Seat == seatRealWorld {
-				fmt.Fprintf(b, "- **the Bench's real-world Block** → `%s` (%s) — renders with NO sky ([SKY-1]).\n", s.Cal.ID, s.Cal.Name)
-			}
-		}
-		b.WriteString("  - computed with NO viewer, so the \"viewer's active calendar\" clause could not fire. Run `calendar.render <campaignId>:<userId>` for a real viewer's classification.\n")
-	}
-	b.WriteString("- **the V2 shell** and the sidebar's per-user switcher resolve the viewer's own `calendar_active` row, then the campaign default. That is per-viewer; `calendar.render` prints it.\n\n")
-}
+const providerNotWired = "_Campaign provider not wired — the app layer did not inject it at startup, so NOTHING WAS READ. This is NOT an empty result: it is not \"this campaign has no addons / no blocks\", it is \"nobody was asked\". Fix the wiring in RegisterRoutes before drawing any conclusion._\n"
 
 // ── campaign.surfaces ───────────────────────────────────────────────────────
 
@@ -849,67 +169,46 @@ type surfaceRow struct {
 	Note    string
 }
 
-const (
-	statusCurrent  = "CURRENT"
-	statusLegacy   = "LEGACY-PRESERVED"
-	statusRedirect = "LEGACY-REDIRECT"
-)
+// statusCurrent is the only status calendarSurfaceMap uses today — its
+// LEGACY-PRESERVED / LEGACY-REDIRECT siblings went with the routes they
+// described. CALV5-PLACEHOLDER: re-add them if V5's calendar routes need a
+// legacy or redirect row again.
+const statusCurrent = "CURRENT"
 
-// calendarSurfaceMap is the declared map, in the order a reader should meet it:
-// the doors that are live first, then the ones that only forward, then the
-// preserved legacy pages.
+// calendarSurfaceMap is the declared map.
+//
+// CALV5-PLACEHOLDER: the v4 Bench, the builder wizard, the settings editor,
+// the V1 legacy pages and every redirect between them were deleted with the
+// pre-V5 calendar plugin (#741); these three GETs are everything that is
+// left, and all three now render the same rebuilding notice (a direct
+// render, not a redirect). V5 must replace this block with the real
+// per-route classification once the calendar plugin has routes again.
+//
+// Handler is left "" on all three: the live handler is one anonymous
+// closure registered in internal/app/routes.go, not a stable named method,
+// so pinning its runtime name here would be pinning a Go compiler detail.
+// An empty Handler skips the disagreement check and only confirms the path
+// is registered — see writeSurfaceTable.
 func calendarSurfaceMap() []surfaceRow {
 	return []surfaceRow{
-		{"/campaigns/:id/apps/calendar", "AppDashboard", "v4 Bench", statusCurrent,
-			"THE calendar page. The sidebar's Calendar item points here and every legacy door redirects here."},
-		{"/campaigns/:id/schedule", "SchedulePage", "Schedule (availability matrix)", statusCurrent,
-			"Player+. Mounts NO calendar — the availability half of \"session & availability\" lives here, adjacent to the calendar and never integrated with it."},
-		{"/campaigns/:id/calendars/new", "ShowBuilder", "Builder wizard", statusCurrent,
-			"Owner only. Re-pointed at the wizard by [WZ-13]; the old three-card chooser is retired."},
-		{"/campaigns/:id/calendars/builder", "ShowBuilder", "Builder wizard", statusCurrent, "Owner only."},
-		{"/campaigns/:id/calendars/:calId/settings", "ShowSettings", "Calendar settings editor", statusCurrent,
-			"Owner only. The Moons tab sits OUTSIDE the `!IsRealLife()` guard, so it works on a real-world calendar too."},
-
-		{"/campaigns/:id/calendar", "legacyRedirect", "→ v4 Bench", statusRedirect,
-			"301. The oldest bookmark in the product; it has pointed at V1, then V2, now the Bench."},
-		{"/campaigns/:id/calendars", "Index", "→ v4 Bench (or the 0-calendar setup branch)", statusRedirect, ""},
-		{"/campaigns/:id/calendars/:calId", "RedirectShowV2", "→ v4 Bench", statusRedirect, ""},
-		{"/campaigns/:id/calendars/:calId/week", "RedirectWeekV2", "→ v4 Bench", statusRedirect,
-			"The week segment has no v4 destination yet, so it lands on the month Bench."},
-		{"/campaigns/:id/calendars/:calId/day", "RedirectDayV2", "→ v4 Bench", statusRedirect,
-			"Same as week: no v4 day surface yet."},
-
-		{"/campaigns/:id/calendars/:calId/embed", "EmbedCalendar", "V1 embed page", statusLegacy, "PRESERVED: no v4 embed exists."},
-		{"/campaigns/:id/calendars/embed", "EmbedCalendar", "V1 embed page (default calendar)", statusLegacy, ""},
-		{"/campaigns/:id/calendars/:calId/timeline", "ShowTimeline", "V1 timeline", statusLegacy, "PRESERVED: the V2 timeline is a deferred arc."},
+		{"/campaigns/:id/apps/calendar", "", "calendar (rebuilding)", statusCurrent,
+			"THE calendar page today: a static notice, not the v4 Bench. The sidebar's Calendar item points here."},
+		{"/campaigns/:id/calendar", "", "calendar (rebuilding)", statusCurrent,
+			"Same notice as `/apps/calendar` — the oldest bookmark in the product, no longer a redirect."},
+		{"/campaigns/:id/calendars", "", "calendar (rebuilding)", statusCurrent,
+			"Same notice as `/apps/calendar`, no longer a redirect."},
 	}
 }
 
-// handlerSurfaces classifies the routes this file DISCOVERS rather than
-// declares: the surface is keyed on the handler Echo reports, and the path is
-// taken from the running router.
-//
-// WHY DISCOVERY RATHER THAN A DECLARED ROW, for the frozen shell in particular.
-// `[VS-2]` SIGNED sunset the old shell as a CLICKABLE destination — it stays
-// reachable by URL and by nothing else — and `TestSunset_NoLiveDoorRemains`
-// enforces that by walking `internal/` for the shell's path prefix and failing
-// on any hit that is not a signed exemption. Writing those paths into this map
-// would have added four, and the honest options were to amend a signed
-// exemption list or to change the construction.
-//
-// Changing the construction is better on its own terms. A declared path is a
-// claim this repo makes about a page; a discovered one is a fact read off the
-// router. So these rows print the LIVE path with an authored explanation
-// attached to the handler, and if the shell is ever genuinely removed,
-// `campaign.surfaces` stops mentioning it the moment the route goes — with no
-// edit here, and no stale row claiming a page that no longer exists.
+// handlerSurfaces classifies routes this file DISCOVERS by handler rather
+// than declares by path (see writeSurfaceUnclassified). Empty: the one
+// route this used to cover, the frozen V2 calendar shell, was deleted
+// outright with the pre-V5 plugin — not merely unreachable, gone — so there
+// is no live handler left to discover. CALV5-PLACEHOLDER: if V5 preserves an
+// old page under a stable handler name the way the V2 shell once was, its
+// entry belongs here rather than in calendarSurfaceMap.
 func handlerSurfaces() map[string]surfaceRow {
-	return map[string]surfaceRow{
-		"ShowV2": {Surface: "the frozen V2 calendar shell", Status: statusLegacy,
-			Note: "NO LIVE LINK REACHES THIS ([VS-2] SIGNED — sunset as a destination, preserved as a URL). It is reachable only by an old bookmark or a hand-authored sidebar link, which is why the sidebar section below is worth reading."},
-		"ShowV2SubresourceSettings": {Surface: "the V2 sub-resource settings namespace", Status: statusLegacy,
-			Note: "Shares the shell's prefix but is not a view, and SURVIVES the shell ([VS-7] SIGNED)."},
-	}
+	return map[string]surfaceRow{}
 }
 
 // renderCampaignSurfaces prints the live route table against the declared map.
@@ -944,15 +243,22 @@ func renderCampaignSurfaces(arg string) string {
 	return b.String()
 }
 
-// writeSurfaceGate prints the addon gate that can remove every row below.
+// writeSurfaceGate prints the calendar addon's enabled state.
+//
+// CALV5-PLACEHOLDER: before the rebuild this state gated every route below
+// (`addons.RequireAddon(addonSvc, "calendar")`); it no longer does, because
+// the three remaining routes ride RequireCampaignAccess only and render the
+// same rebuilding notice regardless of the addon's state. Stated here so the
+// setting is not mistaken for a reachability gate it currently is not. V5
+// must restore the gate once it restores real calendar routes.
 func writeSurfaceGate(b *strings.Builder, f CampaignSurfaceFacts) {
 	switch {
 	case f.CalendarAddonEnabled == nil:
 		fmt.Fprintf(b, "> calendar addon: **UNKNOWN** — %s\n\n", fallback(f.AddonNote, "the addons service could not be read"))
 	case !*f.CalendarAddonEnabled:
-		b.WriteString("> **The `calendar` addon is DISABLED for this campaign.** Every route below is registered in the binary and rides `addons.RequireAddon(addonSvc, \"calendar\")`, so all of them answer as if the feature did not exist. A registered route is not a reachable one.\n\n")
+		b.WriteString("> calendar addon: **disabled** for this campaign. Not currently load-bearing: the routes below render the same rebuilding notice either way (see CALV5-PLACEHOLDER above).\n\n")
 	default:
-		b.WriteString("> calendar addon: **enabled** — the routes below are reachable (subject to their own role floors).\n\n")
+		b.WriteString("> calendar addon: **enabled**. Not currently load-bearing: the routes below render the same rebuilding notice either way (see CALV5-PLACEHOLDER above).\n\n")
 	}
 }
 
@@ -1146,23 +452,17 @@ func writeConfigAddons(b *strings.Builder, f CampaignConfigFacts) {
 		}
 		b.WriteString("\n")
 	}
-	b.WriteString("\nA disabled `calendar` addon removes every calendar route at the middleware, so the whole feature reads as absent rather than broken. `campaign.surfaces` lists the routes it gates.\n\n")
+	b.WriteString("\nCALV5-PLACEHOLDER: a disabled `calendar` addon no longer removes the calendar routes `campaign.surfaces` lists — they render the same rebuilding notice either way until V5 restores the gate.\n\n")
 }
 
 const (
 	// blockTypeCalendar is a LAYOUT BLOCK TYPE, not a reference to the calendar
-	// plugin. The two spell the same word, which is why this is a named const
-	// rather than a literal: tools/check-plugin-isolation.sh (T-B2) forbids a
-	// plugin slug spelled outside the owning plugin, and internal/systems may
-	// not import a plugin to borrow calendar.PluginSlug the way the app-layer
-	// adapter does.
-	//
-	// The block type arrives here as DATA — the app layer reads it out of a
-	// stored layout — so nothing is being coupled: this map only decides which
-	// of the types already on the page get an explanatory note. Declared under
-	// the guard's const-registry amendment (R4-S26-A), which exempts a bare
-	// const-assignment line and nothing else in the file, so a future
-	// `"calendar"` written anywhere else here still fails.
+	// plugin — named as a const rather than a literal because
+	// tools/check-plugin-isolation.sh (T-B2) forbids a plugin slug spelled
+	// outside the owning plugin, and internal/systems may not import a plugin
+	// to borrow calendar.PluginSlug. The value arrives here as DATA read out
+	// of a stored layout; this const only decides which placed block gets an
+	// explanatory note.
 	blockTypeCalendar = "calendar"
 )
 
@@ -1181,18 +481,11 @@ func writeConfigLayouts(b *strings.Builder, f CampaignConfigFacts) {
 	}
 
 	interesting := map[string]string{
-		// The class name of the v4 sky band is deliberately NOT written here.
-		// It is a signed carve-out that lives in exactly two files, guarded by
-		// a repository-wide walk, and a diagnostic naming it would be a third
-		// consumer of a signature that names ONE band on ONE Block. The
-		// distinction the reader needs is between the two THINGS, and it can
-		// be drawn without the selector.
-		// CALV5-PLACEHOLDER: the four calendar-family descriptions below are
-		// rebuild-era truth. The world-state pipeline (cal-almanac.js) was
-		// deleted with the v4 calendar; every one of these placements renders
-		// the "being rebuilt" notice today. The bindings themselves are kept
-		// on purpose (Sweep skips unknown types), so a placed block is a fact
-		// worth reporting — what it renders is not what it used to.
+		// CALV5-PLACEHOLDER: the four calendar-family descriptions below
+		// describe rebuild-era behavior. V5 must re-wire each placement's
+		// rendering once its world-state pipeline replaces the deleted one;
+		// until then every one renders the "being rebuilt" notice, and the
+		// bindings are kept so a placed block still reports as a fact.
 		"skybox":            "the LEGACY skybox widget placement. Its canvas/particle engine and the world-state pipeline behind it were deleted in the CALV5 clean slate, so this placement renders the calendar-rebuilding notice today; the binding is kept so V5 can reclaim the seat. (Historically this was the surface that rendered the synthesized real Moon — distinct from the v4 sky band on the Bench, which was server-rendered with no JavaScript.)",
 		"entity_worldstate": "the world-state band placement — its pipeline was deleted in the CALV5 clean slate; renders the rebuilding notice until V5.",
 		"entity_calendar":   "a calendar Block embedded on an entity page — renders the rebuilding notice until V5.",
@@ -1229,36 +522,6 @@ func writeConfigLayouts(b *strings.Builder, f CampaignConfigFacts) {
 
 // ── small shared helpers ────────────────────────────────────────────────────
 
-// splitArgOpt2 splits "<a>[:<b>]" — b is "" when the colon is absent. Unlike
-// splitArg2 this does NOT require the second part, because three of the four
-// diagnostics here have an optional tail.
-func splitArgOpt2(arg string) (a, bb string) {
-	parts := strings.SplitN(strings.TrimSpace(arg), ":", 2)
-	a = strings.TrimSpace(parts[0])
-	if len(parts) == 2 {
-		bb = strings.TrimSpace(parts[1])
-	}
-	return a, bb
-}
-
-// roleName maps a campaign role number to its name. Numbers alone are unusable
-// in a pasted result: "role 2" tells the reader nothing about which floors it
-// clears.
-func roleName(role int) string {
-	switch {
-	case role >= 3:
-		return "Owner"
-	case role == 2:
-		return "Scribe"
-	case role == 1:
-		return "Player"
-	case role == 0:
-		return "None — not a member"
-	default:
-		return "unknown"
-	}
-}
-
 // writeNotes prints whatever the provider could not read. Never omitted when
 // non-empty: a partial answer that does not say it is partial is the failure
 // this whole catalog exists to prevent.
@@ -1273,13 +536,6 @@ func writeNotes(b *strings.Builder, notes []string) {
 	b.WriteString("\nNothing above is evidence about the parts these cover.\n")
 }
 
-func codeOr(s, empty string) string {
-	if strings.TrimSpace(s) == "" {
-		return "_" + empty + "_"
-	}
-	return "`" + s + "`"
-}
-
 func codeList(xs []string) string {
 	if len(xs) == 0 {
 		return "_(empty)_"
@@ -1289,27 +545,6 @@ func codeList(xs []string) string {
 		out = append(out, "`"+x+"`")
 	}
 	return strings.Join(out, ", ")
-}
-
-func boolSuffix(v bool, s string) string {
-	if v {
-		return s
-	}
-	return ""
-}
-
-func tzSuffix(tz string) string {
-	if strings.TrimSpace(tz) == "" {
-		return ""
-	}
-	return " (" + tz + ")"
-}
-
-func moonNameSuffix(names []string) string {
-	if len(names) == 0 {
-		return ""
-	}
-	return " — " + codeList(names)
 }
 
 // countedInOrder collapses duplicates while preserving first-appearance order,

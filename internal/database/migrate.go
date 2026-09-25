@@ -52,16 +52,12 @@ func RunMigrations(appDB *sql.DB, dsn string, migrationsPath string) error {
 
 	err = m.Up()
 
-	// Dirty database state: a previous migration failed partway and golang-migrate
-	// marked the version dirty. We FAIL FAST — we do NOT auto-force-and-retry.
-	// Many historical migrations use bare `ALTER ... ADD COLUMN` (non-idempotent),
-	// so re-running a partially-applied one dies on "Duplicate column" (Error 1060)
-	// and re-marks the version dirty — a permanent crash-loop. New migrations are
-	// idempotent (enforced by TestMigrations_IdempotentDDL), so the risk shrinks
-	// over time, but recovery from a dirty state is an explicit operator action:
-	// restore the most recent pre-migration backup, or repair schema_migrations
-	// manually (docs/deployment.md §Rollback), then redeploy. fatalBoot's backoff
-	// keeps this from hot-looping while the operator intervenes.
+	// A dirty version means a previous migration failed partway. FAIL FAST —
+	// never auto-force-and-retry: older, non-idempotent migrations can die on
+	// "Duplicate column" (Error 1060) and re-dirty the version, a permanent
+	// crash-loop. New migrations must stay idempotent (TestMigrations_IdempotentDDL
+	// enforces it). Recovery is an explicit operator action; fatalBoot's backoff
+	// prevents hot-looping while they act.
 	if err != nil {
 		var dirtyErr migrate.ErrDirty
 		if errors.As(err, &dirtyErr) {
@@ -83,31 +79,5 @@ func RunMigrations(appDB *sql.DB, dsn string, migrationsPath string) error {
 		slog.Bool("dirty", dirty),
 	)
 
-	return nil
-}
-
-// ValidateMigrationVersion checks that the applied migration version matches
-// or exceeds the expected version. Returns a clear error if the database is
-// behind, helping diagnose "column not found" runtime errors early.
-func ValidateMigrationVersion(db *sql.DB, expectedVersion uint) error {
-	var version int
-	var dirty bool
-	err := db.QueryRow("SELECT version, dirty FROM schema_migrations LIMIT 1").Scan(&version, &dirty)
-	if err != nil {
-		return fmt.Errorf("reading schema_migrations: %w (has migrate-up been run?)", err)
-	}
-
-	if dirty {
-		return fmt.Errorf("database migration %d is in dirty state — run 'make migrate-down' then 'make migrate-up' to fix", version)
-	}
-
-	if uint(version) < expectedVersion {
-		return fmt.Errorf("database is at migration %d but code requires %d — run 'make migrate-up'", version, expectedVersion)
-	}
-
-	slog.Info("migration version validated",
-		slog.Int("applied", version),
-		slog.Uint64("expected", uint64(expectedVersion)),
-	)
 	return nil
 }

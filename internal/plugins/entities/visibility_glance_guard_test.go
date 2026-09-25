@@ -1,8 +1,7 @@
-// visibility_glance_guard_test.go — ADR-057 slice 3. Scans the entities
-// plugin's own .templ SOURCE files (not other plugins' templates, and not
-// static/js/ — see the scoping trap below) so a future edit cannot quietly
-// resurrect a hand-rolled copy of the visibility vocabulary this ADR
-// consolidated into visibilityGlance.
+// visibility_glance_guard_test.go scans the entities plugin's own .templ
+// SOURCE files (not other plugins' templates, and not static/js/) so a
+// future edit cannot quietly resurrect a hand-rolled copy of the visibility
+// vocabulary visibilityGlance consolidates (ADR-057).
 package entities
 
 import (
@@ -40,14 +39,12 @@ func glanceGuardFiles(t *testing.T) []string {
 	return matches
 }
 
-// TestNoHardcodedTealVisibilityColour pins ADR-057 decision 3: the
-// #0d9488 hex the seven prior copies all shared is gone from the entities
-// plugin's templates, with no exception — visibilityGlance uses
-// var(--color-accent) instead. Scoped to internal/plugins/entities/*.templ
-// only: static/js/widgets/db_explorer.js:22 carries the identical hex as an
+// TestNoHardcodedTealVisibilityColour pins that #0d9488 is gone from the
+// entities plugin's templates — visibilityGlance uses var(--color-accent)
+// instead. Scoped to internal/plugins/entities/*.templ only:
+// static/js/widgets/db_explorer.js carries the identical hex as an
 // unrelated calendar swatch colour, and a tree-wide ban would fail on that
-// innocent line (called out explicitly in the ADR's build plan as the
-// scoping trap to avoid).
+// innocent line.
 func TestNoHardcodedTealVisibilityColour(t *testing.T) {
 	for _, path := range glanceGuardFiles(t) {
 		b, err := os.ReadFile(path)
@@ -60,17 +57,15 @@ func TestNoHardcodedTealVisibilityColour(t *testing.T) {
 	}
 }
 
-// TestNoShieldIconOutsideVisibilityGlance pins that fa-shield-halved — the
-// glyph unique to the "custom" visibility state, with no other legitimate use
-// anywhere in this plugin's templates (confirmed by census: it only ever
-// appeared in the seven hand-rolled copies this ADR replaced) — appears
-// nowhere except inside visibility_glance.templ, the one component that owns
-// it. This is deliberately narrower than a blanket fa-globe/fa-lock ban: both
-// of those glyphs have other, unrelated, legitimate uses in this plugin
+// TestNoShieldIconOutsideVisibilityGlance pins that fa-shield-halved, the
+// glyph unique to the "custom" visibility state, appears nowhere except
+// inside visibility_glance.templ, the one component that owns it. This is
+// deliberately narrower than a blanket fa-globe/fa-lock ban: both of those
+// glyphs have other, unrelated, legitimate uses in this plugin
 // (entity_types.templ's type-icon palette, index.templ's "All" tab icon,
-// show.templ's per-BLOCK "DM Only" ribbon — a different feature from
-// per-entity visibility, category_dashboard.templ's decorative "Visibility"
-// column header) that a same-string ban would false-positive on.
+// show.templ's per-block "DM Only" ribbon, category_dashboard.templ's
+// decorative "Visibility" column header) that a same-string ban would
+// false-positive on.
 func TestNoShieldIconOutsideVisibilityGlance(t *testing.T) {
 	const ownerFile = "visibility_glance.templ"
 	for _, path := range glanceGuardFiles(t) {
@@ -88,20 +83,15 @@ func TestNoShieldIconOutsideVisibilityGlance(t *testing.T) {
 }
 
 // hardcodedVisibilityBadgeAttr matches a LITERAL data-visibility-badge
-// attribute value, e.g. data-visibility-badge="custom" — the shape every one
-// of the seven prior hand-rolled copies used. The shared component instead
-// emits it as a dynamic templ expression, data-visibility-badge={ state },
-// which this pattern does not match (no closing quote immediately after an
-// opening quote-delimited literal). A literal match outside
-// visibility_glance.templ is exactly what a resurrected hand-rolled copy
-// would look like.
+// attribute value, e.g. data-visibility-badge="custom". The shared
+// component instead emits it as a dynamic templ expression,
+// data-visibility-badge={ state }, which this pattern does not match.
 var hardcodedVisibilityBadgeAttr = regexp.MustCompile(`data-visibility-badge="(everyone|dm_only|custom)"`)
 
-// TestNoHardcodedVisibilityBadgeAttrOutsideVisibilityGlance is the guard's
-// second, independent signal (alongside the shield-icon and colour guards)
-// against a resurrected hand-rolled copy: nothing outside visibilityGlance
-// may hard-code the data-visibility-badge attribute value as a literal
-// string rather than deriving it from baseVisibilityState.
+// TestNoHardcodedVisibilityBadgeAttrOutsideVisibilityGlance guards against a
+// resurrected hand-rolled copy: nothing outside visibilityGlance may
+// hard-code the data-visibility-badge attribute value as a literal string
+// rather than deriving it from baseVisibilityState.
 func TestNoHardcodedVisibilityBadgeAttrOutsideVisibilityGlance(t *testing.T) {
 	const ownerFile = "visibility_glance.templ"
 	for _, path := range glanceGuardFiles(t) {

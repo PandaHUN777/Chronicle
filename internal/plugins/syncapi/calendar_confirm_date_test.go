@@ -1,12 +1,10 @@
 package syncapi
 
-// calendar_confirm_date_test.go — C-SYNC-APPLIED-BEACON. Pins
-// syncAPIService.ConfirmCalendarDate: a plain (never throttled) passthrough
-// to the repository's create-or-update, since a confirm is a deliberate
-// one-shot module action rather than a value re-read on every poll (unlike
-// RecordCalendarDateBeacon, calendar_date_beacon_test.go). The
-// Bearer-vs-session auth gate itself is tested at the handler layer
-// (calendar_confirm_date_handler_test.go).
+// calendar_confirm_date_test.go pins syncAPIService.ConfirmCalendarDate: a
+// plain (never throttled) passthrough to the repository's create-or-update,
+// since a confirm is a deliberate one-shot module action rather than a value
+// re-read on every poll (unlike RecordCalendarDateBeacon, see
+// calendar_date_beacon_test.go).
 
 import (
 	"context"

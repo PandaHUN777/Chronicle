@@ -2,181 +2,44 @@
 
 <!-- ====================================================================== -->
 <!-- Category: Semi-static                                                    -->
-<!-- Purpose: Complete map of all HTTP endpoints. Avoids reading each          -->
-<!--          plugin's routes.go to understand the API surface.               -->
-<!-- Update: Whenever a route is added, removed, or its handler changes.      -->
+<!-- Purpose: Where to find the route list and how to trace a route to its    -->
+<!--          handler. Not itself a route table.                             -->
+<!-- Update: When auth tiers or route groups change.                         -->
 <!-- ====================================================================== -->
 
-> **Incomplete; don't treat this as the route list.** It covers 78 of the 658
-> routes. The CI-guarded list is `internal/wire/routes_snapshot.txt`, and the
-> public API is described in `docs/api/openapi.yaml`. Replacing this file is
-> tracked in #742.
+Chronicle registers 658 Echo routes across the web UI, the admin panel, and
+the REST API. This file does not enumerate them — a hand-maintained table
+drifts from the code within weeks. Instead:
 
-> Routes marked with **(implemented)** have working handlers. Others are planned.
+- **The full, current route list** is `internal/wire/routes_snapshot.txt`,
+  a `(method, path, file)` inventory regenerated from the actual Echo
+  registrations and enforced by `internal/wire/wire_contract_test.go` in CI
+  (see `.ai/conventions.md` §"CI tenet-enforcement guards" for how to
+  regenerate it after adding or removing a route).
+- **The public REST API** (for external clients like the Foundry module) is
+  described in `docs/api/openapi.yaml`.
 
-## Public Routes (No Auth Required) -- implemented
+## Finding a route's handler
 
-| Method | Path | Plugin | Handler | Description |
-|--------|------|--------|---------|-------------|
-| GET | `/` | - | pages.Landing | Landing page |
-| GET | `/login` | auth | LoginForm | Login form |
-| POST | `/login` | auth | Login | Process login |
-| GET | `/register` | auth | RegisterForm | Registration form |
-| POST | `/register` | auth | Register | Process registration |
-| POST | `/logout` | auth | Logout | Destroy session |
-| GET | `/healthz` | - | Healthcheck | Health check endpoint |
+1. Grep `internal/wire/routes_snapshot.txt` for the path or method to find
+   which file registers it.
+2. Open that file's `routes.go` (or, for core routes, `internal/app/routes.go`)
+   and find the `e.GET` / `e.POST` / etc. call — it names the handler function
+   and the middleware chain.
+3. The handler lives in the same plugin's `handler.go`. From there, `service.go`
+   has the business logic and `repository.go` has the SQL.
 
-## Authenticated Routes
+## Route groups and auth tiers
 
-### Campaign Management (Plugin: campaigns) -- implemented
+Chronicle exposes four distinct auth surfaces — session-cookie web UI,
+per-campaign-token legacy public API, session-or-Bearer syncapi JSON API, and
+admin-session — detailed in `.ai/conventions.md` §"Auth surfaces — four
+canonical shapes". That section is the authoritative reference for which
+middleware chain applies to which route group; this file only points at it so
+the two don't drift.
 
-| Method | Path | Handler | Min Role | Description |
-|--------|------|---------|----------|-------------|
-| GET | `/campaigns` | Index | Auth only | List user's campaigns |
-| GET | `/campaigns/picker` | Picker | Auth only | HTMX fragment for topbar campaign selector |
-| GET | `/campaigns/new` | NewForm | Auth only | Create campaign form |
-| POST | `/campaigns` | Create | Auth only | Create campaign |
-| GET | `/campaigns/:id` | Show | Player | Campaign dashboard |
-| GET | `/campaigns/:id/edit` | EditForm | Owner | Edit campaign form |
-| PUT | `/campaigns/:id` | Update | Owner | Update campaign |
-| DELETE | `/campaigns/:id` | Delete | Owner | Delete campaign |
-| GET | `/campaigns/:id/settings` | Settings | Owner | Campaign settings page |
-| GET | `/campaigns/:id/members` | Members | Player | Member list page |
-| POST | `/campaigns/:id/members` | AddMember | Owner | Add member by email |
-| DELETE | `/campaigns/:id/members/:uid` | RemoveMember | Owner | Remove member |
-| PUT | `/campaigns/:id/members/:uid/role` | UpdateRole | Owner | Change member role |
-| GET | `/campaigns/:id/transfer` | TransferForm | Owner | Transfer ownership form |
-| POST | `/campaigns/:id/transfer` | Transfer | Owner | Initiate transfer |
-| GET | `/campaigns/:id/accept-transfer` | AcceptTransfer | Auth only | Accept transfer (token) |
-| POST | `/campaigns/:id/cancel-transfer` | CancelTransfer | Owner | Cancel pending transfer |
+Route groups follow the plugin structure: each plugin's `routes.go` registers
+its own paths, `internal/app/routes.go` is the top-level registrar that wires
+every plugin in, and `internal/plugins/syncapi/routes.go` registers the
+`/api/v1/*` REST surface separately from the web UI.
 
-### Dashboard Redirect -- implemented
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/dashboard` | redirect | Redirects to `/campaigns` |
-
-### Admin Panel (Plugin: admin) -- implemented
-
-All routes require `auth.RequireAuth` + `auth.RequireSiteAdmin`.
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/admin` | Dashboard | Overview stats (users, campaigns, SMTP) |
-| GET | `/admin/users` | Users | User management list |
-| PUT | `/admin/users/:id/admin` | ToggleAdmin | Toggle user's admin flag |
-| GET | `/admin/campaigns` | Campaigns | All campaigns list |
-| DELETE | `/admin/campaigns/:id` | DeleteCampaign | Force-delete campaign |
-| POST | `/admin/campaigns/:id/join` | JoinCampaign | Admin joins with role |
-| DELETE | `/admin/campaigns/:id/leave` | LeaveCampaign | Admin leaves campaign |
-
-### SMTP Settings (Plugin: smtp, under admin) -- implemented
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/admin/smtp` | Settings | SMTP settings form |
-| PUT | `/admin/smtp` | UpdateSettings | Save SMTP settings |
-| POST | `/admin/smtp/test` | TestConnection | Test SMTP connectivity |
-
-### Entity Management (Plugin: entities) -- implemented
-
-| Method | Path | Handler | Min Role | Description |
-|--------|------|---------|----------|-------------|
-| GET | `/campaigns/:id/entities` | Index | Player | List entities (filterable by type) |
-| GET | `/campaigns/:id/entities/search` | SearchAPI | Player | Search entities (HTMX fragment) |
-| GET | `/campaigns/:id/entities/:eid` | Show | Player | Entity profile page |
-| GET | `/campaigns/:id/entities/new` | NewForm | Scribe | Create entity form |
-| POST | `/campaigns/:id/entities` | Create | Scribe | Create entity |
-| GET | `/campaigns/:id/entities/:eid/edit` | EditForm | Scribe | Edit entity form |
-| PUT | `/campaigns/:id/entities/:eid` | Update | Scribe | Update entity |
-| DELETE | `/campaigns/:id/entities/:eid` | Delete | Owner | Delete entity |
-
-### Entity Entry API (Plugin: entities, JSON endpoints for editor widget) -- implemented
-
-| Method | Path | Handler | Min Role | Description |
-|--------|------|---------|----------|-------------|
-| GET | `/campaigns/:id/entities/:eid/entry` | GetEntry | Player | Get entry content (JSON) |
-| PUT | `/campaigns/:id/entities/:eid/entry` | UpdateEntryAPI | Scribe | Save entry content (JSON) |
-| PUT | `/campaigns/:id/entities/:eid/image` | UpdateImageAPI | Scribe | Update entity header image path |
-
-### Entity Type Layout API (Plugin: entities, JSON endpoints for layout builder) -- implemented
-
-| Method | Path | Handler | Min Role | Description |
-|--------|------|---------|----------|-------------|
-| GET | `/campaigns/:id/entity-types/:etid/layout` | GetEntityTypeLayout | Owner | Get entity type layout (JSON) |
-| PUT | `/campaigns/:id/entity-types/:etid/layout` | UpdateEntityTypeLayout | Owner | Save entity type layout (JSON) |
-
-### Entity Shortcut Routes (by type) -- implemented
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/campaigns/:id/characters` | Index (type=character) | List characters |
-| GET | `/campaigns/:id/locations` | Index (type=location) | List locations |
-| GET | `/campaigns/:id/organizations` | Index (type=organization) | List orgs |
-| GET | `/campaigns/:id/items` | Index (type=item) | List items |
-| GET | `/campaigns/:id/notes` | Index (type=note) | List notes |
-| GET | `/campaigns/:id/events` | Index (type=event) | List events |
-
-## REST API (for external clients like Foundry VTT) -- implemented
-
-The `syncapi` plugin implements 70+ `/api/v1/*` routes spanning campaigns, entities,
-notes, tags, media, calendar, and maps (`internal/plugins/syncapi/*_handler.go`). The
-specific endpoint list below predates that implementation and may not match its real
-route/handler names one-for-one — treat this section as historical scaffolding, not
-the source of truth; read `syncapi/.ai.md` + `syncapi/routes.go` for the real contract.
-
-### Authentication
-
-| Method | Path | Description |
-|--------|------|-------------|
-| POST | `/api/v1/auth/token` | Get API token (Personal Access Token) |
-
-### Campaigns
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/campaigns` | List campaigns |
-| GET | `/api/v1/campaigns/:id` | Get campaign details |
-
-### Entities
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/api/v1/campaigns/:id/entities` | List entities (filter by type, tag) |
-| GET | `/api/v1/campaigns/:id/entities/:eid` | Get entity with fields |
-| GET | `/api/v1/campaigns/:id/entities/:eid/entry` | Get entry (JSON or HTML) |
-| PUT | `/api/v1/campaigns/:id/entities/:eid/entry` | Update entry content |
-| GET | `/api/v1/campaigns/:id/entity-types` | List entity types |
-| GET | `/api/v1/campaigns/:id/tags` | List tags |
-
-### Widget API Endpoints -- planned
-
-| Method | Path | Widget | Description |
-|--------|------|--------|-------------|
-| GET | `/api/v1/search/entities` | mentions | Search entities for @mentions |
-| GET | `/api/v1/search/tags` | tags | Search tags for tag picker |
-
-### Dashboard Embed Endpoints -- implemented
-
-Campaign-scoped HTMX fragments used by dashboard blocks via `hx-trigger="intersect once"`.
-
-| Method | Path | Plugin | Handler | Min Role | Description |
-|--------|------|--------|---------|----------|-------------|
-| GET | `/campaigns/:id/calendar/embed` | calendar | EmbedCalendar | Player | Compact calendar grid fragment |
-| GET | `/campaigns/:id/timelines/embed` | timeline | EmbedTimeline | Player | Timeline D3 widget fragment |
-| GET | `/campaigns/:id/sessions/embed` | sessions | EmbedSessions | Player | Upcoming sessions list fragment |
-| GET | `/campaigns/:id/activity/embed` | audit | EmbedActivity | Owner | Activity feed fragment |
-| GET | `/campaigns/:id/sync-status` | syncapi | SyncStatusEmbed | Owner | API key/sync status fragment |
-
-### Game System (Content Pack) Routes -- implemented
-
-| Method | Path | Handler | Description |
-|--------|------|---------|-------------|
-| GET | `/campaigns/:cid/systems/:mod` | Index | List enabled game systems |
-| GET | `/campaigns/:cid/systems/:mod/:cat` | CategoryList | Searchable item list |
-| GET | `/campaigns/:cid/systems/:mod/:cat/:id` | ItemDetail | Full reference page |
-| GET | `/campaigns/:cid/systems/:mod/search` | SearchAPI | JSON search results |
-| GET | `/campaigns/:cid/systems/:mod/:cat/:item/tooltip` | TooltipAPI | HTML tooltip fragment |
-| POST | `/campaigns/:id/systems/upload` | UploadSystem | Upload custom system ZIP (Owner) |
-| DELETE | `/campaigns/:id/systems/custom` | DeleteSystem | Remove custom system (Owner) |
-| GET | `/campaigns/:id/systems/custom` | GetCustomSystem | Custom system status (Owner) |

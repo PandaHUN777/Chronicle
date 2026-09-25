@@ -1,28 +1,16 @@
-// Package observability holds Chronicle's in-process self-observation: state
-// the server records ABOUT ITSELF so an operator can ask what happened without
-// shelling into the container.
+// Package observability holds Chronicle's in-process self-observation: a small,
+// bounded, in-memory record of recent server errors, readable through the admin
+// diagnostics catalog without shelling into the container. It is distinct from
+// the audit plugin, which records DB-backed user actions scoped to a campaign
+// and user, not anonymous or infra-level failures.
 //
-// WHY it exists. Until now a Chronicle error that fired at 2am left no trace an
-// admin could reach. It went to slog, slog went to stdout, and stdout went to
-// the container's log driver — so answering "what broke overnight?" required
-// shell access to the host, `docker logs`, and knowing which container. The
-// audit plugin cannot serve this purpose: it records USER ACTIONS, is
-// DB-backed, and is scoped to a campaign AND a user, so a 500 on /healthz or an
-// anonymous request has neither of the keys it needs. This package is the
-// missing piece — a small, bounded, in-memory record of recent server errors,
-// readable through the admin diagnostics catalog.
+// It is a LEAF (standard library only, no Chronicle imports) so the writers
+// (internal/app, internal/middleware) and reader (internal/systems) cannot form
+// an import cycle through it.
 //
-// It is a LEAF: standard library only, no Chronicle imports. That is deliberate
-// and load-bearing. The writers are internal/app (the central error handler)
-// and internal/middleware (panic recovery); the reader is internal/systems (the
-// diagnostics catalog) via provider injection. A leaf with no Chronicle imports
-// cannot create a cycle with any of them.
-//
-// What it deliberately is NOT: durable, complete, or a log. The ring lives in
-// process memory, so a restart empties it and a multi-replica deployment gives
-// each replica its own. It is a recent-errors window for an operator standing
-// in front of a running server, not an audit trail — and the diagnostics say so
-// rather than letting a reader mistake an empty ring for a quiet night.
+// It is NOT durable or complete: the ring lives in process memory, so a restart
+// empties it and each replica has its own. It is a recent-errors window, not an
+// audit trail.
 package observability
 
 import (
@@ -31,36 +19,27 @@ import (
 	"time"
 )
 
-// DefaultCapacity is how many entries the process-wide ring holds. 256 is sized
-// against the recording POLICY, not against traffic: only 5xx and explicitly
-// unexpected errors are stored (see ShouldRecord), so 256 is a deep history of
-// real failures rather than a few seconds of noise. It is also small enough
-// that the whole ring is a fixed ~50 KB allocated once at startup.
+// DefaultCapacity is how many entries the process-wide ring holds. Sized
+// against the recording policy (see ShouldRecord), not traffic: only 5xx and
+// explicitly unexpected errors are stored, so this is a deep history of real
+// failures, not a few seconds of noise.
 const DefaultCapacity = 256
 
-// maxErrLen bounds a stored error string. An error from the database driver can
-// carry an entire failed statement including bound values; the diagnostics
-// render through redactSecrets, but the rule this project follows is to avoid
-// holding the secret in the first place. 300 characters is enough to identify
-// what failed and far too short to carry a payload. Truncation is marked so a
-// reader never mistakes a clipped message for the whole one.
+// maxErrLen bounds a stored error string. A DB driver error can carry an entire
+// failed statement including bound values, so this keeps the ring from holding
+// secrets rather than relying solely on redaction at render time. Truncation is
+// marked (see truncate) so a clipped message is never mistaken for a whole one.
 const maxErrLen = 300
 
 // maxPathLen bounds a stored path. A route TEMPLATE is always short, but the
-// fallback concrete path is raw request bytes, and net/http will happily hand
-// us a request line up to ~1 MiB. Unbounded, a handful of cheap requests that
-// trip a panic on an unmatched route retain the whole thing: measured, a 1 MiB
-// GET stored 349,526 bytes in ONE entry, and DefaultCapacity of those is ~90 MB
-// of live heap held by a buffer whose entire purpose is to be small enough to
-// paste. 200 bytes is longer than any real Chronicle route and short enough
-// that a full ring stays trivial (~51 KB). truncate marks the cut, so a clipped
-// path never reads as a complete one.
+// fallback concrete path (see PathFor) is raw, attacker-controlled request
+// bytes up to net/http's request-line limit, so this must be bounded here
+// rather than left to callers.
 const maxPathLen = 200
 
-// Kind classifies WHERE an error came from, which is often more diagnostic than
-// the status code: a 500 raised deliberately by a service (KindApp) and a 500
-// that is a raw unwrapped error escaping a handler (KindRaw) look identical on
-// the wire and mean completely different things to whoever fixes it.
+// Kind classifies where an error came from, which is often more diagnostic
+// than the status code: KindApp and KindRaw can both be a 500 on the wire but
+// mean very different things to whoever fixes it.
 type Kind string
 
 const (
@@ -80,10 +59,8 @@ const (
 )
 
 // Entry is one recorded error. It is deliberately a summary, not a transcript:
-// no request body, no headers, no query string, no client IP, no user id. The
-// fields here are what an operator needs to answer "what is failing, how often,
-// and since when" — and nothing that would turn a diagnostic paste into a data
-// disclosure.
+// no request body, headers, query string, client IP, or user id — nothing that
+// would turn a diagnostic paste into a data disclosure.
 type Entry struct {
 	// Time is when the error was recorded, in the server's clock.
 	Time time.Time
@@ -107,35 +84,15 @@ type Entry struct {
 	Err string
 }
 
-// PathFor implements the "a path template, not a transcript" rule, and it is a
-// named function rather than an inline expression because it is a PRIVACY
-// DECISION that has to be reviewable in one place.
+// PathFor is a privacy decision kept in one reviewable place: Chronicle has
+// routes whose path segments are live credentials (e.g. `/rsvp/:token`,
+// `/join/:code`), so when the router matched a route, the TEMPLATE is stored,
+// never the concrete path, which could leak a working token.
 //
-// Chronicle has routes whose path segments are live credentials —
-// `/rsvp/:token`, `/proposals/respond/:token`, `/calendar-rsvp/:token`,
-// `/join/:code`. Storing the concrete request path would put a working invite
-// or RSVP token into a buffer whose entire purpose is to be pasted into a chat
-// window. So when the router matched a route, the TEMPLATE is stored: it groups
-// perfectly, it names the handler, and it cannot contain a secret.
-//
-// The concrete path is used only when there is no template, which means the
-// router matched nothing. That branch IS reachable and the code must treat it
-// as hostile — an earlier version of this comment claimed it was not ("an
-// unmatched request is a 404, which the default policy does not record"), and
-// both halves were measured false:
-//
-//   - RecordPanic calls Ring.Record DIRECTLY and never consults ShouldRecord,
-//     so ANY panic in the global middleware chain is recorded regardless of
-//     status; Echo runs every e.Use middleware for unmatched URLs.
-//   - A 5xx raised by global middleware on an unmatched path (internal/
-//     middleware/csrf.go returns a real apperror.NewInternal) is a 5xx, so the
-//     policy records it and there is no template to store.
-//
-// So the returned string may be raw request bytes: unbounded in length, full of
-// newlines, and chosen by whoever sent the request. Ring.Record bounds it and
-// the diagnostic renderers flatten it. The boolean is returned so callers can
-// label which one they got — and it is also the signal that the value is
-// untrusted.
+// The concrete path is used only when there is no template (router matched
+// nothing) — a reachable, hostile path: it can be raw, unbounded,
+// attacker-controlled request bytes. Ring.Record bounds it. The boolean tells
+// callers which they got, and is also the signal that the value is untrusted.
 func PathFor(routeTemplate, rawPath string) (string, bool) {
 	if t := strings.TrimSpace(routeTemplate); t != "" {
 		return t, true
@@ -143,22 +100,12 @@ func PathFor(routeTemplate, rawPath string) (string, bool) {
 	return rawPath, false
 }
 
-// ShouldRecord is THE recording policy, named and isolated so it can be read,
-// argued with, and tested on its own.
-//
-// The rule: record 5xx and explicitly-unexpected errors; do not record ordinary
-// 4xx. The reason is eviction, not volume. The ring is fixed-size and evicts
-// oldest-first, so every recorded entry costs the oldest one. 4xx is the
-// routine background of any web server — a crawler probing for /wp-admin, a
-// stale bookmark, an expired CSRF token, a bot hammering a login form — and
-// admitting it would let a 404 storm silently evict the single 500 that an
-// operator came here to find. That failure mode is worse than not recording
-// 4xx at all, because the ring would still LOOK full and healthy.
-//
-// The unexpected flag is the escape hatch for callers that know something is
-// anomalous regardless of the status they are about to send (panic recovery
-// uses it). It is not a way to reintroduce 4xx wholesale: nothing in the
-// request path sets it from client input.
+// ShouldRecord is the recording policy: record 5xx and explicitly-unexpected
+// errors, never ordinary 4xx. The ring is fixed-size and evicts oldest-first,
+// so admitting routine 4xx noise (bots, stale bookmarks, expired CSRF tokens)
+// would let it silently evict the 500s an operator actually needs. `unexpected`
+// is an escape hatch for callers (e.g. panic recovery) that know something is
+// anomalous regardless of status; nothing sets it from client input.
 func ShouldRecord(status int, unexpected bool) bool {
 	return unexpected || status >= 500
 }
@@ -175,10 +122,8 @@ type Ring struct {
 	total uint64 // every Record that passed the policy, INCLUDING evicted ones
 }
 
-// NewRing creates a ring holding capacity entries. A capacity of zero or less
-// is coerced to DefaultCapacity: a zero-length ring would silently discard
-// everything, which is exactly the "looks wired, records nothing" state these
-// diagnostics exist to make impossible.
+// NewRing creates a ring holding capacity entries. capacity <= 0 is coerced to
+// DefaultCapacity, since a zero-length ring would silently discard everything.
 func NewRing(capacity int) *Ring {
 	if capacity <= 0 {
 		capacity = DefaultCapacity
@@ -187,13 +132,8 @@ func NewRing(capacity int) *Ring {
 }
 
 // Record stores an entry, evicting the oldest when the ring is full. It applies
-// no policy of its own — callers filter with ShouldRecord — so that a test can
-// exercise eviction directly and so the policy has exactly one home.
-//
-// It fills a zero Time with the current time (mirroring EventLog.Record) and
-// truncates the error message. It never blocks on anything but its own mutex
-// and never returns an error: recording an error must not be able to fail in a
-// way that complicates the code path that is already handling a failure.
+// no policy of its own (callers filter with ShouldRecord) and never returns an
+// error: recording must not be able to fail while already handling a failure.
 func (r *Ring) Record(e Entry) {
 	if r == nil {
 		return // nil-safe: an unwired ring is a no-op, never a panic
@@ -202,11 +142,8 @@ func (r *Ring) Record(e Entry) {
 		e.Time = time.Now()
 	}
 	e.Err = truncate(e.Err, maxErrLen)
-	// Path is bounded here for the same reason Err is, and it was missed for a
-	// long time because the field is USUALLY a short route template. The
-	// fallback branch of PathFor stores attacker-controlled request bytes, and
-	// that branch is reachable (see PathFor's own note), so the bound cannot be
-	// left to the caller.
+	// Path can carry attacker-controlled request bytes (see PathFor), so it must
+	// be bounded here rather than left to the caller.
 	e.Path = truncate(e.Path, maxPathLen)
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -220,27 +157,23 @@ func (r *Ring) Record(e Entry) {
 }
 
 // Snapshot is an immutable copy of the ring's state, newest first, plus the
-// counters that let a reader tell "nothing has gone wrong" apart from "nothing
-// is recording" and from "so much went wrong that history was evicted".
+// counters that distinguish "nothing has gone wrong" from "nothing is
+// recording" from "so much went wrong that history was evicted".
 type Snapshot struct {
 	// Capacity is the ring's fixed size.
 	Capacity int
 	// Held is how many entries the ring currently contains (<= Capacity).
 	Held int
-	// Total is every error recorded since process start, including entries
-	// already evicted. Total > Held is the eviction signal: it means the
-	// window shown is incomplete, and the diagnostics say so.
+	// Total is every error recorded since process start, including evicted
+	// ones. Total > Held signals the shown window is incomplete.
 	Total uint64
 	// Entries is the requested slice of held entries, NEWEST FIRST.
 	Entries []Entry
 }
 
-// Snapshot returns up to limit entries, newest first. limit <= 0 means all held
-// entries — the summary diagnostic needs the whole ring to group over, while
-// the listing diagnostic wants a page.
-//
-// It copies under the lock and returns owned memory, so a caller can render at
-// its leisure while the server keeps recording.
+// Snapshot returns up to limit entries, newest first. limit <= 0 returns all
+// held entries. It copies under the lock and returns owned memory, so a caller
+// can render at its leisure while the server keeps recording.
 func (r *Ring) Snapshot(limit int) Snapshot {
 	if r == nil {
 		return Snapshot{}
@@ -267,10 +200,8 @@ func (r *Ring) Snapshot(limit int) Snapshot {
 	return s
 }
 
-// defaultRing is the process-wide ring. It is allocated eagerly at package init
-// rather than wired at startup so that Record is safe from the very first
-// request — an error during boot is precisely the error an operator most wants
-// to see, and a nil-until-initialised ring would drop it.
+// defaultRing is the process-wide ring, allocated eagerly at package init so
+// Record is safe from the very first request (boot errors matter most).
 var defaultRing = NewRing(DefaultCapacity)
 
 // RecordHTTPError records an error the central HTTP error handler is about to
@@ -297,19 +228,12 @@ func RecordHTTPError(status int, method, routeTemplate, rawPath string, kind Kin
 	return true
 }
 
-// RecordPanic records a recovered panic.
+// RecordPanic records a recovered panic. It exists separately because a
+// recovered panic never reaches the central error handler (internal/
+// middleware/recovery.go writes its 500 directly and returns nil to Echo).
 //
-// It exists separately because a recovered panic NEVER REACHES the central
-// error handler: internal/middleware/recovery.go writes its 500 straight to the
-// response with c.String and returns nil, so Echo sees no error and
-// app.errorHandler is never called. Hooking only the error handler would
-// therefore have left the single most valuable error class — the one that
-// crashed a handler mid-flight — completely invisible in host.errors, while the
-// diagnostic looked like it was working.
-//
-// The panic VALUE is recorded; the stack trace is NOT. The stack is already in
-// the process log, and holding kilobytes of frames per entry would blow the
-// ring's memory budget and bury the summary line an operator reads first.
+// Only the panic value is recorded, not the stack trace: the stack is already
+// in the process log, and per-entry frames would blow the ring's memory budget.
 func RecordPanic(method, routeTemplate, rawPath, panicValue string) {
 	p, templated := PathFor(routeTemplate, rawPath)
 	defaultRing.Record(Entry{
@@ -325,10 +249,9 @@ func RecordPanic(method, routeTemplate, rawPath, panicValue string) {
 // Recent returns a snapshot of the process-wide ring for the diagnostics.
 func Recent(limit int) Snapshot { return defaultRing.Snapshot(limit) }
 
-// truncate clips s to n bytes and MARKS that it did. An unmarked truncation is
-// a lie by omission — a reader comparing two entries would see them as
-// identical when only their shared prefix is. ToValidUTF8 drops the partial
-// rune a byte-slice can leave at the cut, so the result is always printable.
+// truncate clips s to n bytes and marks that it did, so a clipped message is
+// never mistaken for a complete one. ToValidUTF8 drops the partial rune a
+// byte-slice cut can leave, so the result is always printable.
 func truncate(s string, n int) string {
 	if len(s) <= n {
 		return s

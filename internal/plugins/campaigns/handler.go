@@ -83,29 +83,22 @@ type AuditLogger interface {
 }
 
 // PluginHubAddon is a minimal addon representation for the plugin hub page
-// and the C-EXT-HUB top-level Extensions hub.
+// and the top-level Extensions hub.
 //
 // HasDashboard / HasEntitySetup are populated by addonListerAdapter from a
-// slug-keyed capability table in extensions_hub.go. They drive the
-// Extensions hub's per-card affordances:
-//   - HasDashboard=true cards gain an "Open dashboard" expand button (Phase 2
-//     wires the inline-dashboard fragment swap for slugs where this is true).
-//   - HasEntitySetup=true is a Phase 4 marker; surfaced in the catalog now so
-//     Phase 4's per-entity binding card can target it without a second pass.
+// slug-keyed capability table in extensions_hub.go. HasDashboard=true cards
+// gain an "Open dashboard" expand button. HasEntitySetup is surfaced in the
+// catalog for a per-entity binding card that isn't built yet.
 //
-// The Features Settings tab + the older /campaigns/:id/plugins page also
-// consume PluginHubAddon; for those surfaces the new flags are unused and
-// safely zero. The C-EXT-HUB-PHASE-1 dispatch (§"Catalog + Content-Packs-as-
-// card") chose this struct over the admin-side `PluginInfo` registry because
-// `ListForPluginHub` is already the operator-facing catalog; carrying the
-// capability flags here keeps a single source of truth.
+// The older /campaigns/:id/plugins page also consumes PluginHubAddon; for
+// that surface the new flags are unused and safely zero.
 type PluginHubAddon struct {
 	AddonID int
 	Slug    string
 	Name    string
-	// Description is the addon's canonical one-line blurb (ADR-056: sourced
-	// from the addons service's single builtinAddons copy, not re-derived or
-	// hand-maintained per render site — see pluginDescription's removal).
+	// Description is the addon's canonical one-line blurb, sourced from
+	// the addons service's single builtinAddons copy rather than
+	// re-derived or hand-maintained per render site (ADR-056).
 	Description    string
 	Icon           string
 	Category       string
@@ -152,10 +145,10 @@ type SystemLister interface {
 	ListSystems() []SystemOption
 }
 
-// (AIExportService + AIExportOptions removed in C-AI-WORKSPACE-V1-B.
-// The renderer + handler + modal moved to internal/plugins/ai_workspace,
-// which registers its settings tab via campaigns.RegisterSettingsTab
-// and mounts its own /ai-export/generate route.)
+// AI Export's renderer + handler + modal live in
+// internal/plugins/ai_workspace, which registers its settings tab via
+// campaigns.RegisterSettingsTab and mounts its own /ai-export/generate
+// route.
 
 // Handler handles HTTP requests for campaign operations. Handlers are thin:
 // bind request, call service, render response. No business logic lives here.
@@ -179,9 +172,9 @@ type Handler struct {
 	extraSettingsTabs    []func(*CampaignContext) SettingsTab
 	baseURL              string
 	contentPacksRenderer ContentPacksCardRenderer
-	// C-EXT-HUB Phase 2: per-extension inline dashboard registry +
-	// enable-state check. Both nil-tolerant; the hub fragment route
-	// renders safe placeholders when either is unwired.
+	// Per-extension inline dashboard registry + enable-state check.
+	// Both nil-tolerant; the hub fragment route renders safe
+	// placeholders when either is unwired.
 	extensionDashboardFactories []func(*CampaignContext) ExtensionDashboard
 	extensionEnableChecker      ExtensionEnableChecker
 }
@@ -252,10 +245,9 @@ func (h *Handler) SetSystemLister(lister SystemLister) {
 	h.systemLister = lister
 }
 
-// (SetAIExportService + GenerateAIExport relocated to
-// internal/plugins/ai_workspace in C-AI-WORKSPACE-V1-B. The campaigns
-// plugin no longer holds any AI-export state — the ai_workspace plugin
-// owns the renderer, the handler, the route, and the settings tab.)
+// AI-export state (SetAIExportService, GenerateAIExport) lives in
+// internal/plugins/ai_workspace, which owns the renderer, handler,
+// route, and settings tab.
 
 // logAudit fires a fire-and-forget audit entry. Errors are logged but
 // never block the primary operation.
@@ -369,9 +361,9 @@ func (h *Handler) Show(c echo.Context) error {
 	transfer, _ := h.service.GetPendingTransfer(c.Request().Context(), cc.Campaign.ID)
 
 	// Fetch recently updated pages for the dashboard.
-	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
-	// cc.MemberRole — this list threads straight through to the entities
-	// repository's visibility filter (the same rule CheckEntityAccess and
+	// Use cc.VisibilityRole(), not the raw cc.MemberRole (ADR-057): this
+	// list threads straight through to the entities repository's
+	// visibility filter (the same rule CheckEntityAccess and
 	// GetChildren use), and a Co-DM already sees dm_only entities in the
 	// entities plugin's own list/category views, so the dashboard must agree.
 	var recentEntities []RecentEntity
@@ -383,13 +375,10 @@ func (h *Handler) Show(c echo.Context) error {
 
 	csrfToken := middleware.GetCSRFToken(c)
 
-	// VTT update-available banner is now lazy-loaded from
-	// foundry_vtt's /foundry-vtt/show-banner-fragment route; the
-	// fragment endpoint enforces owner-only via requireOwner
-	// middleware and fetches its own banner state via fvttService.
-	// Per cordinator/reports/chronicle/2026-05-25-c-nw-2-2-chunk-d.md
-	// (the move) + the D2-cleanup PR that removed the now-orphaned
-	// data flow.
+	// VTT update-available banner is lazy-loaded from foundry_vtt's
+	// /foundry-vtt/show-banner-fragment route; the fragment endpoint
+	// enforces owner-only via requireOwner middleware and fetches its
+	// own banner state via fvttService.
 
 	return middleware.Render(c, http.StatusOK, CampaignShowPage(cc, transfer, recentEntities, csrfToken))
 }
@@ -588,10 +577,10 @@ func (h *Handler) UploadTopbarImage(c echo.Context) error {
 
 	h.logAudit(c, cc.Campaign.ID, "campaign.topbar_image.uploaded", nil)
 
-	// HTMX callers (the appearance editor) get the swapped fragment so the
-	// upload applies in place with no page reload (C-CUSTOMIZE-RESCUE, mirrors
-	// the backdrop upload flow). The HX-Trigger lets the editor JS sync its
-	// draft/saved state and mode buttons from the new path.
+	// HTMX callers (the appearance editor) get the swapped fragment so
+	// the upload applies in place with no page reload. The HX-Trigger
+	// lets the editor JS sync its draft/saved state and mode buttons
+	// from the new path.
 	if middleware.IsHTMX(c) {
 		c.Response().Header().Set("HX-Trigger", "topbar-image-updated")
 		return middleware.Render(c, http.StatusOK, TopbarImageSection(cc.Campaign.ID, filename, middleware.GetCSRFToken(c)))
@@ -645,12 +634,10 @@ func (h *Handler) UpdateAccentColorAPI(c echo.Context) error {
 	}
 
 	// Optional slot selects which accent this write targets: "" = the site
-	// accent (legacy chrome, unchanged), "1"/"2" = the legacy surface pair
-	// (C-ACCENT-TRIO rev 2, kept for back-compat), "action"/"app" = the two
-	// new semantic slots (C-ACCENT-SLOTS). String keys for the new slots
-	// avoid colliding with the pre-existing numeric surface-pair values.
-	// Extending this endpoint instead of adding a route keeps
-	// routes_snapshot.txt untouched.
+	// accent (legacy chrome), "1"/"2" = the legacy surface pair (kept for
+	// back-compat), "action"/"app" = the two semantic slots. String keys
+	// for the new slots avoid colliding with the numeric surface-pair
+	// values.
 	slot := c.FormValue("slot")
 	switch slot {
 	case "":
@@ -860,10 +847,9 @@ func (h *Handler) UpdateFontFamilyAPI(c echo.Context) error {
 }
 
 // GetEventTierDefinitionsAPI handles GET /campaigns/:id/event-tier-definitions.
-// Returns the per-campaign event tier vocabulary, falling back to the platform
-// default trio when no override is set (V2 Wave 0 PR 2 per
-// cordinator/dispatches/chronicle/C-CAL-V2-SCHEMA-FOUNDATION.md §5; campaign-
-// config surface, NOT exposed via syncapi).
+// Returns the per-campaign event tier vocabulary, falling back to the
+// platform default trio when no override is set. Campaign-config surface,
+// NOT exposed via syncapi.
 func (h *Handler) GetEventTierDefinitionsAPI(c echo.Context) error {
 	cc := GetCampaignContext(c)
 	if cc == nil {
@@ -991,30 +977,25 @@ func (h *Handler) Settings(c echo.Context) error {
 		systemOptions = h.systemLister.ListSystems()
 	}
 
-	// C-EXT-HUB Phase 1: the Features tab (which loaded the addons
-	// list here) retired in this PR; per-campaign feature toggles
-	// moved to the top-level Extensions hub at
-	// `/campaigns/:id/extensions`. The addons-store load goes with
-	// the tab — no remaining built-in tab needs it.
+	// Per-campaign feature toggles live on the top-level Extensions hub
+	// at `/campaigns/:id/extensions`, not any built-in Settings tab —
+	// no addons-store load needed here.
 
 	tabs := h.visibleSettingsTabs(cc, transfer, members, csrfToken, systemOptions, smtpConfigured)
 
 	// Resolve the requested tab against the set actually visible to this
 	// viewer. The raw `?tab=` value is attacker-controllable and flows
 	// into an Alpine `x-data` expression in settings.templ, so it must be
-	// constrained to a known tab ID (reflected-XSS guard — audit SEC-1,
-	// §T-B1); an empty or unknown value falls back to "general".
+	// constrained to a known tab ID (reflected-XSS guard); an empty or
+	// unknown value falls back to "general".
 	activeTab := sanitizeSettingsTab(c.QueryParam("tab"), tabs)
 
 	return middleware.Render(c, http.StatusOK, CampaignSettingsPage(cc, transfer, csrfToken, "", activeTab, tabs))
 }
 
-// PluginHub renders the campaign plugin hub page.
-// GET /campaigns/:id/plugins — historically redirected to Settings >
-// Features tab. C-EXT-HUB Phase 1 retired the Features tab and moved
-// the per-campaign feature catalog to the top-level Extensions hub at
-// `/campaigns/:id/extensions`; this redirect updates accordingly.
-// Sub-fragment route (`/plugins/fragment`) stays for any HTMX
+// PluginHub redirects the legacy plugin hub page (GET /campaigns/:id/plugins)
+// to the top-level Extensions hub, which now owns the per-campaign feature
+// catalog. Sub-fragment route (`/plugins/fragment`) stays for any HTMX
 // consumers still pointed at it.
 func (h *Handler) PluginHub(c echo.Context) error {
 	cc := GetCampaignContext(c)

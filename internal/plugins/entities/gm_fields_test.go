@@ -59,9 +59,9 @@ func TestFilterGMOnlyFields_DoesNotMutateInput(t *testing.T) {
 	}
 }
 
-// TestFilterOwnerOnlyFields is the table-driven contract for owner-only field
-// stripping (C-FIELDS-OWNER-FILTER) — mirrors TestFilterGMOnlyFields, with
-// isOwner as the second way (besides canSeeGM) to keep a value.
+// TestFilterOwnerOnlyFields is the table-driven contract for owner-only
+// field stripping, mirroring TestFilterGMOnlyFields with isOwner as the
+// second way (besides canSeeGM) to keep a value.
 func TestFilterOwnerOnlyFields(t *testing.T) {
 	defs := []FieldDefinition{
 		{Key: "might", Label: "Might"},

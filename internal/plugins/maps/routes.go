@@ -25,9 +25,9 @@ func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignServ
 	cg.PUT("/maps/:mid", h.UpdateMapAPI, campaigns.RequireRole(campaigns.RoleOwner))
 	cg.DELETE("/maps/:mid", h.DeleteMapAPI, campaigns.RequireRole(campaigns.RoleOwner))
 
-	// Canonical marker icon vocabulary (C-MAPS-EDITOR-PIN-AND-ICON-PARITY):
-	// Chronicle is authoritative; the Foundry sync module reads this to align
-	// its icon translation table. No :mid — it's a campaign-static catalog.
+	// Canonical marker icon vocabulary: Chronicle is authoritative; the
+	// Foundry sync module reads this to align its icon translation table.
+	// No :mid — it's a campaign-static catalog.
 	cg.GET("/maps/marker-icons", h.MarkerIconsAPI, campaigns.RequireRole(campaigns.RolePlayer))
 
 	// Marker CRUD (Player can list, Scribe+ can create/edit, Owner can delete).
@@ -45,11 +45,11 @@ func RegisterRoutes(e *echo.Echo, h *Handler, campaignSvc campaigns.CampaignServ
 	pub.GET("/maps", h.Index, campaigns.RequireViewAccess())
 	pub.GET("/maps/:mid", h.Show, campaigns.RequireViewAccess())
 	// Read-only map data for the embeddable map-widget / entity-map blocks on
-	// public campaigns (cordinator#39 finding 4). meta = image + dimensions +
-	// visibility-filtered markers; markers also exposed standalone. Both reuse
-	// the existing role/visibility filtering and are empty-userID safe.
-	// Drawings/tokens get their own pub group in RegisterDrawingRoutes; fog and
-	// layers stay cg-only (GM tools).
+	// public campaigns. meta = image + dimensions + visibility-filtered
+	// markers; markers also exposed standalone. Both reuse the existing
+	// role/visibility filtering and are empty-userID safe. Drawings/tokens
+	// get their own pub group in RegisterDrawingRoutes; fog and layers stay
+	// cg-only (GM tools).
 	pub.GET("/maps/:mid/meta", h.GetMapMetaAPI, campaigns.RequireViewAccess())
 	pub.GET("/maps/:mid/markers", h.ListMarkersAPI, campaigns.RequireViewAccess())
 }
@@ -94,10 +94,10 @@ func RegisterDrawingRoutes(e *echo.Echo, dh *DrawingHandler, campaignSvc campaig
 	cg.POST("/maps/:mid/fog/reset", dh.ResetFog, campaigns.RequireRole(campaigns.RoleOwner))
 
 	// Public-capable READ-ONLY drawings + tokens, so the embeddable map-widget /
-	// entity-map blocks render on public campaigns (cordinator#39 finding 4).
-	// Both list handlers already filter by role (GM-only items hidden from
-	// players) and need no userID, so anonymous public visitors are safe. Writes
-	// stay in cg above; FOG and LAYERS are intentionally NOT exposed (GM tools).
+	// entity-map blocks render on public campaigns. Both list handlers already
+	// filter by role (GM-only items hidden from players) and need no userID,
+	// so anonymous public visitors are safe. Writes stay in cg above; FOG and
+	// LAYERS are intentionally NOT exposed (GM tools).
 	pub := e.Group("/campaigns/:id",
 		auth.OptionalAuth(authSvc),
 		campaigns.AllowPublicCampaignAccess(campaignSvc),

@@ -1,13 +1,7 @@
-// anonymous_visibility_test.go — C-AUTHZ-EMPTY-USERID / ADR-049, timeline half.
-//
-// THE BUG THESE PIN. The timeline filters skipped the per-user visibility
-// layer whenever `userID == ""` — the value a logged-out visitor to a PUBLIC
-// campaign carries. So on a public campaign an anonymous request was served
-// allow-list-restricted timelines and event links that a logged-in Player on
-// the same campaign is correctly denied.
-//
-// Each anonymous assertion is paired with a Player control: a "fix" that
-// simply hides everything would pass the first half and fail the second.
+// Pins that an anonymous request (userID == "") on a public campaign gets the
+// same per-user visibility filtering as a logged-in Player, never a bypass
+// (ADR-049). Each anonymous assertion is paired with a Player control so a
+// "fix" that just hides everything would still fail.
 package timeline
 
 import (

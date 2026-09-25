@@ -55,17 +55,12 @@ func main() {
 	slog.Info("connected to MariaDB")
 
 	// --- Run Database Migrations ---
-	// Auto-apply pending migrations on every startup. Already-applied
-	// migrations are skipped. This eliminates the need to run migrate
-	// manually after deployment.
-
-	// Pending-gated migration + pre-migration backup. MigrateWithBackup backs up
-	// ONLY when a migration is actually pending (no more backup-on-every-restart
-	// storm), and tolerates a database that is AHEAD of this build (a downgrade /
-	// rollback, or an accidentally-deleted-but-applied migration) by logging and
-	// starting anyway instead of crash-looping. When BACKUP_REQUIRED=1 a backup
-	// failure on the pending path aborts the boot. See ADR-035/036/037/044 +
-	// internal/database/migrate_state.go.
+	// Auto-apply pending migrations on startup so no manual migrate step is
+	// needed after deployment. MigrateWithBackup backs up only when a
+	// migration is actually pending, and tolerates a database AHEAD of this
+	// build (rollback, or an applied-but-missing migration) by logging and
+	// starting anyway instead of crash-looping. BACKUP_REQUIRED=1 makes a
+	// backup failure on the pending path abort the boot. See ADR-035/036/037/044.
 	backupRequired := strings.EqualFold(getEnvDefault("BACKUP_REQUIRED", ""), "1") ||
 		strings.EqualFold(getEnvDefault("BACKUP_REQUIRED", ""), "true")
 	backupCfg := database.HealthCheckConfig{
@@ -84,40 +79,34 @@ func main() {
 	}
 
 	// --- Startup Health Checks ---
-	// Validates migration version, schema columns, DB health, and security.
-	// Server refuses to start if any fatal check fails.
-	// The health-check config is shared with the admin Database > Health tab via
-	// app.StartupHealthCheckConfig, so the two surfaces never disagree.
+	// Validates migration version, schema columns, DB health, and security;
+	// refuses to start if any fatal check fails. Config is shared with the
+	// admin Database > Health tab via app.StartupHealthCheckConfig so the two
+	// surfaces never disagree.
 	if err := database.RunStartupHealthChecks(db, app.StartupHealthCheckConfig(cfg)); err != nil {
 		fatalBoot("startup health checks failed", err)
 	}
 
 	// --- Run Plugin Migrations ---
-	// Each plugin runs its own schema migrations independently. Failures
-	// disable the plugin instead of crashing the app. Migrations are
-	// embedded in the binary via embed.FS so they work in any environment.
+	// Each plugin runs its own schema migrations independently; failures
+	// disable the plugin instead of crashing the app. Migrations are embedded
+	// via embed.FS so they work in any environment.
 	//
-	// C-FMC-5c: invoke foundry_vtt's pre-migration check BEFORE running
-	// the migration loop. The check refuses to start the server if the
-	// foundry_module_versions table has rows (verified empty on the audit
-	// instance; a manual upload between C-FMC-5b deploy and C-FMC-5c
-	// deploy would otherwise be silently dropped by the migration). The
-	// check is idempotent + cheap; re-running after the migration has
-	// applied returns nil.
+	// Run foundry_vtt's pre-migration check before the migration loop: it
+	// refuses to start the server if the (deprecated) foundry_module_versions
+	// table has rows, since a manual upload could otherwise be silently
+	// dropped by the migration. Idempotent; a no-op once the migration applied.
 	if err := foundry_vtt.PreMigrationCheck(context.Background(), db); err != nil {
 		slog.Error("foundry_vtt pre-migration check failed", slog.Any("error", err))
 		os.Exit(1)
 	}
-	// C-SWEEP-R4 (data/fvtt-fresh-db-rename): the check above only guards the
-	// UPGRADE path. On a FRESH database migration 001's `RENAME TABLE
-	// foundry_module_campaign_tokens ...` has no source table — the plugin that
-	// created it was deleted — so it failed on its first statement and left the
-	// Foundry integration permanently disabled on every new self-hosted
-	// install. The reconciler records 001 as applied on any database where it
-	// can never succeed, so the runner reaches migration 002's idempotent DDL.
-	// A failure here is fatal for the same reason the check above is: it means
-	// the schema state cannot even be read, so the migration decision would be
-	// a guess.
+	// The check above only guards the UPGRADE path. On a fresh database,
+	// migration 001's RENAME of foundry_module_campaign_tokens has no source
+	// table (its plugin was deleted), so it fails on its first statement. The
+	// reconciler records 001 as applied wherever it can never succeed, so the
+	// runner reaches migration 002's idempotent DDL. A failure here is fatal:
+	// it means the schema state cannot even be read, so the migration
+	// decision would be a guess.
 	if err := foundry_vtt.ReconcileConsolidationState(context.Background(), db); err != nil {
 		slog.Error("foundry_vtt consolidation reconcile failed", slog.Any("error", err))
 		os.Exit(1)
@@ -126,13 +115,11 @@ func main() {
 	pluginSchemas := registeredPlugins()
 
 	// Pre-PLUGIN-migration backup. MigrateWithBackup above guards only CORE
-	// migrations; a release shipping destructive plugin migrations and no core
-	// ones (the CALV5 calendar wipe is exactly that shape) used to reach this
-	// point with no automatic backup at all — while the wipe's down files told
-	// the operator that recovery is "restoring the backup taken before the
-	// wipe". Detect pending plugin migrations the same way the runner will,
-	// and back up under the same BACKUP_REQUIRED semantics as the core gate.
-	// Skipped when the core path already captured a snapshot this boot.
+	// migrations, so a release with destructive plugin migrations and no core
+	// ones would otherwise ship with no automatic backup. Detect pending
+	// plugin migrations the same way the runner will, and back up under the
+	// same BACKUP_REQUIRED semantics as the core gate. Skipped when the core
+	// path already captured a snapshot this boot.
 	pendingPlugins, pendErr := database.PendingPluginMigrations(db, pluginSchemas)
 	if pendErr != nil {
 		// If the tracking state cannot be read, the safe assumption is that
@@ -241,8 +228,6 @@ func setupLogging(cfg *config.Config) {
 	slog.SetDefault(slog.New(handler))
 }
 
-// registeredPlugins returns the list of built-in plugins with their embedded
-// migration filesystems. Each plugin embeds its own migrations/*.sql files
 // getEnvDefault reads an environment variable or returns the fallback.
 func getEnvDefault(key, fallback string) string {
 	if v := os.Getenv(key); v != "" {
@@ -252,13 +237,12 @@ func getEnvDefault(key, fallback string) string {
 }
 
 // fatalBoot logs an unrecoverable boot error and exits — but first sleeps a
-// backoff (BOOT_FAIL_BACKOFF, default 45s) so that a `restart: unless-stopped`
-// container retries at ~1/min instead of hot-looping ~60/min (which floods logs
-// and disk — the 000030 incident produced ~6 pre-migration backups per minute
-// this way). Use ONLY for errors that won't fix themselves on a fast retry
-// (bad migration/schema state, failed health checks, misconfiguration).
-// Transient dependency waits (e.g. DB not ready yet) intentionally keep exiting
-// fast so the orchestrator can retry quickly.
+// backoff (BOOT_FAIL_BACKOFF, default 45s) so a `restart: unless-stopped`
+// container retries at ~1/min instead of hot-looping, which floods logs and
+// disk. Use ONLY for errors that won't fix themselves on a fast retry (bad
+// migration/schema state, failed health checks, misconfiguration). Transient
+// dependency waits (e.g. DB not ready yet) keep exiting fast so the
+// orchestrator can retry quickly.
 func fatalBoot(msg string, err error) {
 	slog.Error(msg, slog.Any("error", err))
 	backoff := 45 * time.Second
@@ -280,8 +264,9 @@ func fatalBoot(msg string, err error) {
 	os.Exit(1)
 }
 
-// via Go's embed package, ensuring they're available in the compiled binary
-// regardless of working directory.
+// registeredPlugins returns the built-in plugins with their embedded
+// migration filesystems (via Go's embed package, so they're available
+// regardless of working directory).
 func registeredPlugins() []database.PluginSchema {
 	mustSub := func(fsys fs.FS, dir string) fs.FS {
 		sub, err := fs.Sub(fsys, dir)
@@ -296,26 +281,23 @@ func registeredPlugins() []database.PluginSchema {
 		{Slug: "maps", MigrationsFS: mustSub(maps.MigrationsFS, database.PluginMigrationsSubdir)},
 		{Slug: "sessions", MigrationsFS: mustSub(sessions.MigrationsFS, database.PluginMigrationsSubdir)},
 		{Slug: "timeline", MigrationsFS: mustSub(timeline.MigrationsFS, database.PluginMigrationsSubdir)},
-		// widgetbindings: the generic host↔widget-type↔instance binding table
-		// (C-WIDGET-BINDING-P1-SPINE). FK-free + polymorphic, so plugin order
-		// vs calendar/maps/timeline doesn't matter.
+		// widgetbindings: the generic host↔widget-type↔instance binding table.
+		// FK-free and polymorphic, so plugin order vs calendar/maps/timeline
+		// doesn't matter.
 		{Slug: "widgetbindings", MigrationsFS: mustSub(widgetbindings.MigrationsFS, database.PluginMigrationsSubdir)},
 		{Slug: "syncapi", MigrationsFS: mustSub(syncapi.MigrationsFS, database.PluginMigrationsSubdir)},
 		{Slug: "packages", MigrationsFS: mustSub(packages.MigrationsFS, database.PluginMigrationsSubdir)},
-		// foundry_vtt's migration 001 (C-FMC-5c) renames
-		// foundry_module_campaign_tokens → foundry_vtt_campaign_tokens
-		// AND drops the orphaned foundry_module_versions table. A Go-
-		// side pre-check (foundry_vtt.PreMigrationCheck, invoked from
-		// the main bootstrap path before plugin migrations run) aborts
-		// startup if foundry_module_versions has rows — protecting
-		// against accidental data destruction if a manual upload
-		// happened between the C-FMC-5b deploy and C-FMC-5c deploy.
+		// foundry_vtt's migration 001 renames foundry_module_campaign_tokens
+		// to foundry_vtt_campaign_tokens and drops the orphaned
+		// foundry_module_versions table; foundry_vtt.PreMigrationCheck aborts
+		// startup first if foundry_module_versions has rows, to avoid
+		// destroying an in-flight manual upload.
 		//
 		// The Slug is taken from the plugin's own constant rather than a
 		// literal because foundry_vtt.ReconcileConsolidationState writes a
-		// plugin_schema_versions row under it (C-SWEEP-R4): if the two ever
-		// drifted, the reconciler's row would be invisible to the runner and
-		// the fresh-install crash would come straight back.
+		// plugin_schema_versions row under it: if the two ever drifted, the
+		// reconciler's row would be invisible to the runner and the
+		// fresh-install crash would come straight back.
 		{Slug: foundry_vtt.PluginHealthKey, MigrationsFS: mustSub(foundry_vtt.MigrationsFS, database.PluginMigrationsSubdir)},
 	}
 }

@@ -7,9 +7,8 @@ import (
 	"time"
 )
 
-// Scheduler-scoped notification persistence on the existing sessionRepository
-// (C-SCHED-P2). The store is generic + removable (T-B2); the scheduler feature
-// is its only writer this slice. Every read/write is scoped by user_id so one
+// Notification persistence on the existing sessionRepository. The store is
+// generic and plugin-agnostic; every read/write is scoped by user_id so one
 // user can never see or mutate another's notifications.
 
 // CreateNotification inserts one notification row.

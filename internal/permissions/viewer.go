@@ -1,26 +1,13 @@
 package permissions
 
-// Viewer names WHO a visibility filter is deciding for.
-//
-// WHY IT EXISTS (C-AUTHZ-EMPTY-USERID, ADR-049). "There is no authenticated
-// user" and "this is a trusted in-process caller with no request behind it"
-// used to share ONE representation — the empty user id — so the calendar and
-// timeline filters' `userID == ""` system-context bypass was ALSO matched by
-// every logged-out visitor to a public campaign. That served anonymous
-// traffic dm_only calendars and per-user-restricted rows that a logged-in
-// Player on the same campaign is correctly denied.
-//
-// The two states now have two representations, and the trusted one is
-// UNFORGEABLE from request data: `system` is unexported, so only SystemViewer
-// — in this package — can set it. Anything derived from an HTTP request goes
-// through RequestViewer, which cannot produce a system viewer however empty
-// its user id is. An anonymous request therefore falls to the LEAST
-// privileged path by construction, not by every call site remembering to
-// check.
-//
-// This is the concrete form of the C-CALV4-V2SUNSET [VS-15] ruling: an empty
-// user id means NO USER — an ABSENT per-user layer — never a sentinel, never
-// a lookup key, and never a synthesised identity.
+// Viewer names WHO a visibility filter is deciding for. "No authenticated
+// user" and "trusted in-process caller with no request behind it" (ADR-049)
+// are separate, unforgeable representations: `system` is unexported, so only
+// SystemViewer (in this package) can set it, and RequestViewer can never
+// produce a system viewer no matter how empty its user id is. An anonymous
+// request therefore falls to the least-privileged path by construction, not
+// by every call site remembering to check. An empty user id always means NO
+// USER — never a sentinel, lookup key, or synthesised identity.
 type Viewer struct {
 	role   int
 	userID string

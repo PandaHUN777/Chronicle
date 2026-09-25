@@ -5,22 +5,12 @@ import (
 	"testing"
 )
 
-// The three pre-consolidation curated lists, encoded VERBATIM (C-TZ-
-// CONSOLIDATION Step-0 inventory) so this test pins the union property
-// against what shipped before — not against CommonZones' own source, which
-// would make the test tautological and blind to an accidental future drop.
-//
-//   - oldAuthList:     internal/plugins/auth/handler.go commonTimezones()
-//     (pre-consolidation, account settings dropdown)
-//   - oldCalendarList: internal/plugins/calendar/timezones.go commonTimeZones()
-//     (pre-consolidation, real-time calendar anchor dropdown) — Step-0 found
-//     this byte-identical to oldAuthList (its own header comment says so:
-//     an intentional-for-now mirror flagged for a future DRY pass, not a
-//     deliberate divergence), so it adds nothing to the union beyond
-//     oldAuthList, but is kept here for fidelity to the inventory.
-//   - oldAvailabilityList: static/js/availability.js COMMON_TZ (pre-
-//     consolidation, availability scheduler zone picker). The one list with
-//     a genuine addition: the literal "UTC" entry, absent from the other two.
+// The three pre-consolidation curated lists (account settings, calendar
+// real-time anchor, availability scheduler), encoded verbatim so this test
+// pins the union property against what shipped before — not against
+// CommonZones' own source, which would make the test tautological and blind
+// to an accidental future drop. oldAvailabilityList is the one with a genuine
+// addition: the literal "UTC" entry, absent from the other two.
 var oldAuthList = []string{
 	"Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",
 	"America/Anchorage", "America/Argentina/Buenos_Aires", "America/Bogota",
@@ -81,11 +71,9 @@ func TestCommonZones_IsUnionOfOldLists(t *testing.T) {
 	}
 }
 
-// TestCommonZones_ExactUnion pins the OTHER direction too: CommonZones must
-// be the union and nothing more (no new zones snuck in beyond what the
-// dispatch authorizes) — every entry traces back to one of the three old
-// lists. New zones beyond the union are explicitly out of scope
-// (cordinator/dispatches/chronicle/C-TZ-CONSOLIDATION.md "Out of scope").
+// TestCommonZones_ExactUnion pins the other direction too: CommonZones must
+// be the union and nothing more — every entry traces back to one of the
+// three old lists below.
 func TestCommonZones_ExactUnion(t *testing.T) {
 	union := make(map[string]bool)
 	for _, old := range [][]string{oldAuthList, oldCalendarList, oldAvailabilityList} {

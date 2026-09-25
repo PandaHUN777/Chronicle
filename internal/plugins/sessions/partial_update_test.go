@@ -1,17 +1,8 @@
-// partial_update_test.go — sweep R4, the sessions half of the
-// absent-means-preserve contract.
-//
-// Reproduced before the fix: the "Mark Complete" button sends {name,status}
-// only and UpdateSession assigned every field unguarded, so one click erased
-// the schedule, the summary, the in-world date and the entire recurrence
-// config — and because the next-occurrence generator reads the STORED
-// IsRecurring, it stopped firing at the same moment, silently. The Edit
-// modal had the same hole on calendar_year/month/day and
-// recurrence_day_of_week, which it has no inputs for and therefore never
-// sends.
-//
-// The three directions of the contract are pinned here on the endpoint, and
-// on the primitive in internal/patch/patch_test.go:
+// partial_update_test.go pins the sessions half of the absent-means-preserve
+// contract: a partial update body (e.g. the "Mark Complete" button's
+// {name,status}) must never erase fields it did not send. The three
+// directions of the contract are pinned here on the endpoint, and on the
+// primitive in internal/patch/patch_test.go:
 //
 //	absent preserves · present replaces · explicit null clears
 package sessions

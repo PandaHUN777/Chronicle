@@ -62,9 +62,9 @@ templ DashboardBlockSwitch(cc *CampaignContext, block DashboardBlock, recentEnti
 		case "activity_feed":
 			@dashActivityFeed(cc, block.Config)
 		case "sync_status":
-			// NW-2.2 Chunk D: sync block moved to foundry_vtt to keep
-			// campaigns VTT-agnostic. Lazy-loaded with a small skeleton
-			// per the §0 D1 operator-confirmed UX shift.
+			// Lazy-loaded from foundry_vtt (DashboardSyncBlock) to keep
+			// this plugin VTT-agnostic; shows a loading skeleton until
+			// the fragment swaps in.
 			<div
 				hx-get={ fmt.Sprintf("/campaigns/%s/foundry-vtt/dashboard-sync-block", cc.Campaign.ID) }
 				hx-trigger="load"
@@ -84,10 +84,8 @@ templ DashboardBlockSwitch(cc *CampaignContext, block DashboardBlock, recentEnti
 }
 
 // dashWelcomeBanner renders the campaign name and description as a hero
-// section. Mirrors the backdrop-or-flat header from the legacy
-// defaultDashboard so removing that templ doesn't drop the visual
-// treatment campaigns with backdrop images relied on. Owners get a
-// Settings shortcut tucked into the header.
+// section, with a backdrop image if the campaign has one, plus a Settings
+// shortcut for owners.
 templ dashWelcomeBanner(cc *CampaignContext) {
 	if cc.Campaign.BackdropPath != nil && *cc.Campaign.BackdropPath != "" {
 		<div class="relative rounded-xl overflow-hidden -mt-4 -mx-5 md:-mx-0 md:mt-0">
@@ -286,14 +284,9 @@ templ dashPinnedPages(cc *CampaignContext, config map[string]any) {
 // Config: limit (int, default 5). Uses HTMX to fetch from the calendar plugin.
 // Mounts the calendar-widget JS for interactive features (quick-add, event detail).
 templ dashCalendarPreview(cc *CampaignContext, config map[string]any) {
-	// CALV5-PLACEHOLDER: this block mounted the calendar-widget mount and
-	// HTMX-fetched /campaigns/:id/calendars/upcoming on intersect.
-	//
-	// Both are gone with the plugin, and left alone this card would have been
-	// the worst kind of broken: an empty div with a permanent "Loading..." —
-	// boot.js returns SILENTLY when a widget name is not in the registry, and
-	// the hx-get would 404 into a swap that never happens. No console error, no
-	// failed-looking page, just a card that spins forever.
+	// CALV5-PLACEHOLDER: V5 must re-wire this to mount the calendar widget and
+	// HTMX-fetch upcoming events again; until then, show the rebuilding notice
+	// rather than an empty div stuck on "Loading...".
 	_ = config
 	@components.FeatureRebuildingBlock("The calendar")
 }
@@ -497,10 +490,9 @@ templ dashCalendarFull(cc *CampaignContext, config map[string]any) {
 			<h2 class="text-sm font-semibold text-fg-secondary uppercase tracking-wider">
 				<i class="fa-solid fa-calendar-days mr-1.5"></i>Calendar
 			</h2>
-			// C-CALV4-V2SUNSET R2-4 ([VS-2] SIGNED): the Bench, not the shell. The
-			// BLOCK below this header is still the V1 embed (/calendars/embed →
-			// CalendarEmbedFragment) and stays that way — its retirement is
-			// C-CAL-V1-SUNSET's, stage 6. Only the "open it full size" door moves.
+			// This block still serves the legacy V1 calendar embed
+			// (/calendars/embed); only the "open full page" link points
+			// at the current calendar app.
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/apps/calendar", cc.Campaign.ID)) }
 				class="text-xs text-accent hover:underline"
@@ -702,10 +694,9 @@ templ dashActivityFeed(cc *CampaignContext, config map[string]any) {
 	</div>
 }
 
-// dashSyncStatus moved to internal/plugins/foundry_vtt/dashboard_sync_block.templ
-// (DashboardSyncBlock). campaigns now lazy-loads it via hx-get to keep this
-// plugin VTT-agnostic per NW-2.2 Chunk D. See the switch case "sync_status"
-// above + cordinator/decisions/2026-05-23-packages-treatment.md.
+// dashSyncStatus lives in internal/plugins/foundry_vtt/dashboard_sync_block.templ
+// (DashboardSyncBlock); campaigns lazy-loads it via hx-get to stay VTT-agnostic.
+// See the switch case "sync_status" above.
 
 // dashActivityLimit extracts the activity feed limit from block config (default 10).
 func dashActivityLimit(config map[string]any) int {

@@ -3,17 +3,11 @@
 //
 // Import is deliberately best-effort: one bad row must not abandon a
 // half-created campaign, so every importer catches its own per-row errors and
-// moves on. Until sweep R4 stage 16 that was the whole story — each skipped
-// row went to slog.Warn and the operator was redirected to their shiny new
-// campaign with no indication that anything had been left behind. A restore
-// that quietly drops rows is worse than one that fails, because the operator
-// stops looking.
-//
-// Fix id: backend/import-silent-partial-success.
-//
-// ImportReport keeps best-effort behaviour and adds the missing half: every
-// skip is recorded, counted, and shown. The report threads through the
-// importer adapters exactly like *IDMap does.
+// moves on. A restore that quietly drops rows is worse than one that fails,
+// because the operator stops looking — so ImportReport keeps the best-effort
+// behaviour and adds the missing half: every skip is recorded, counted, and
+// shown. The report threads through the importer adapters exactly like
+// *IDMap does.
 package campaigns
 
 import (
@@ -37,16 +31,10 @@ const maxRecordedImportFailures = 200
 // they are never compared against a registry, never used to build a route, and
 // never round-trip into the export envelope as a plugin identifier. But a bare
 // literal at a call site is indistinguishable from a real cross-plugin
-// reference to tools/check-plugin-isolation.sh (T-B2 / M-B2.1), and the guard
-// is right to be unable to tell the difference: a heading today is a lookup key
-// tomorrow.
-//
-// So the vocabulary lives here, in the file that owns ImportFailure, and the
-// call sites name the constant. This is the second remedy the guard documents
-// ("route the labels through a constant"). The guard's const_registry_files
-// list (amendment R4-S26-A) permits the literals on THESE const lines only —
-// any other line of this file, and every call site in every other file, stays
-// fully governed. tools/test-plugin-isolation.sh pins that narrowness.
+// reference to tools/check-plugin-isolation.sh, so the vocabulary lives here
+// and call sites name the constant instead of the literal; the guard's
+// const_registry_files list permits the literals on THESE const lines only.
+// tools/test-plugin-isolation.sh pins that narrowness.
 //
 // Labels that do not collide with a plugin slug ("notes", "maps", "entities",
 // "sessions", …) are deliberately NOT hoisted here: they are ordinary prose and

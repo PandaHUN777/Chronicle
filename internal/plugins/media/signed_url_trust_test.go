@@ -1,20 +1,8 @@
-// signed_url_trust_test.go — pins the C-MEDIA-SIGNED-URL-TRUST fix
-// for operator Bug #23 (Foundry maps broken via ERR_TOO_MANY_REDIRECTS).
-//
-// Pre-fix: checkMediaAccess required an authenticated session cookie +
-// campaign membership on every private-campaign media access, even when
-// a valid signed URL was present. Cross-origin <img> tags from Foundry
-// can't carry Chronicle session cookies → userID empty → 404 → Echo's
-// framework error handler redirected to /login → ERR_TOO_MANY_REDIRECTS.
-//
-// Post-fix: a valid signed URL is itself proof of authorization. The
-// defense-in-depth cookie+membership check is now gated on
-// `!signatureValid`. Expired and tampered signatures still fail (the
-// signer rejects them, and the cookie path enforces membership for
-// unsigned requests via allowUnsignedAccess).
-//
-// Seven cases cover the access surface to confirm the fix doesn't
-// widen it beyond intent.
+// signed_url_trust_test.go pins that a valid signed URL is itself proof of
+// authorization for checkMediaAccess: the cookie+membership defense-in-depth
+// check only runs when no valid signature is present. A cross-origin <img>
+// (Foundry) can't carry a session cookie, so this must hold or those
+// requests get denied. Expired and tampered signatures must still fail.
 
 package media
 
@@ -167,19 +155,12 @@ func newTestHandler(secret string, members map[string]map[string]bool) *Handler 
 	return h
 }
 
-// TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign is the
-// load-bearing positive case: the operator's Foundry cross-origin
-// <img> flow. Valid signed URL, no session cookie, private campaign
-// → access granted. Pre-fix this returned 404 and Echo redirected to
-// /login, producing ERR_TOO_MANY_REDIRECTS in Foundry.
-//
-// Post-ADR-058-decision-6, EVERY signed URL is bound to a viewer, and a
-// cookieless request presents as ViewerAnonymous — so the only way this
-// case still passes is Verify's ViewerAPIKey carve-out, and the link must
-// be minted the way syncapi.MediaAPIHandler.toAPIResponse actually mints
-// it (media.ViewerAPIKey), matching production. This is deliberate, not
-// an artifact of the test: it is the one case decision 6 is required not
-// to break.
+// TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign pins the
+// Foundry cross-origin <img> flow: a valid signed URL with no session
+// cookie must grant access to private-campaign media. Every signed URL is
+// viewer-bound (ADR-058 decision 6) and a cookieless request presents as
+// ViewerAnonymous, so this only passes via Verify's ViewerAPIKey carve-out —
+// the link must be minted with media.ViewerAPIKey, matching production.
 func TestCheckMediaAccess_ValidSignedURL_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
 	expires, sig := signMediaURL(t, h.signer, "file-1", ViewerAPIKey, time.Hour)
@@ -210,11 +191,8 @@ func TestCheckMediaAccess_ExpiredSignature_NoCookie_PrivateCampaign(t *testing.T
 func TestCheckMediaAccess_TamperedSignature_NoCookie_PrivateCampaign(t *testing.T) {
 	h := newTestHandler("test-secret", nil)
 	expires, sig := signMediaURL(t, h.signer, "file-1", ViewerAPIKey, time.Hour)
-	// Replace the last char with one guaranteed to differ — the previous
-	// "flip the first char to '0' instead" fallback was itself a no-op
-	// whenever the first AND last chars were both '0' (~1/256 runs, since
-	// the sig varies with the expiry timestamp), making the "tampered"
-	// sig identical to the real one and this test flake red in CI.
+	// Replace the last char with one guaranteed to differ, so the
+	// "tampered" sig can never collide with the real one.
 	repl := "0"
 	if sig[len(sig)-1] == '0' {
 		repl = "1"
@@ -280,24 +258,12 @@ func TestCheckMediaAccess_ValidThumbSignedURL_NoCookie_PrivateCampaign(t *testin
 	}
 }
 
-// TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie USED to pin "any
-// file in a public campaign is unsigned-readable, no exceptions" — the
-// audit finding ADR-058 decision 7 exists to fix
-// (.ai/designs/2026-09-12-security-audit-findings.md: "on a public campaign
-// `allowUnsignedAccess` returns true for every file... Any media id in a
-// public campaign is readable by the internet"). That is deliberately no
-// longer true: this exact scenario — no signature, no cookie, public
-// campaign — now goes through the SAME entity-scoped visibility check a
-// private campaign's authenticated viewer gets (decision 1, applied with
-// RoleNone), and `publicMediaFile()` here has no referencing entity at all
-// (fakeAccessMediaService's default FindReferences), so decision 3's
-// membership question applies — which an anonymous caller always fails.
-//
-// This is NOT a regression to fix; it is decision 7 working. A real
-// anonymous visitor loading an actual Chronicle page still sees this file
-// fine, through a freshly-minted, viewer-bound SIGNED url (decision 6 mints
-// one on every render, cookie or not) — this test exercises only the
-// legacy bare-URL fallback with no query params at all. See
+// TestCheckMediaAccess_PublicCampaign_NoSignature_NoCookie pins ADR-058
+// decision 7: a public campaign no longer grants unsigned access to every
+// file unconditionally. An anonymous, unsigned request for an unreferenced
+// public-campaign file (decision 3's membership question) must be denied. A
+// real page load still sees the file via a freshly-minted signed URL
+// (decision 6); this exercises only the legacy bare-URL fallback. See
 // TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied and
 // TestCheckMediaAccess_AnonymousPublicCampaign_VisiblePage_Allowed
 // (viewer_binding_test.go) for decision 7's has-references cases.

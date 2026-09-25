@@ -6,8 +6,7 @@ you use the migration tool that starts up on docker boot to migrate whatever
 file formats into whatever you decide. Feel free to look up proper enterprise
 solutions so long as they are open source. Feel free to add libraries that can
 assist."*
-**Answers the standing operator question** recorded in
-`.ai/designs/2026-09-13-session-handoff.md` §3: *"Whether media access should be
+**Answers the standing operator question** *"Whether media access should be
 re-architected further than ADR-058 goes."*
 
 ---
@@ -873,11 +872,6 @@ this whole piece of work exists to prevent.
 
 - `.ai/decisions.md` §ADR-058 — the rule this implements, and its "Rejected"
   section, which names this table as the fallback if query cost bites. It bit.
-- `.ai/designs/2026-09-12-security-audit-findings.md` — findings 1, 3 and 5 all
-  touch media; 5 (cross-campaign signing oracle) partially defeats ADR-058 and is
-  not addressed here.
-- `.ai/designs/2026-09-13-session-handoff.md` §3 — the operator question this
-  document answers, and §4.2, the ADR-058 residuals it absorbs.
 - `.ai/conventions.md` §"Migration Safety Rules" #7 and #10 — why `media_usages`
   is polymorphic and why the backfill is a reconciler.
 - Commit `efc020fe` — the shape-ambiguity bug that kept campaign backdrops and

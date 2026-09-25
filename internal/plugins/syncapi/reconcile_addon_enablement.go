@@ -29,44 +29,23 @@ type AddonEnablementStore interface {
 
 // ReconcileAddonEnablement enables the "Sync API" addon for every campaign
 // that already owns an API key but has never had the toggle recorded either
-// way. It returns the number of campaigns it enabled.
+// way (enforcement defaults to DENIED when no campaign_addons row exists).
+// It returns the number of campaigns it enabled. Runs as an idempotent
+// reconciler, not a migration, so it is safe to re-run every boot.
 //
-// WHY IT EXISTS. RequireSyncAPIAddon and AuthenticateKeyForWS now enforce the
-// toggle, and enforcement defaults to DENIED: addons.IsEnabledForCampaign
-// returns false when no campaign_addons row exists, and the only routine
-// writers of that row are the manual UI toggle and (as of this change)
-// CreateKey. A one-time plugin migration —
-// syncapi/migrations/003_autoenable_existing_keys.up.sql — backfilled
-// enabled=1 for campaigns that had an api_keys row, but it ran once, years of
-// keys ago. Any campaign that minted its first key after that migration
-// applied sits at "no row" and would have been cut off the instant
-// enforcement went live. On the deployment this ships to, that includes a
-// live Foundry VTT sync.
+// Enable only where NO ROW EXISTS:
 //
-// WHY A RECONCILER AND NOT A MIGRATION. CLAUDE.md: migrations are
-// APPEND-ONLY and SCHEMA-ONLY; one-time data fixes are idempotent
-// reconcilers. It also has to be re-runnable — a campaign can acquire its
-// first key between two boots of an older build.
+//	keys + no row  → enable  (never configured; keep it working)
+//	keys + row(0)  → skip    (owner switched it off on purpose)
+//	keys + row(1)  → skip    (already on)
+//	no keys        → skip    (not a Sync API campaign)
 //
-// THE RULE, AND THE TRAP IT AVOIDS. Enable only where NO ROW EXISTS:
+// Hence HasCampaignAddonRecord ("has anyone decided?"), never
+// IsEnabledForCampaign, which can't distinguish "never configured" from
+// "explicitly off".
 //
-//	keys + no row      → enable   (never configured; it was working before,
-//	                               so keep it working)
-//	keys + row(0)      → SKIP     (the owner switched it off on purpose)
-//	keys + row(1)      → skip     (already on; nothing to do)
-//	no keys            → skip     (not a Sync API campaign; don't opt it in)
-//
-// The migration this replaces used `ON DUPLICATE KEY UPDATE enabled = 1`,
-// which was harmless as a one-shot back when "enabled" meant nothing. As a
-// BOOT reconciler that same clause would re-enable every campaign with keys
-// on every restart, so switching the toggle off would last exactly until the
-// next deploy — it would hand back the decorative toggle this change is
-// removing. Hence HasCampaignAddonRecord: "has anyone decided?", not "is it
-// on?". IsEnabledForCampaign cannot tell "never configured" from "explicitly
-// off" and is the wrong question here.
-//
-// Best-effort by contract: it reports its error to the caller, which logs and
-// continues. A backfill must not be able to stop the server from booting.
+// Best-effort by contract: it reports its error to the caller, which logs
+// and continues. A backfill must not be able to stop the server from booting.
 func ReconcileAddonEnablement(ctx context.Context, keys CampaignKeyLister, store AddonEnablementStore) (int, error) {
 	if keys == nil || store == nil {
 		return 0, fmt.Errorf("syncapi.ReconcileAddonEnablement: nil dependency (keys=%v store=%v)",

@@ -1,7 +1,7 @@
-// entity_page_block_guard_test.go — C-CAL-ENTITY-PAGE-EMBED bug fixes.
-// BUG FIX 1: the page-template palette excludes dashboard-only blocks.
-// BUG FIX 2: a registered dashboard-only / nil-renderer block on an entity
-// page renders a clear placeholder, never a silent blank.
+// entity_page_block_guard_test.go pins two invariants: the page-template
+// palette excludes dashboard-only blocks, and a registered dashboard-only
+// or nil-renderer block on an entity page renders a clear placeholder,
+// never a silent blank.
 package entities
 
 import (
@@ -16,10 +16,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 )
 
-// TestTemplateContextExcludesDashboardOnly — BUG FIX 1 (server side): the
-// "template" context filter drops dashboard-only blocks while keeping
-// template-context ones. (The client fix is template_editor.js sending
-// ?context=template — asserted separately below.)
+// TestTemplateContextExcludesDashboardOnly pins that the "template"
+// context filter drops dashboard-only blocks while keeping template-
+// context ones.
 func TestTemplateContextExcludesDashboardOnly(t *testing.T) {
 	reg := NewBlockRegistry()
 	reg.Register(BlockMeta{Type: "calendar_preview", Contexts: []string{"dashboard"}}, nil)
@@ -37,10 +36,8 @@ func TestTemplateContextExcludesDashboardOnly(t *testing.T) {
 		t.Errorf("template-context blocks must appear in the template palette: %v", got)
 	}
 
-	// Regression (operator: "did the fixes break the dashboard version?"):
-	// the DASHBOARD context must STILL include calendar_preview and must NOT
-	// include the template-only blocks — i.e. BUG FIX 1's context filter is
-	// symmetric and didn't strip the dashboard palette.
+	// The context filter must be symmetric: dashboard still includes
+	// calendar_preview and excludes template-only blocks.
 	dash := map[string]bool{}
 	for _, m := range reg.TypesForCampaignAndContext(context.Background(), "camp-1", nil, "dashboard") {
 		dash[m.Type] = true
@@ -53,9 +50,9 @@ func TestTemplateContextExcludesDashboardOnly(t *testing.T) {
 	}
 }
 
-// TestTemplateEditorRequestsTemplateContext — BUG FIX 1 (client side): the
-// page-template editor must request the palette with context=template so the
-// server filter actually engages.
+// TestTemplateEditorRequestsTemplateContext pins that the page-template
+// editor requests the palette with context=template so the server filter
+// engages.
 func TestTemplateEditorRequestsTemplateContext(t *testing.T) {
 	js := readRepoFile(t, "static/js/widgets/template_editor.js")
 	if !strings.Contains(js, "entity-types/block-types?context=template") {
@@ -63,10 +60,10 @@ func TestTemplateEditorRequestsTemplateContext(t *testing.T) {
 	}
 }
 
-// TestRenderBlock_PlaceholderNotBlank — BUG FIX 2: a registered block that is
-// dashboard-only (wrong context) or nil-renderer renders the placeholder on an
-// entity page; a real template block renders normally; an UNREGISTERED type
-// still drops silently (intentional).
+// TestRenderBlock_PlaceholderNotBlank pins that a registered block that is
+// dashboard-only (wrong context) or nil-renderer renders a placeholder on
+// an entity page; a real template block renders normally; an unregistered
+// type still drops silently (intentional).
 func TestRenderBlock_PlaceholderNotBlank(t *testing.T) {
 	reg := NewBlockRegistry()
 	reg.Register(BlockMeta{Type: "calendar_preview", Contexts: []string{"dashboard"}}, nil) // dashboard-only + nil renderer

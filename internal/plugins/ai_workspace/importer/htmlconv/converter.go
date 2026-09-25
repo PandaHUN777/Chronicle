@@ -1,27 +1,18 @@
 // Package htmlconv converts sanitized HTML to a Chronicle-shaped
-// ProseMirror JSON document. Phase 5's committer dual-writes
-// EntryHTML (the sanitize.HTML output) + Entry (this package's JSON
-// output) so a freshly-imported entity opens cleanly in the TipTap
-// editor on first edit — the editor reads Entry, not EntryHTML
-// (static/js/widgets/editor.js:761).
+// ProseMirror JSON document. The committer dual-writes EntryHTML (the
+// sanitize.HTML output) and Entry (this package's JSON output) so a
+// freshly-imported entity opens cleanly in the TipTap editor on first
+// edit — the editor reads Entry, not EntryHTML.
 //
-// Schema target: TipTap StarterKit + Link + Table (per editor.js
-// extensions inventory). Covered nodes/marks:
-//
-//   - doc, paragraph, text
-//   - heading (attrs.level 1-6)
-//   - bulletList, orderedList, listItem
-//   - codeBlock (no language attribute in V1)
-//   - blockquote, horizontalRule, hardBreak
-//   - table, tableRow, tableHeader, tableCell
-//   - marks: bold, italic, strike, code, link, underline
+// Schema target: TipTap StarterKit + Link + Table. Covered
+// nodes/marks: doc, paragraph, text, heading (level 1-6), bulletList,
+// orderedList, listItem, codeBlock (no language attribute), blockquote,
+// horizontalRule, hardBreak, table/tableRow/tableHeader/tableCell,
+// marks bold/italic/strike/code/link/underline.
 //
 // Unrecognised tags fall back to a paragraph containing the
-// concatenated text content of the element's descendants — better
-// to lose styling than to crash on edge-case AI output.
-//
-// Per cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §1.4 (recommendation A — server-side conversion).
+// concatenated text content of the element's descendants — better to
+// lose styling than to crash on edge-case AI output.
 package htmlconv
 
 import (

@@ -1,19 +1,15 @@
-// extension_dashboards.templ — C-EXT-HUB Phase 2 dispatcher +
-// placeholders for the inline extension-dashboard panel.
+// extension_dashboards.templ is the dispatcher + placeholders for the
+// inline extension-dashboard panel.
 //
-// extensionDashboardSwitch routes by slug to the registered
-// component (modeled on DashboardBlockSwitch in
-// dashboard_blocks.templ:25-82). The fragment route in
-// extensions_hub_handler.go ExtensionDashboardFragmentAPI invokes
-// this with a map projected from BuildExtensionDashboards plus the
-// per-request enabled-state lookup, so disabled extensions render
-// the disabled placeholder regardless of whether a factory is
-// registered.
+// extensionDashboardSwitch routes by slug to the registered component
+// (modeled on DashboardBlockSwitch in dashboard_blocks.templ). The
+// fragment route in extensions_hub_handler.go's ExtensionDashboardFragmentAPI
+// invokes this with a map projected from BuildExtensionDashboards plus the
+// per-request enabled-state lookup, so disabled extensions render the
+// disabled placeholder regardless of whether a factory is registered.
 //
-// All placeholders are V2-styled (token-driven; reduced-motion via
-// the global guard in static/css/input.css:31-42). The card chrome
-// is shared with extensionsHubCard so the panel reads as a natural
-// extension of the catalog above.
+// The card chrome is shared with extensionsHubCard so the panel reads as a
+// natural extension of the catalog above.
 
 package campaigns
 

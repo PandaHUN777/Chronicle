@@ -77,15 +77,11 @@ func buildWeekOverlay(
 
 		// Iterate an extended real-date range (-2..8) so blocks that spill
 		// across a midnight/zone boundary INTO the window are still captured.
-		// Two days of slack on each side (not one) is required: the maximum
-		// real zone spread is 26h (UTC+14 vs UTC-12), so a block on a member's
-		// real date can land up to ~26h — i.e. into the day-before-the-day-before
-		// or the day-after-the-day-after — in the viewer's zone. The gate's
-		// verified-failing case: a Pacific/Kiritimati (UTC+14) block Tue
-		// 00:00–01:00 lands Sunday 23:00 for a Pacific/Pago_Pago (UTC-12) viewer,
-		// sourced from real-date offset +8 — a column the old -1..7 loop never
-		// visited (symmetric miss at -2). This range MUST match the exception
-		// fetch window in availability_service.go (BuildOverlay).
+		// Two days of slack on each side is required: the maximum real zone
+		// spread is 26h (UTC+14 vs UTC-12), so a block on a member's real date
+		// can land up to two days away in the viewer's zone. This range MUST
+		// match the exception fetch window in availability_service.go
+		// (BuildOverlay).
 		for offset := -2; offset <= 8; offset++ {
 			realDate := weekStart.AddDays(offset)
 			for _, eb := range effectiveBlocks(m.UserID, realDate, availByUser, excByUser) {
@@ -206,14 +202,10 @@ func effectiveBlocks(userID string, realDate timeutil.CivilDate,
 // maxViewerSegs bounds splitToViewerDays' output. A single availability block
 // spans at most one civil day (minute windows are validated into [0,1440]) and
 // the widest real zone spread is 26h (UTC+14 vs UTC-12), so a block can touch
-// at most three viewer-local dates. Eight is generous headroom.
-//
-// It is not an optimisation, it is a fuse. This loop used to run unbounded, and
-// an unbounded loop that APPENDS is not a spin — it is an allocation storm that
-// OOM-kills the whole self-hosted instance, taking the calendar, maps, entities
-// and Foundry sync with it, from one authenticated GET. The zone arithmetic
-// below is now correct; this exists so that if it is ever wrong again the blast
-// radius is a short segment list, not the process.
+// at most three viewer-local dates; eight is generous headroom. This is a
+// fuse, not an optimisation — an unbounded append loop here is an allocation
+// storm that can OOM-kill the whole instance from one authenticated GET, so
+// the bound must stay even if the zone arithmetic is later proven correct.
 const maxViewerSegs = 8
 
 // splitToViewerDays converts a [start,end) instant range into the viewer zone
@@ -262,14 +254,3 @@ func splitToViewerDays(start, end time.Time, loc *time.Location) []viewerSeg {
 	}
 	return out
 }
-
-// roleLabel is RETIRED (C-CALV4-RSVP-P8 §4 / WG-4, ADR-048 §17). It mapped
-// isOwner → "DM" | "player", which was a SECOND role vocabulary competing with
-// campaigns.Role.DisplayName(), and it ignored IsDmGranted entirely — so a
-// co-DM was labelled "player" on the surface whose whole subject is
-// who-may-see-what, while receiving owner-tier detail. The label is now
-// resolved once, at the handler, from the roster's own Role plus the campaign's
-// DmGrantIDs, and copied through overlayMemberInput.RoleLabel / IsCoDM.
-//
-// The function is deleted rather than deprecated on purpose: leaving it
-// compiling is how a second vocabulary comes back.

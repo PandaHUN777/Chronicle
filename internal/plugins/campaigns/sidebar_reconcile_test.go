@@ -1,4 +1,4 @@
-// sidebar_reconcile_test.go — C-NAV-V3: the legacy→items conversion and the
+// sidebar_reconcile_test.go covers the legacy->items conversion and the
 // idempotent EnsureSidebarItems boot reconciler that back-writes it once.
 package campaigns
 
@@ -192,11 +192,11 @@ func TestEnsureSidebarItems(t *testing.T) {
 	}
 }
 
-// TestUpdateSidebarConfig_PreservesLegacyOnWrite pins 0b: a sidebar-config write
-// against a campaign still on the legacy model (boot reconciler not yet run, or
-// failed for this row) must NOT drop the legacy customization. UpdateSidebarConfig
-// converts lazily on write, so a partial update that does not supply Items (here,
-// only a hidden-entity toggle) preserves the legacy order as converted Items
+// TestUpdateSidebarConfig_PreservesLegacyOnWrite pins that a sidebar-config
+// write against a campaign still on the legacy model (boot reconciler not
+// yet run, or failed for this row) must not drop the legacy customization.
+// UpdateSidebarConfig converts lazily on write, so a partial update that
+// does not supply Items preserves the legacy order as converted Items
 // instead of re-marshaling an empty items array over it.
 func TestUpdateSidebarConfig_PreservesLegacyOnWrite(t *testing.T) {
 	legacy := `{"entity_type_order":[2,1],"custom_sections":[{"id":"s1","label":"Lore"}],"custom_links":[{"id":"l1","label":"Wiki","url":"/wiki","section":"s1"}]}`

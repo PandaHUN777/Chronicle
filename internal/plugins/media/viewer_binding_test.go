@@ -1,21 +1,10 @@
-// viewer_binding_test.go — ADR-058 decision 6 (a signed media URL is bound
-// to the viewer it was minted for) and decision 7 (a public campaign's
-// unsigned fallback narrows to what an anonymous viewer may actually see).
-//
-// TEST HONESTY: every test here drives the REAL Handler.checkMediaAccess and
-// the REAL URLSigner.Sign/Verify/SignThumb/VerifyThumb — never a
-// reimplementation of either. The decision-7 cases reuse
-// fakeAccessMediaService and fakeEntityVisibilityFilter from
-// entity_visibility_access_test.go (same package), exactly the way that
-// file's own decision-1-3 tests do, so a public campaign's has-references
-// path is proven against the SAME fakes, not a second copy of them.
-//
-// It does NOT prove FilterViewableEntityIDs's own SQL treats an anonymous
-// (RoleNone, "") viewer correctly — entity_visibility_access_integration_test.go
-// already proves the query is safe for that call shape (visibilityFilter's
-// `role >= permissions.RoleOwner` / `is_private = false` branches evaluate
-// cleanly at role 0), and re-proving it here would just be a second copy of
-// that same DB-backed test.
+// viewer_binding_test.go pins ADR-058 decision 6 (a signed media URL is
+// bound to the viewer it was minted for) and decision 7 (a public
+// campaign's unsigned fallback narrows to what an anonymous viewer may
+// actually see). Drives the real Handler.checkMediaAccess and
+// URLSigner.Sign/Verify/SignThumb/VerifyThumb; FilterViewableEntityIDs's own
+// SQL for an anonymous viewer is proven separately in
+// entity_visibility_access_integration_test.go.
 package media
 
 import (
@@ -58,14 +47,10 @@ func TestSignedURL_MintedForA_StillWorksForA(t *testing.T) {
 	}
 }
 
-// TestSignedURL_MintedForA_DoesNotWorkForB is the load-bearing negative case
-// decision 6 exists for. Pre-decision-6, Sign/Verify carried no viewer at
-// all: ANY caller presenting a valid (fileID, expires, sig) triple was
-// granted access regardless of who they were, so user A's link, handed (or
-// leaked) to user B, worked for B exactly as well as it worked for A. user-b
-// here is deliberately NOT a campaign member, so the ONLY pre-decision-6
-// reason this would have been denied is missing — a copied link was a
-// bearer token, full stop.
+// TestSignedURL_MintedForA_DoesNotWorkForB pins ADR-058 decision 6: user A's
+// link must not work for user B. user-b is deliberately not a campaign
+// member, so the only pre-decision-6 reason this would have been denied is
+// absent — a copied link must be inert on its own, not a bearer token.
 func TestSignedURL_MintedForA_DoesNotWorkForB(t *testing.T) {
 	h := newTestHandler("test-secret", map[string]map[string]bool{
 		"camp-bind": {"user-a": true}, // user-b is deliberately NOT a member
@@ -99,14 +84,11 @@ func TestSignedURL_MintedForA_DoesNotWorkAnonymously(t *testing.T) {
 	}
 }
 
-// TestSignedURL_OldFormat_InvalidatedImmediately pins the "old links stop
-// working immediately" choice documented on SignedURLTTL in signed_url.go:
-// a signature computed the PRE-decision-6 way — HMAC over "fileID:expires",
-// no viewer segment at all — must not verify under the new scheme, even
-// though it is otherwise well-formed and unexpired. This package no longer
-// has a code path that PRODUCES that payload, so the test reimplements it
-// by hand to prove Verify actually rejects it rather than merely never
-// being asked to check one.
+// TestSignedURL_OldFormat_InvalidatedImmediately pins that a signature
+// computed the pre-decision-6 way (HMAC over "fileID:expires", no viewer
+// segment) must not verify under the new scheme, even though it is
+// otherwise well-formed and unexpired. Reimplements the old payload by hand
+// since no code path in this package produces it anymore.
 func TestSignedURL_OldFormat_InvalidatedImmediately(t *testing.T) {
 	secret := "test-secret"
 	signer := NewURLSigner(secret)
@@ -154,11 +136,8 @@ func publicMediaFileReferenced() *MediaFile {
 }
 
 // TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied is the
-// central decision-7 case. Before this, allowUnsignedAccess returned true
-// for ANY file in ANY public campaign with no exceptions
-// (.ai/designs/2026-09-12-security-audit-findings.md: "Any media id in a
-// public campaign is readable by the internet"), so an anonymous caller
-// with no signature at all could read artwork used only on a dm_only page.
+// central decision-7 case: an anonymous caller with no signature must not
+// read a public campaign's file used only by a dm_only page.
 func TestCheckMediaAccess_AnonymousPublicCampaign_DmOnlyPage_Denied(t *testing.T) {
 	h := &Handler{
 		signer:        NewURLSigner("test-secret"),

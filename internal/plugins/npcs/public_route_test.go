@@ -1,15 +1,10 @@
 package npcs
 
-// public_route_test.go — C-PUBLIC-VIEW-FIX real-route wiring guard.
-//
-// The composed-chain unit tests in campaigns/public_view_access_test.go pin that
-// AllowPublicCampaignAccess + RequireViewAccess admits public visitors. THIS test
-// pins that the actual REGISTERED pub routes wire that gate — it registers npcs'
-// real routes and drives GET /campaigns/:id/npcs* as an anonymous visitor. If a
-// future edit re-wires a pub route back to RequireRole(RolePlayer) (the original
-// regression), this test flips to 403 and fails. npcs is the representative pub
-// plugin (its two pub routes share the identical group construction as every
-// other pub plugin: OptionalAuth -> AllowPublicCampaignAccess -> RequireAddon ->
+// public_route_test.go pins that npcs' REGISTERED public routes gate on
+// AllowPublicCampaignAccess + RequireViewAccess, not RequireRole(RolePlayer):
+// it registers npcs' real routes and drives GET /campaigns/:id/npcs* as an
+// anonymous visitor. npcs is representative of every pub plugin's group
+// construction (OptionalAuth -> AllowPublicCampaignAccess -> RequireAddon ->
 // RequireViewAccess).
 
 import (
@@ -88,16 +83,14 @@ func serveNPCRoute(t *testing.T, path string, campaign *campaigns.Campaign) *htt
 }
 
 // TestNPCPubRoutes_AnonymousAdmittedOnPublic pins that the registered npcs pub
-// routes admit an anonymous visitor to a PUBLIC campaign — i.e. the gate is
-// RequireViewAccess, not RequireRole(RolePlayer) (the production regression).
+// routes admit an anonymous visitor to a PUBLIC campaign.
 //
 //   - /npcs/count runs its handler and returns 200 (unambiguous: gate passed).
 //   - /npcs (h.Index) is an unconditional deprecation redirect to /characters
 //     (the gallery folded into the Characters page). A 302 to /characters — as
-//     opposed to a 403 or a bounce to /login — proves the gate ADMITTED the anon
-//     visitor and the handler ran. (The /characters target is itself on the
-//     auth-required group, out of this fix's pub-swap scope; public character
-//     CONTENT is served via the entities pub routes.)
+//     opposed to a 403 or a bounce to /login — proves the gate admitted the
+//     anon visitor and the handler ran. Public character content itself is
+//     served via the entities pub routes.
 func TestNPCPubRoutes_AnonymousAdmittedOnPublic(t *testing.T) {
 	pub := &campaigns.Campaign{ID: "camp-1", IsPublic: true}
 

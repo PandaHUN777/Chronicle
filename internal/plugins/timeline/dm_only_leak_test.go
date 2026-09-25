@@ -1,27 +1,14 @@
-// dm_only_leak_test.go — 2026-09-12 security audit finding 4 (HIGH).
+// Pins that Show, TimelineDataAPI and EmbedTimeline apply the timeline's own
+// visibility (dm_only base visibility and per-user visibility_rules) via
+// GetTimelineForViewer's timelineVisibleToViewer predicate — the same one
+// ListTimelines' filterTimelinesByUser uses, so the two paths cannot drift
+// (ADR-058). A viewer who may not see the timeline gets NotFound, never
+// Forbidden: on a public campaign, Forbidden would confirm the id exists
+// (ADR-055 rule 3).
 //
-// THE BUG THESE PIN. Show, TimelineDataAPI and EmbedTimeline gated only on
-// requireTimelineInCampaign — which checks that a timeline id belongs to the
-// campaign named in the URL and nothing else. None of the three ever applied
-// the timeline's own visibility ('dm_only' base visibility, or its per-user
-// visibility_rules) the way Index/ListTimelines already does via
-// filterTimelinesByUser. So on a PUBLIC campaign a viewer with no account at
-// all (permissions.RoleNone, empty user id) could open any timeline by id —
-// dm_only included — through any of these three routes and read it in full.
-//
-// THE FIX pins here: GetTimelineForViewer (service.go) applies the exact same
-// predicate ListTimelines' filterTimelinesByUser already applies —
-// timelineVisibleToViewer, factored out so the two paths cannot drift the way
-// List and Show did (ADR-058; see internal/app/map_audience_parity_test.go
-// for the precedent this mirrors). A viewer who may not see the timeline gets
-// NotFound, never Forbidden: a Forbidden on a public campaign would confirm
-// the id exists (ADR-055 rule 3 — the same existence-oracle problem a body
-// leak is, in a different costume).
-//
-// Every anonymous/Player assertion below is paired with an Owner and a co-DM
-// control, and one Owner-view-as-player control: a "fix" that simply hides
-// the timeline from everyone, or that regresses the 4df13033 co-DM
-// promotion, would pass the first half and fail these.
+// Every anonymous/Player assertion is paired with an Owner and a co-DM
+// control, plus an Owner-view-as-player control, so a fix that hides the
+// timeline from everyone or breaks co-DM promotion still fails.
 package timeline
 
 import (
@@ -51,10 +38,7 @@ func secretTimeline() *Timeline {
 }
 
 // newDMOnlyRepo returns a mock repo serving only secretTimeline(), by id,
-// scoped to camp-1 — every other repo call defaults to nil/empty (the
-// mockTimelineRepo zero-value behavior), which is enough for Show and
-// TimelineDataAPI to render without needing linked events, groups or
-// connections to exist.
+// scoped to camp-1; every other call defaults to zero-value nil/empty.
 func newDMOnlyRepo() *mockTimelineRepo {
 	return &mockTimelineRepo{
 		getByIDFn: func(_ context.Context, id string) (*Timeline, error) {
@@ -67,11 +51,8 @@ func newDMOnlyRepo() *mockTimelineRepo {
 }
 
 // tlTestReq builds an echo.Context carrying a CampaignContext, an optional
-// authenticated user id, and the view-as-player flag — the same three
-// ingredients effectiveRole and GetTimelineForViewer read in production,
-// assembled the way this package's own tests already do
-// (audit_log_test.go's newReqWithCC, codm_visibility_test.go's
-// newTimelineTestContext) rather than a shape invented for this file alone.
+// authenticated user id, and the view-as-player flag — the inputs
+// effectiveRole and GetTimelineForViewer read in production.
 func tlTestReq(path string, cc *campaigns.CampaignContext, userID string, viewAsPlayer bool, htmx bool) echo.Context {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -166,13 +147,10 @@ func TestShow_CoDM_DMOnlyTimeline_Succeeds(t *testing.T) {
 	}
 }
 
-// TestShow_OwnerViewAsPlayer_DMOnlyTimeline_NotFound is the composition the
-// task called out explicitly: an Owner previewing the player experience must
-// see exactly what a Player sees. The timeline itself is dm_only, so the
-// PLAYER view of it is that it does not exist — same as
-// TestShow_PlainPlayer_DMOnlyTimeline_NotFound. A "fix" that let
-// view-as-player leak through the Owner's real role would fail this while
-// passing the plain-anonymous/Player cases above.
+// TestShow_OwnerViewAsPlayer_DMOnlyTimeline_NotFound pins that an Owner
+// previewing the player experience sees exactly what a Player sees: the
+// dm_only timeline does not exist to them, same as
+// TestShow_PlainPlayer_DMOnlyTimeline_NotFound.
 func TestShow_OwnerViewAsPlayer_DMOnlyTimeline_NotFound(t *testing.T) {
 	h := NewHandler(newTestTimelineService(newDMOnlyRepo()))
 	c := tlTestReq("/campaigns/camp-1/timelines/tl-secret", ownerCampaignCtx(), "u-owner", true, false)
@@ -227,10 +205,9 @@ func TestTimelineDataAPI_CoDM_DMOnlyTimeline_Succeeds(t *testing.T) {
 
 // --- EmbedTimeline ---
 //
-// EmbedTimeline never returns an error for a bad/unauthorized id by design
-// (its contract is to always render SOMETHING, falling back to the empty
-// state) — so the assertion here is on rendered BODY CONTENT, not the error
-// return: an unauthorized viewer must get the empty-state fragment, never
+// EmbedTimeline always renders something rather than erroring on a
+// bad/unauthorized id, so the assertion is on rendered body content: an
+// unauthorized viewer must get the empty-state fragment, never
 // TimelineEmbedFragment carrying the secret timeline's name.
 
 func TestEmbedTimeline_Anonymous_DMOnlyTimeline_RendersEmpty(t *testing.T) {
@@ -289,14 +266,12 @@ func TestEmbedTimeline_CoDM_DMOnlyTimeline_RendersFragment(t *testing.T) {
 	}
 }
 
-// --- Search (repository.go:251 / service.go SearchTimelines follow-up finding) ---
+// --- Search ---
 //
-// This is a SEPARATE leak from the Show/data/embed one above: a timeline
-// with base visibility 'everyone' but a visibility_rules allow-list can still
-// be NAMED by SearchTimelines to a viewer the allow-list excludes, because
-// (before the fix) Search never ran the per-user filter List already runs.
-// A dm_only timeline's NAME is also covered, redundantly with the SQL
-// narrowing, by the same fixed code path.
+// SearchTimelines runs the same per-user visibility filter List runs, so a
+// timeline with an allow-list-restricting visibility_rules entry is never
+// named to a viewer the allow-list excludes, even when its base visibility
+// is 'everyone'.
 
 func restrictedByRulesTimeline() Timeline {
 	rules := `{"allowed_users":["u-1"]}`
@@ -311,15 +286,9 @@ func restrictedByRulesTimeline() Timeline {
 	}
 }
 
-// TestSearchTimelines_AnonymousViewer_DoesNotNameRestrictedTimeline was
-// written RED-FIRST against SearchTimelines' pre-fix signature —
-// (ctx, campaignID, query, role), no userID — since that is the interface
-// that existed before the fix (see /tmp red evidence: this failed with a
-// bare 4-arg call, repo.Search's fixture unfiltered). The fix added a userID
-// parameter so the service can build the same permissions.Viewer
-// ListTimelines already builds; this call site now carries the trailing ""
-// anonymous user id. The assertion itself is unchanged: an anonymous viewer
-// must never see this timeline's name.
+// TestSearchTimelines_AnonymousViewer_DoesNotNameRestrictedTimeline pins
+// that SearchTimelines takes a userID and builds the same permissions.Viewer
+// ListTimelines does: an anonymous viewer must never see this timeline's name.
 func TestSearchTimelines_AnonymousViewer_DoesNotNameRestrictedTimeline(t *testing.T) {
 	repo := &mockTimelineRepo{
 		searchFn: func(_ context.Context, _ string, _ string, _ int) ([]Timeline, error) {
@@ -340,12 +309,9 @@ func TestSearchTimelines_AnonymousViewer_DoesNotNameRestrictedTimeline(t *testin
 }
 
 // TestSearchTimelines_AllowedUser_StillSeesTheirRestrictedTimeline is the
-// control proving the fix is a per-user FILTER, not a "hide everything
-// dm_only-adjacent" sledgehammer: the user the allow-list actually names
-// must still find their own timeline by name. Added alongside the fix
-// (SearchTimelines gained the userID parameter this call needs, so it could
-// not even compile beforehand) — there is no "before" state to red-first
-// for a distinction the old signature had no way to express.
+// control proving the fix is a per-user filter, not a blanket hide: the
+// user the allow-list actually names must still find their own timeline
+// by name.
 func TestSearchTimelines_AllowedUser_StillSeesTheirRestrictedTimeline(t *testing.T) {
 	repo := &mockTimelineRepo{
 		searchFn: func(_ context.Context, _ string, _ string, _ int) ([]Timeline, error) {

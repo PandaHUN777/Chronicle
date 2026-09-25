@@ -1,21 +1,9 @@
-// media_list_visibility_test.go pins finding 3 of
-// .ai/designs/2026-09-12-security-audit-findings.md: GET
-// /api/v1/campaigns/:id/media is gated on read permission, which a
-// session-authenticated Player holds, but the handler resolved no role and
-// applied no filter — handing a Player the id, filename, size and a
-// one-hour signed URL for every media row in the campaign.
-//
-// media_files carries no reference to the entity it illustrates (the
-// audit's structural finding), so there is no cheap "only what this
-// Player can see" filter. The narrowest defensible rule implemented here:
-// a caller below Scribe gets none of this bulk listing at all — the same
-// threshold the web app itself already uses for campaign-wide media
-// browsing (CampaignMediaList / the media picker, media/routes.go). A
-// Player can never legitimately populate "media I uploaded" either: every
-// upload path (the web form and the API's own POST .../media) requires
-// Scribe+/PermWrite, so a real Player's own-uploads set is always empty —
-// filtering to "mine" and flatly refusing would answer identically for
-// every Player who exists today.
+// media_list_visibility_test.go pins that GET /api/v1/campaigns/:id/media
+// withholds its bulk listing (id, filename, size, signed URL for every
+// media row) from a caller below Scribe: media_files carries no reference
+// to the entity it illustrates, so there is no cheap "only what this
+// caller can see" filter, and the same Scribe+ threshold the web app uses
+// for campaign-wide media browsing applies here instead.
 //
 // These tests drive the REAL MediaAPIHandler.ListMedia — never a
 // reimplementation of the filter — against a fake MediaService that

@@ -1,23 +1,13 @@
 // layout_editor_entity_type_picker.test.mjs — pins the `entity_type` config
-// field of the layout editor's block config dialog (C-SWEEP-R3).
+// field of the layout editor's block config dialog: the picker must call the
+// JSON entity-types route (not the HTML management page, which
+// middleware.Render always serves as "text/html"), and must handle both the
+// bare-array and `{data: [...], total: N}` envelope shapes syncapi's
+// ListEntityTypes can return, plus a visible failure when neither applies.
 //
-// The regression: the picker GET'd `/campaigns/:id/entity-types`, which is the
-// entity-type MANAGEMENT PAGE. middleware.Render hard-sets
-// "text/html; charset=utf-8" and never inspects Accept, so both branches of
-// EntityTypesPage return HTML; `r.json()` threw a SyntaxError and the empty
-// `.catch(function () {})` swallowed it. The `entity_list` block's Entity Type
-// dropdown was therefore permanently stuck on its "— Select entity type —"
-// placeholder, with nothing on the console to say why.
-//
-// The naive repoint to the v1 JSON route is not enough either: syncapi's
-// ListEntityTypes returns the `{data: [...], total: N}` ENVELOPE, and the old
-// `(types || []).forEach` over an object is a silent no-op — still empty. So
-// this pins the whole contract: the JSON route, both envelope shapes, and a
-// visible failure.
-//
-// Following worldstate_widget.test.mjs, this EXECUTES the real widget source in
-// a vm sandbox with a DOM shim rather than pattern-matching it, so the option
-// list asserted below is the one a browser would actually render.
+// Executes the real widget source in a vm sandbox with a DOM shim rather than
+// pattern-matching it, so the option list asserted below is the one a browser
+// would actually render.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

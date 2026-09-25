@@ -1,14 +1,10 @@
 package campaigns
 
-// public_view_access_test.go — C-PUBLIC-VIEW-FIX.
-//
-// WHY THIS FILE EXISTS: the public-view 403 regression shipped because the only
-// test (middleware_anon_test.go) pinned AllowPublicCampaignAccess *in isolation*
-// — it asserted the resolved CampaignContext but never ran the role GATE that
-// every pub route applies AFTER it. The bug lived entirely in the COMPOSITION:
-// AllowPublicCampaignAccess resolves anon -> RoleNone (correct, #478), then the
-// route's RequireRole(RolePlayer) rejects RoleNone -> 403. These tests drive the
-// composed chain through a real Echo router so that class of gap can't recur.
+// public_view_access_test.go drives the full public-view middleware chain
+// through a real Echo router, not just AllowPublicCampaignAccess in
+// isolation (see middleware_anon_test.go): AllowPublicCampaignAccess
+// resolves anon -> RoleNone (#478), and a route's role gate must admit that,
+// not reject it — a gap that only shows up in composition.
 
 import (
 	"net/http"
@@ -186,11 +182,9 @@ func TestPublicViewChain_478InvariantPreserved(t *testing.T) {
 	}
 }
 
-// TestPublicViewChain_RegressionContrast is the pin for the exact gap: with the
-// SAME composed chain, the OLD gate (RequireRole(RolePlayer)) 403s an anonymous
-// visitor on a PUBLIC campaign — the production bug — while RequireViewAccess
-// admits them. Isolated middleware tests could never surface this because the
-// gate only misbehaves in composition with AllowPublicCampaignAccess's RoleNone.
+// TestPublicViewChain_RegressionContrast pins that, in the same composed
+// chain, RequireRole(RolePlayer) 403s an anonymous visitor on a public
+// campaign while RequireViewAccess admits them.
 func TestPublicViewChain_RegressionContrast(t *testing.T) {
 	svc := &stubPublicSvc{campaign: publicCampaign(), memberErr: apperror.NewNotFound("not a member")}
 

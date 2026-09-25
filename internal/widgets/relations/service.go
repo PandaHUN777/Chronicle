@@ -348,15 +348,14 @@ func (s *relationService) GetFilteredGraphData(ctx context.Context, campaignID s
 		}
 	}
 
-	// Entity-visibility filter (C-PUBLIC-VIEW-FIX-R2): drop nodes the viewer
-	// cannot see — and every edge touching them — so private entities don't leak
-	// as named nodes to anonymous / non-privileged viewers. The relation-graph
-	// query (ListByCampaign) applies no per-viewer filter, so this is the only
-	// gate on relation-derived nodes. (Mention-derived edges are already viewer-
-	// filtered on the source side by the mention provider; this additionally
-	// drops any private mention *target* that surfaced as an ID-only node.)
-	// Owner / site-admin / DM-granted viewers (includeDmOnly) keep the full
-	// picture — no behavior change for them.
+	// Entity-visibility filter: drop nodes the viewer cannot see — and every
+	// edge touching them — so private entities don't leak as named nodes to
+	// anonymous / non-privileged viewers. ListByCampaign applies no
+	// per-viewer filter, so this is the only gate on relation-derived nodes.
+	// (Mention-derived edges are already viewer-filtered on the source side
+	// by the mention provider; this additionally drops any private mention
+	// target that surfaced as an ID-only node.) Owner / site-admin /
+	// DM-granted viewers (includeDmOnly) keep the full picture.
 	if !includeDmOnly {
 		// Fail closed: without the visibility filter a non-privileged viewer
 		// would receive private-entity nodes. A nil filter is a wiring bug, not

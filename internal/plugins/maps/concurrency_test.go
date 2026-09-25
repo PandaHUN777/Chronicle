@@ -9,20 +9,11 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/patch"
 )
 
-// TestUpdateMarker_StaleConflict locks in the optimistic-concurrency
-// contract on UpdateMarker. The relay (C-MAP1) requires this so the
-// Foundry editor can detect "remote changed since I started typing"
-// without having to refetch on every keystroke.
-//
-// Three cases are sufficient:
-//
-//  1. ExpectedUpdatedAt omitted (last-writer-wins fallback) → 200.
-//  2. ExpectedUpdatedAt equals the row's UpdatedAt → 200.
-//  3. ExpectedUpdatedAt older than row's UpdatedAt → 409.
-//
-// The same shape applies to drawing/token/layer/fog mutations; one
-// representative test on UpdateMarker proves the wiring without
-// duplicating across every entity.
+// TestUpdateMarker_StaleConflict pins the optimistic-concurrency contract on
+// UpdateMarker: ExpectedUpdatedAt omitted falls back to last-writer-wins (200),
+// a matching timestamp accepts (200), and a stale one rejects (409). The same
+// shape applies to drawing/token/layer/fog mutations; this one case proves the
+// wiring without duplicating across every entity.
 func TestUpdateMarker_StaleConflict(t *testing.T) {
 	rowUpdated := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 	stale := rowUpdated.Add(-time.Minute)
@@ -73,8 +64,7 @@ func TestUpdateMarker_StaleConflict(t *testing.T) {
 	}
 }
 
-// TestDeleteMarker_StaleConflict mirrors the update path on the delete
-// path — proves the same concurrency check fires on delete too.
+// TestDeleteMarker_StaleConflict proves the same concurrency check fires on delete.
 func TestDeleteMarker_StaleConflict(t *testing.T) {
 	rowUpdated := time.Date(2026, 4, 1, 10, 0, 0, 0, time.UTC)
 	stale := rowUpdated.Add(-time.Minute)

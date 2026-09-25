@@ -1,60 +1,32 @@
 // foundry_vtt — admin.templ renders the "campaigns using v0.1.5"
-// expandable card UI that the operator asked for. The packages plugin's
-// /admin/packages page calls these fragments via hx-get on each
-// foundry-module typed package's version row.
+// expandable card UI. The packages plugin's /admin/packages page calls
+// these fragments via hx-get on each foundry-module typed package's
+// version row.
 //
-// HTMX-swap-safe pattern requirements (load-bearing — PRs #302, #303,
-// C-FMC-5c, and C-FMC-6's owner_tab.templ all hit bugs from violating
-// these):
+// HTMX-swap-safe pattern requirements (see onclick_handlers.go for the
+// full reasoning):
 //
-//  1. Inline `onclick="(function(){...})()"` IIFEs, NOT delegated event
-//     listeners and NOT `templ script` helpers. The latter emit a
-//     <script>function __templ_X(){...}</script> tag alongside the
-//     button + a button onclick that references __templ_X(...) by
-//     name. When the fragment is loaded via hx-get and innerHTML-
-//     swapped, browsers do NOT reliably execute the <script> tag
-//     synchronously with the surrounding HTML. The button can be
-//     clicked before the function is defined, raising:
-//
-//       Uncaught ReferenceError: __templ_X is not defined
-//
-//     This was the production bug pattern in C-FMC-5c (admin buttons)
-//     and C-FMC-5b's owner_tab.templ (Save Pin / Rotate Token). Fixed
-//     in C-FMC-8 by converting every templ `script` helper in HTMX-
-//     loaded fragments to inline IIFE via the onclick_handlers.go
-//     Go-side string builders.
-//
-//  2. Inline literal Alpine `x-data="{ open: false }"`. NEVER
-//     `x-data="someExternalFunction()"` — external references can
-//     be undefined when Alpine processes the directive after HTMX
-//     swap.
-//
-//  3. `<details>` + `<summary>` for collapsible reveals when JS
-//     isn't needed — browser-native, no race window.
-//
+//  1. Inline `onclick="(function(){...})()"` IIFEs, never delegated
+//     event listeners or `templ script` helpers — the latter's
+//     <script> tag doesn't reliably execute synchronously with an
+//     hx-get innerHTML swap, so a click can race function definition.
+//  2. Inline literal Alpine `x-data="{ open: false }"`, never
+//     `x-data="someExternalFunction()"` — an external reference can be
+//     undefined when Alpine processes the directive after an HTMX swap.
+//  3. `<details>` + `<summary>` for collapsible reveals when JS isn't
+//     needed — browser-native, no race window.
 //  4. Defense-in-depth `style="display:none"` alongside x-show=open
 //     for modal-like reveals.
-//
-// Prior versions of this file claimed templ scripts were "HTMX-swap-
-// safe" — that claim was a load-bearing wrong statement. Templ
-// scripts are NOT safe inside HTMX-loaded fragments. Strike from
-// memory; don't reintroduce.
 
 package foundry_vtt
 
 import "fmt"
 
 // AdminVersionCampaignsBlock is the HTMX fragment served at
-// GET /admin/foundry-vtt/version/:version/campaigns. Embedded into
-// the packages plugin's per-version row (foundry-module type only)
-// via hx-get. Lists the campaigns currently pinned to this version
-// + the per-version admin actions.
-//
-// C-FMC-9 (Bug 4): wrapped in a <details> disclosure that's open
-// by default (the admin clicked to expand; auto-collapsing on
-// re-render would be jarring). Empty-pinned-list case skips
-// rendering the details entirely so the admin doesn't see a
-// pointless expander for versions no one is using.
+// GET /admin/foundry-vtt/version/:version/campaigns. Embedded into the
+// packages plugin's per-version row (foundry-module type only) via
+// hx-get. Lists the campaigns currently pinned to this version plus
+// the per-version admin actions.
 templ AdminVersionCampaignsBlock(version string, usage []CampaignUsage, autoTracking []CampaignUsage, csrfToken string) {
 	<div class="border-t border-edge mt-2 pt-3 px-3 pb-3 bg-surface-alt/30 rounded-b-md space-y-3">
 		if len(usage) > 0 {
@@ -83,15 +55,9 @@ templ AdminVersionCampaignsBlock(version string, usage []CampaignUsage, autoTrac
 	</div>
 }
 
-// campaignUsageList renders one row per pinned campaign. Owner name +
-// last-active relative time + per-campaign Force-update + Notify
-// buttons. The buttons' onclick handlers are inline IIFEs built in
-// onclick_handlers.go (HTMX-swap-safe: the JS body lives entirely in
-// the attribute, no external function reference).
-//
-// C-FMC-9 (Bug 4): each campaign row is now a card with explicit
-// border + slightly-elevated background. Empty-state copy is more
-// actionable.
+// campaignUsageList renders one row per pinned campaign: owner name,
+// last-active relative time, and per-campaign Force-update + Notify
+// buttons (inline IIFEs from onclick_handlers.go).
 templ campaignUsageList(version string, usage []CampaignUsage, csrfToken string) {
 	<div>
 		<p class="text-xs font-semibold text-fg-muted uppercase tracking-wider mb-2">
@@ -168,10 +134,6 @@ templ versionActionRow(version string, usage []CampaignUsage, csrfToken string) 
 	</div>
 }
 
-// C-FMC-8: all click handlers in this file used to be templ `script`
-// helpers (which emit <script> tags + named function references in
-// the onclick attribute). Those don't execute reliably in HTMX-
-// swapped fragments — see the file header comment + onclick_handlers.go.
-// The replacements live in onclick_handlers.go as Go-side string
-// builders that emit inline IIFE bodies for direct attribute injection.
+// All click handlers here are inline IIFE bodies built in
+// onclick_handlers.go — see the file header for why.
 

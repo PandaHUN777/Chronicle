@@ -12,12 +12,9 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/hostinfo"
 )
 
-// host.deploy-check exists because four separate diagnostics already held the
-// answer to "did my deploy land?" and nobody assembled them. These tests pin
-// the two things a composite can get wrong: restating a delegate's logic
-// instead of calling it (a second opinion that can disagree), and flattening
-// "not scanned" into "not found" (the absence-of-evidence error that started
-// all of this).
+// These tests pin the two things host.deploy-check as a composite can get
+// wrong: restating a delegate's logic instead of calling it (a second
+// opinion that can disagree), and flattening "not scanned" into "not found".
 
 // deployTestRoot builds a static root with the bellwether files plus a marker
 // that exists ONLY on disk.
@@ -119,10 +116,9 @@ func TestDeployCheckIsRegistered(t *testing.T) {
 	}
 }
 
-// TestDeployCheckMarkerFoundOnlyInEmbeddedIsNotMissing is THE test. A marker
-// present only inside the binary must be reported as found-in-the-binary and
-// explicitly not-missing — reading that case as absent code is what cost an
-// hour on 2026-08-11.
+// TestDeployCheckMarkerFoundOnlyInEmbeddedIsNotMissing pins that a marker
+// present only inside the binary is reported as found-in-the-binary and
+// explicitly not-missing.
 func TestDeployCheckMarkerFoundOnlyInEmbeddedIsNotMissing(t *testing.T) {
 	out := renderHostDeployCheckFrom(deploySources(t), "moonPhase")
 
@@ -157,17 +153,9 @@ func TestDeployCheckMarkerScopesAreReportedSeparately(t *testing.T) {
 	}
 }
 
-// TestDeployCheckMarkerFoundOnlyInExecutableIsNotMissing is THE test for the
-// scope that was missing, and it pins the exact defect it was added to close.
-//
-// Chronicle is Templ-first, so a `data-` attribute an operator copies out of
-// page source is compiled into the binary and appears in NEITHER other scope.
-// With only the disk and embedded scopes, this marker rendered as absent from
-// both and the diagnostic asserted the deploy had not landed — measured against
-// the real repo with the real static root and the real embed.FS, while `grep -a`
-// on the built binary found the same string. The flagship post-deploy check
-// telling the operator their correct deploy failed is the 2026-08-11 mistake
-// wearing this diagnostic's own clothes.
+// TestDeployCheckMarkerFoundOnlyInExecutableIsNotMissing pins that a Templ
+// `data-` attribute, compiled into the binary and absent from both the
+// static root and embedded scopes, must not be reported as a missing deploy.
 func TestDeployCheckMarkerFoundOnlyInExecutableIsNotMissing(t *testing.T) {
 	out := renderHostDeployCheckFrom(deploySources(t), "data-cal-moon-tab")
 

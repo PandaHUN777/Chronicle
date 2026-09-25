@@ -1,25 +1,18 @@
-// chunk1_test.go — C-FMC-ADMIN-UX-AUDIT Chunk 1 regression guards.
+// chunk1_test.go pins three load-bearing properties, each behind its
+// own test so a regression bisects to the right surface:
 //
-// Three load-bearing properties this PR introduces. Each lives behind
-// a dedicated test so a future regression bisects to the right
-// surface:
+//  1. AutoPinSummary schema-version handling — write stamps the
+//     current version; read is lenient on pre-versioning summaries
+//     (zero → 1) and rejects forward-incompatible ones.
+//  2. PackageRegistry.FoundryPackage across its "found", "not-found",
+//     and "multiple-foundry-modules" paths.
+//  3. Owner-side pin_mode round-trip via the CampaignSettingsAdapter
+//     — Get returns whatever Set wrote; OwnerTabData populates
+//     CurrentPinMode from the adapter.
 //
-//   1. AutoPinSummary schema-version handling — write stamps the
-//      current version; read is lenient on pre-Chunk-1 summaries
-//      (zero → 1) and rejects forward-incompatible ones.
-//   2. PackageRegistry.FoundryPackage matches the pre-refactor
-//      service.FindFoundryPackage behavior across all three "found",
-//      "not-found", and "multiple-foundry-modules" paths.
-//   3. Owner-side pin_mode round-trip via the CampaignSettingsAdapter
-//      — Get returns whatever Set wrote; OwnerTabData populates the
-//      new CurrentPinMode field from the adapter.
-//
-// Pin-mode CONSTANTS (preserve/promote/pinned) + IsValidPinMode are
-// also asserted here so a typo can't drift the constant value out
-// from under Chunk 2's hook, Chunk 3's UI, and Chunk 6's migration.
-//
-// Audit reference: cordinator/reports/chronicle/2026-05-20-c-fmc-admin-ux-audit.md
-// §4 Chunk 1 (Tests section).
+// Pin-mode constants (preserve/promote/pinned) and IsValidPinMode are
+// also asserted here so a typo can't drift the constant values out
+// from under their callers.
 
 package foundry_vtt
 
@@ -182,9 +175,8 @@ func TestPackageRegistry_FoundryPackage_NotFound(t *testing.T) {
 
 // TestPackageRegistry_FoundryPackage_MultipleReturnsFirst pins the
 // single-instance assumption documented at the package-registry
-// file header. Multiple foundry-module packages would be unusual;
-// the first one wins. If this ever needs to change, the change
-// lives here, not in three independent sites.
+// file header: multiple foundry-module packages are unusual, and the
+// first one wins.
 func TestPackageRegistry_FoundryPackage_MultipleReturnsFirst(t *testing.T) {
 	r := NewPackageRegistry(&stubPackageReader{
 		pkgs: []packages.Package{
@@ -221,17 +213,13 @@ func TestPackageRegistry_FoundryPackageID_Convenience(t *testing.T) {
 	}
 }
 
-// TestPackageRegistry_FvttCampaignsTriggerID_LockStep pins the DOM
-// ID generation alignment: the registry's helper MUST produce the
-// same string as the existing per-version trigger ID format in
-// packages.templ. If they drift, the auto-pin banner's IIFE
-// (chronicle#326 + Chunk 4) silently fails to find its target.
-//
-// The sanitization rule (dots/plus/slash → hyphen) is shared between
-// foundry_vtt's sanitizeVersionForDOMID and packages's sanitizeForID
-// — this test is a near-duplicate of cfmc9_test.go's
-// TestSanitizeVersionForDOMID_MatchesPackagesSanitizer, run at the
-// new registry helper level.
+// TestPackageRegistry_FvttCampaignsTriggerID_LockStep pins the DOM ID
+// generation alignment: the registry's helper MUST produce the same
+// string as the per-version trigger ID format in packages.templ, or
+// the auto-pin banner's IIFE silently fails to find its target. The
+// sanitization rule is shared with sanitizeVersionForDOMID /
+// packages's sanitizeForID; see also cfmc9_test.go's
+// TestSanitizeVersionForDOMID_MatchesPackagesSanitizer.
 func TestPackageRegistry_FvttCampaignsTriggerID_LockStep(t *testing.T) {
 	cases := []struct{ version, want string }{
 		{"v0.1.10", "fvtt-campaigns-trigger-v0-1-10"},
@@ -247,10 +235,9 @@ func TestPackageRegistry_FvttCampaignsTriggerID_LockStep(t *testing.T) {
 }
 
 // TestPackageRegistry_FvttVersionsTriggerAttr_StableName pins the
-// data-attribute literal because three sites — this package's
-// onclick_handlers.go IIFE selector, packages.templ's render-time
-// attribute, and the Chunk 4 audit's contract — depend on the
-// EXACT string.
+// data-attribute literal: onclick_handlers.go's IIFE selector and
+// packages.templ's render-time attribute both depend on this exact
+// string.
 func TestPackageRegistry_FvttVersionsTriggerAttr_StableName(t *testing.T) {
 	if FvttVersionsTriggerAttr != "data-fvtt-versions-trigger" {
 		t.Errorf("FvttVersionsTriggerAttr = %q, want data-fvtt-versions-trigger; this drift would break the auto-pin banner's IIFE selector",
@@ -259,9 +246,8 @@ func TestPackageRegistry_FvttVersionsTriggerAttr_StableName(t *testing.T) {
 }
 
 // TestFindFoundryPackage_DelegatesToRegistry pins that the service's
-// FindFoundryPackage method now goes through the registry — the
-// "pure refactor" claim from §4 Chunk 1. If a future PR re-inlines
-// the lookup, this test catches it.
+// FindFoundryPackage method goes through the registry rather than
+// re-inlining the lookup.
 func TestFindFoundryPackage_DelegatesToRegistry(t *testing.T) {
 	pkgs := &stubPackageReader{
 		pkgs: []packages.Package{
@@ -295,9 +281,8 @@ func TestFindFoundryPackage_DelegatesToRegistry(t *testing.T) {
 // --- 3. Pin-mode constant + IsValidPinMode tests ---
 
 // TestPinModeConstants pins the exact string values so a typo can't
-// drift them out from under Chunk 2's hook (which switches on these),
-// Chunk 3's UI (which writes them), and Chunk 6's migration (which
-// backfills empty fields with PinModePromote).
+// drift them out from under the code that switches on them, writes
+// them, or backfills empty fields with PinModePromote.
 func TestPinModeConstants(t *testing.T) {
 	cases := []struct{ name, got, want string }{
 		{"PinModePreserve", PinModePreserve, "preserve"},

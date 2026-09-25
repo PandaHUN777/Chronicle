@@ -1,18 +1,13 @@
-// zones.go — the single canonical curated IANA timezone list (C-TZ-CONSOLIDATION).
+// zones.go is the single canonical curated IANA timezone list, defined once
+// so every UI surface (account settings, calendar real-time anchor,
+// availability scheduler) renders the same <select> options rather than each
+// hand-curating and drifting apart. The full IANA tz database is ~600
+// entries, too many for a usable dropdown, so this is a curated subset plus
+// whatever zone the browser detects or the user already has stored.
 //
-// Before this file, three UI surfaces (account settings, calendar real-time
-// anchor, availability scheduler) each hand-curated their own IANA zone list
-// for a <select> dropdown. They drifted: a zone added to one was missing from
-// another (Step-0 inventory: cordinator/reports/chronicle/2026-07-18-c-tz-
-// consolidation.md). The full IANA tz database is ~600 entries — too many for
-// a usable dropdown — so every surface ships a curated subset plus whatever
-// zone the browser detects / the user already has stored. This file is that
-// subset, defined exactly once.
-//
-// CommonZones is the UNION of the three pre-consolidation lists (pinned by
-// zones_test.go against the old lists verbatim): consolidating must never
-// remove a zone any surface could previously offer, since a calendar or
-// availability row may already be stored against it.
+// The list must never drop a zone a surface could previously offer, since a
+// calendar or availability row may already be stored against it (pinned by
+// zones_test.go).
 package timeutil
 
 import (
@@ -31,11 +26,8 @@ type Zone struct {
 
 // commonZoneNames is the curated region list, validated against the host's
 // tzdata at call time (an entry missing from the host's tzdata is silently
-// dropped rather than rendering an unselectable option — same behavior the
-// three pre-consolidation lists each had independently). UTC leads the list
-// (the universal, zero-offset default); the rest keep the pre-consolidation
-// alphabetical-by-region order so the visible option order doesn't reshuffle
-// for the two surfaces that already rendered it that way.
+// dropped rather than rendering an unselectable option). UTC leads the list
+// as the universal, zero-offset default; the rest are alphabetical by region.
 var commonZoneNames = []string{
 	"UTC",
 	"Africa/Cairo", "Africa/Johannesburg", "Africa/Lagos", "Africa/Nairobi",

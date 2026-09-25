@@ -1,13 +1,8 @@
-// import_calendaria_seasons_test.go — C-SWEEP-R4 stage 23,
-// backlog/calendaria-seasons-ignore-monthstart.
-//
-// parseCalendaria only ever implemented Calendaria's DAY-OF-YEAR season shape,
-// so every file authored in the MONTH-RANGE shape collapsed onto whatever its
-// dayStart/dayEnd happened to be. The shipped Elven preset is one of those
-// files, which is why the fixture below is the real payload rather than a
-// hand-written stand-in: the defect was in a product surface (the Start
-// gallery's Elven card), and a synthetic fixture could have been written to
-// agree with either reading.
+// import_calendaria_seasons_test.go pins that parseCalendaria reads both
+// Calendaria season shapes — day-of-year and month-range — correctly.
+// TestParseCalendaria_ElvenPresetSeasonsUseMonthRange uses the shipped Elven
+// preset itself as its fixture, rather than a hand-written stand-in, since the
+// defect it guards was in that product surface.
 package calendar
 
 import (
@@ -47,14 +42,10 @@ func assertSeasonRanges(t *testing.T, got, want []seasonRange) {
 	}
 }
 
-// TestParseCalendaria_ElvenPresetSeasonsUseMonthRange is the regression proper.
-//
-// presets/elven.json has eight 45-day months and three seasons whose ONLY
-// distinguishing fields are monthStart/monthEnd (0-2, 3-5, 6-7); all three
-// carry dayStart 0 and dayEnd 45. Reading only the day fields produced
-// 1/1 → 1/45 three times over — three identical ranges, mutually overlapping,
-// covering one of eight months and leaving the other seven seasonless. The
-// three ranges below tile the year exactly once.
+// TestParseCalendaria_ElvenPresetSeasonsUseMonthRange pins that
+// presets/elven.json's three seasons — distinguished only by
+// monthStart/monthEnd, all sharing dayStart 0 / dayEnd 45 — parse to three
+// distinct ranges that tile the year, not three overlapping day-of-year spans.
 func TestParseCalendaria_ElvenPresetSeasonsUseMonthRange(t *testing.T) {
 	raw, err := presetFS.ReadFile("presets/elven.json")
 	if err != nil {
@@ -94,14 +85,10 @@ func TestParseCalendaria_ElvenPresetSeasonsUseMonthRange(t *testing.T) {
 	}
 }
 
-// TestParseCalendaria_SeasonMonthBaseIsDetected pins the base discrimination.
-//
-// The two real Calendaria exports in cordinator/references/calendars DISAGREE
-// on whether monthStart addresses the first month as 0 or as 1, so the base
-// cannot be a constant. The fixtures below reproduce each file's season and
-// month geometry exactly (names shortened; the fields that decide are the month
-// count and the monthStart/monthEnd sets). If either reading were hard-coded,
-// one of these two cases would come out shifted by a whole month.
+// TestParseCalendaria_SeasonMonthBaseIsDetected pins that monthStart's base
+// (0 vs. 1) is detected per file, not assumed: real Calendaria exports
+// disagree, so a hard-coded base would shift one of these two cases by a
+// whole month.
 func TestParseCalendaria_SeasonMonthBaseIsDetected(t *testing.T) {
 	t.Run("zero-based (forbidden-lands shape)", func(t *testing.T) {
 		// 8 months of 45/46 days; seasons at 0-1, 2-3, 4-5, 6-7 — a 1-based

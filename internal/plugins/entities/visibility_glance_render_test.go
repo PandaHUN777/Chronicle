@@ -1,8 +1,6 @@
-// visibility_glance_render_test.go — ADR-057 slice 3. Renders the REAL call
-// sites (blockTitle, EntityCard, blockDetails, EntityTableRow,
-// entityTreeLevel, blockChildren, entityBlock/RenderBlock), never a
-// hand-rolled stand-in for them — see error_handler_api_type_test.go's
-// standing lesson about a test that only proves its own fixture.
+// visibility_glance_render_test.go renders the REAL call sites (blockTitle,
+// EntityCard, blockDetails, EntityTableRow, entityTreeLevel, blockChildren,
+// entityBlock/RenderBlock), never a hand-rolled stand-in for them (ADR-057).
 package entities
 
 import (
@@ -26,11 +24,11 @@ func renderComponent(t *testing.T, c templ.Component) string {
 }
 
 // glanceViewers is the set of viewer shapes exercised against every
-// visibilityGlance call site. Player and anonymous must get no glance element
-// at all (ADR-055 rule 3 — a badge on something a Player *can* see would
-// itself leak that others can't); co-DM and Owner must get one (ADR-057
-// decision 2: the gate is VisibilityRole(), not raw MemberRole, specifically
-// so a DM-granted co-DM is treated like an Owner here).
+// visibilityGlance call site. Player and anonymous get no glance element at
+// all (a badge on something a Player *can* see would itself leak that others
+// can't, ADR-055 rule 3); co-DM and Owner get one — the gate is
+// VisibilityRole(), not raw MemberRole, so a DM-granted co-DM is treated like
+// an Owner (ADR-057).
 func glanceViewers() map[string]*campaigns.CampaignContext {
 	camp := &campaigns.Campaign{ID: "c1"}
 	return map[string]*campaigns.CampaignContext{
@@ -41,19 +39,11 @@ func glanceViewers() map[string]*campaigns.CampaignContext {
 	}
 }
 
-// TestVisibilityGlance_GateAcrossCallSites pins ADR-057 slice 3's central
-// claim across every render call site the census found — not just the show
-// page header, which slice 1 already fixed on the ACCESS path (CheckEntityAccess).
-// This is the RENDER-path half of the same defect: before this slice, three
-// of the seven copies (blockDetails, the category tree node, the child-entity
-// list) had no role gate at all and were shown to Players outright, and every
-// one of the seven gated on raw MemberRole, so even the four that DID gate
-// never showed a co-DM anything.
-//
-// Would this fail if the change were reverted? Yes, on both axes: the
-// player/anonymous sub-tests would fail against blockDetails, the tree node,
-// and the child list (no gate existed), and the co-dm sub-tests would fail
-// against all six (raw MemberRole gate, never promoted).
+// TestVisibilityGlance_GateAcrossCallSites pins the visibility-glance gate
+// across every render call site, not just the show page header: Player and
+// anonymous viewers must get no glance element, and co-DM/Owner must, on
+// blockTitle, EntityCard, blockDetails, EntityTableRow, entityTreeLevel and
+// blockChildren alike (ADR-057).
 func TestVisibilityGlance_GateAcrossCallSites(t *testing.T) {
 	entity := &Entity{ID: "e1", CampaignID: "c1", EntityTypeID: 9, Name: "Waterdeep", Visibility: VisibilityDefault, IsPrivate: true}
 	child := *entity
@@ -131,10 +121,10 @@ func TestVisibilityGlance_ThreeStates(t *testing.T) {
 }
 
 // TestVisibilityGlance_TagWidened pins the tag-widening safety contract
-// (C-PERM-W1-TAG-GRANTS) end-to-end through the header call site, the one
-// site that threads EffectiveVisibility: a tag grant exposing an otherwise
-// dm_only entity must show the amber corner dot and name the tag+subject,
-// never silently upgrade the badge or drop the exposure.
+// through the header call site (the one that threads EffectiveVisibility): a
+// tag grant exposing an otherwise dm_only entity must show the amber corner
+// dot and name the tag+subject, never silently upgrade the badge or drop the
+// exposure.
 func TestVisibilityGlance_TagWidened(t *testing.T) {
 	owner := &campaigns.CampaignContext{Campaign: &campaigns.Campaign{ID: "c1"}, MemberRole: campaigns.RoleOwner}
 	entity := &Entity{ID: "e1", Visibility: VisibilityDefault, IsPrivate: true}
@@ -156,27 +146,11 @@ func TestVisibilityGlance_TagWidened(t *testing.T) {
 	}
 }
 
-// TestStoredRowPermRendersWithoutPermissionsBlock pins ADR-057 decision 5's
-// tolerance requirement: a layout stored in the database before this change
-// can still carry a "row-perm" row (a block of Type "permissions") —
-// Chronicle's migrations are append-only/schema-only, so nothing rewrites
-// stored layout_json — and it must keep rendering, minus the block, rather
-// than erroring or panicking.
-//
-// The block type is no longer registered (block_registry_core.go), and
-// RenderBlock already drops an unregistered block type silently instead of
-// erroring (its own doc comment says so, and TestRenderBlock_PlaceholderNotBlank
-// pins that general contract with a hand-built registry) — so this is not a
-// new renderer behaviour, it is a pin that the removal actually lands on that
-// existing tolerance, checked against the REAL production registration
-// (RegisterCoreBlocks), not a hand-picked one.
-//
-// Would this fail if EnsurePermissionsBlockInDefaults / the "permissions"
-// registration were restored without also restoring blockPermissions? No —
-// this test only fails if rendering a stored row-perm layout ERRORS, or if a
-// permissions widget mount reappears. It is a regression pin on the tolerance
-// and on the deletion, not a test of the deletion's absence by itself; that
-// absence is covered by the guard test.
+// TestStoredRowPermRendersWithoutPermissionsBlock pins ADR-057 decision 5: a
+// stored layout_json can still carry a block of Type "permissions" (migrations
+// are append-only, so nothing rewrites it), and RenderBlock must drop that
+// unregistered type silently rather than erroring, against the real
+// production registry (RegisterCoreBlocks).
 func TestStoredRowPermRendersWithoutPermissionsBlock(t *testing.T) {
 	reg := NewBlockRegistry()
 	RegisterCoreBlocks(reg)

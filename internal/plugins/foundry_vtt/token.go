@@ -12,17 +12,8 @@ import (
 
 // tokenDomain is the HMAC payload prefix that domain-separates this
 // plugin's manifest tokens from any other HMAC the same secret might
-// sign (currently the media URLSigner; future signers should each
-// pick a distinct domain string).
-//
-// Historical note: during the C-FMC-5b parallel period, the deleted
-// foundry_modules plugin signed with a "foundry-module" prefix.
-// Tokens stored by Foundry clients from that era were intentionally
-// designed to NOT verify against this plugin's endpoint, and vice
-// versa — operators minted fresh foundry-vtt-domain tokens via the
-// new owner tab. foundry_modules was deleted in C-FMC-5c so the
-// old domain is no longer in use; this comment preserved as
-// attribution for the chosen prefix.
+// sign (currently the media URLSigner; a future signer should pick
+// its own distinct domain string).
 const tokenDomain = "foundry-vtt"
 
 // TokenSigner mints and verifies the per-campaign manifest URL tokens
@@ -35,10 +26,6 @@ const tokenDomain = "foundry-vtt"
 //
 // No expiry. Foundry stores the install URL at install time and
 // re-uses it forever; revocation goes through token-version rotation.
-//
-// Ported from foundry_modules/token.go with only the domain prefix
-// changed. Wire format and verification logic are identical so
-// porting a test fixture between plugins is straightforward.
 type TokenSigner struct {
 	secret []byte
 }

@@ -165,10 +165,10 @@ func TestHostErrorsHeaderAndLines(t *testing.T) {
 	}
 }
 
-// TestHostErrorsPolicyNoteAlwaysPresent. The note is unconditional on purpose:
-// its reader is mid-incident and will not go looking for documentation, and the
-// two things it explains (4xx are absent BY DESIGN, the ring dies at restart)
-// are both things that get mistaken for findings.
+// TestHostErrorsPolicyNoteAlwaysPresent pins that the policy note is
+// unconditional: a mid-incident reader won't go looking for documentation,
+// and "4xx absent by design" / "ring dies at restart" both get mistaken for
+// findings otherwise.
 func TestHostErrorsPolicyNoteAlwaysPresent(t *testing.T) {
 	renders := map[string]string{
 		"populated": renderHostErrorsFrom(sampleSnapshot(), true, defaultErrorRows, "", errStart, errNow),
@@ -438,16 +438,10 @@ func TestErrorDiagnosticsRunThroughCatalog(t *testing.T) {
 	}
 }
 
-// TestRawPathCannotInjectMarkdown is the regression guard for the render half
-// of the raw-path problem.
-//
-// A path stored on the fallback branch is attacker-chosen, net/http
-// percent-DECODES it into URL.Path, and this output is markdown an operator
-// pastes into a chat window or an AI assistant and then acts on. Measured
-// before the fix, a request to `/a%0A%0A**INJECTED-HEADING**%0A-%20fake%20bullet`
-// rendered as a real heading and a real bullet: the attacker's text escaped the
-// code span AND the list, and read as this diagnostic's own output. The sibling
-// Err field had been flattened from the start; Path had not.
+// TestRawPathCannotInjectMarkdown pins that a path stored on the fallback
+// branch (attacker-chosen, percent-decoded by net/http into URL.Path) cannot
+// escape its code span and inject markdown structure into output an operator
+// pastes into a chat window or an AI assistant.
 func TestRawPathCannotInjectMarkdown(t *testing.T) {
 	// Exactly what url.URL.Path holds after net/http decodes that request.
 	const hostile = "/a\n\n**INJECTED-HEADING**\n- fake bullet"

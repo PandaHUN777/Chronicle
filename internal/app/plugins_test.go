@@ -69,10 +69,8 @@ func TestPluginRegistry_ReturnsCopy(t *testing.T) {
 }
 
 // TestPluginRegistry_HealthCheckSurface pins that HealthCheck is
-// callable and can return both nil (healthy) and an error (unhealthy).
-// Future NW-2.4 removable-plugin test iterates registered plugins and
-// calls HealthCheck per entry; the contract is: nil = OK, non-nil =
-// degraded.
+// callable and can return both nil (healthy) and an error (unhealthy):
+// the contract is nil = OK, non-nil = degraded.
 func TestPluginRegistry_HealthCheckSurface(t *testing.T) {
 	a := &App{}
 	a.registerPlugin(PluginRegistration{

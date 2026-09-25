@@ -97,26 +97,21 @@ func RegisterCoreBlocks(r *BlockRegistry) {
 		return blockPosts(ctx.CC, ctx.Entity, ctx.CSRFToken)
 	})
 
-	// Player-facing per-user notes on entity pages. Each member sees
-	// their own notes plus whatever others have shared with them
-	// according to the audience field (private / dm_only / dm_scribe /
-	// everyone / custom). Backed by internal/widgets/entity_notes; the
-	// data layer enforces visibility, this block is just the mount
-	// point. Gated by the "player-notes" addon so campaigns can disable
-	// it cleanly without leaving an empty block lying around.
+	// Player-facing per-user notes on entity pages, visible per the
+	// audience field (private / dm_only / dm_scribe / everyone / custom).
+	// Backed by internal/widgets/entity_notes, which enforces visibility;
+	// this block is just the mount point. Gated by the "player-notes" addon.
 	r.Register(BlockMeta{
 		Type: "entity_notes", Label: "Player Notes", Icon: "fa-sticky-note",
 		Description: "Per-user notes with private / DM-only / shared / custom audiences",
 		Addon:       "player-notes",
 		Contexts:    []string{"template"},
 	}, func(ctx BlockRenderContext) templ.Component {
-		// Player Notes are per-user and EVERY entity_notes route is RequireAuth,
-		// so the block is meaningless (and 401s) for a viewer with no identity.
-		// Since #478 an anonymous public-campaign visitor is RoleNone (NOT
-		// RolePlayer), but identity — not role — is the real prerequisite here:
-		// gate on a real authenticated identity (ctx.UserID, = layouts.GetUserID)
-		// so both anon and authenticated non-members are handled uniformly.
-		// cordinator#39 finding 5; comment corrected in C-PUBLIC-VIEW-FIX-R2.
+		// Every entity_notes route is RequireAuth, so the block 401s for a
+		// viewer with no identity — gate on ctx.UserID (real authenticated
+		// identity), not role, since an anonymous public-campaign visitor
+		// is RoleNone rather than RolePlayer but role isn't the real
+		// prerequisite here.
 		if ctx.UserID == "" {
 			return templ.NopComponent
 		}
@@ -131,13 +126,11 @@ func RegisterCoreBlocks(r *BlockRegistry) {
 		return blockShopInventory(ctx.CC, ctx.Entity, ctx.CSRFToken)
 	})
 
-	// The "permissions" block (and its auto-append heal,
-	// EnsurePermissionsBlockInDefaults) was removed by ADR-057 decision 5:
-	// editing now lives only in edit mode, via form.templ's inline widget
-	// mount. A stored layout may still carry a "row-perm" row referencing
-	// this now-unregistered type; RenderBlock already drops an unregistered
-	// block type silently (see its doc comment), so no migration is needed —
-	// pinned by TestStoredRowPermRendersWithoutPermissionsBlock.
+	// The "permissions" block was removed per ADR-057: editing now lives
+	// only in edit mode via form.templ's inline widget mount. A stored
+	// layout may still reference the unregistered type; RenderBlock drops
+	// an unregistered block type silently, so no migration is needed. See
+	// TestStoredRowPermRendersWithoutPermissionsBlock.
 
 	r.Register(BlockMeta{
 		Type: "inventory", Label: "Inventory", Icon: "fa-shield-halved",

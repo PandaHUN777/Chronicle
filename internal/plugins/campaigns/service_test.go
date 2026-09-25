@@ -1211,10 +1211,6 @@ func TestUpdateSidebarConfig_MergePresentFieldReplaced(t *testing.T) {
 	}
 }
 
-// (TestUpdateSidebarConfig_ItemsWrittenPreserveLegacy was retired by C-NAV-V3:
-// it pinned the legacy-field preservation guarantee, and the legacy fields no
-// longer exist — the unified items array is the single stored model.)
-
 // ============================================================
 // Dashboard Layout Tests
 // ============================================================

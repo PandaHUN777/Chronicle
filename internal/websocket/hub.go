@@ -157,30 +157,21 @@ func (h *Hub) Run() {
 				}
 
 				// Audience gate: messages flagged RequiresDM only go to
-				// clients with Owner role or IsDmGranted=true. This is
-				// the server-side defense that pairs with client-side
-				// visibility filters — clients can't receive what we
-				// never send. permissions.CanSeeDmOnly takes the role
-				// plus an optional dmGranted flag; passing both keeps
-				// the predicate aligned with how HTTP handlers gate
-				// dm_only content.
+				// clients with Owner role or IsDmGranted=true — server-side
+				// defense pairing with client-side visibility filters, so
+				// clients can't receive what we never send.
 				if msg.RequiresDM && !permissions.CanSeeDmOnly(client.Role, client.IsDmGranted) {
 					continue
 				}
 
-				// Per-user visibility_rules gate (S1). RequiresDM above
-				// only covers the binary dm_only case; a "specific"
-				// visibility marker/drawing isn't dm_only at all, so it
-				// needs its own allowed_users/denied_users check or it
-				// reaches everyone. DM-equivalent clients bypass this
-				// too, matching the HTTP list path (maps' ListMarkers /
-				// ListDrawings): Owners see every marker and drawing
-				// regardless of visibility_rules. Everyone else must
-				// clear msg.AudienceAllows, which mirrors those same
-				// queries' SQL predicate — the two MUST stay in lockstep
-				// or a marker/drawing becomes more or less visible over
-				// the wire than the HTTP list shows, which is exactly
-				// the leak this gate exists to close.
+				// Per-user visibility_rules gate: RequiresDM above only
+				// covers the binary dm_only case; a "specific" visibility
+				// marker/drawing needs its own allowed_users/denied_users
+				// check via msg.AudienceAllows, which must mirror the HTTP
+				// list path's SQL predicate (maps' ListMarkers/ListDrawings)
+				// or a marker/drawing leaks more or less visibility over the
+				// wire than the HTTP list shows. DM-equivalent clients
+				// bypass this too, matching HTTP.
 				if !permissions.CanSeeDmOnly(client.Role, client.IsDmGranted) && !msg.AudienceAllows(client.UserID) {
 					continue
 				}
@@ -203,24 +194,17 @@ func (h *Hub) Run() {
 }
 
 // AudienceAllows reports whether userID is in m's audience per its
-// AllowedUsers/DeniedUsers lists (S1). Callers must apply this only to
+// AllowedUsers/DeniedUsers lists. Callers must apply this only to
 // non-DM-equivalent clients — Owners/DM-granted users bypass it entirely,
 // same as the HTTP list path.
 //
-// Mirrors maps.VisibilityRules' SQL predicate (repository.go's ListMarkers,
-// drawing_repository.go's ListDrawings): an explicit deny always excludes;
-// a non-empty AllowedUsers is a strict allowlist and only its members pass;
-// an empty (or absent, i.e. both lists nil) rule set means "everyone" —
-// deliberately duplicated here rather than imported from the maps package,
-// since this package is generic transport infrastructure with no business
-// importing a specific plugin's types.
-//
-// It is EXPORTED for one reason: so the duplication can be pinned. Neither
-// this package nor maps may import the other, so the parity test lives in
-// internal/app, which imports both, and runs one table of cases through
-// this and through maps.VisibilityRules.Allows asserting they agree
-// (map_audience_parity_test.go). A comment saying "these must stay in
-// lockstep" is not a guard; that test is.
+// Mirrors maps.VisibilityRules' SQL predicate (ListMarkers, ListDrawings): an
+// explicit deny always excludes; a non-empty AllowedUsers is a strict
+// allowlist; an empty (or absent) rule set means "everyone". Deliberately
+// duplicated rather than imported from maps, since this package is generic
+// transport infrastructure. Exported so the duplication can be pinned:
+// internal/app/map_audience_parity_test.go runs one table of cases through
+// this and through maps.VisibilityRules.Allows, asserting they agree.
 func (m *Message) AudienceAllows(userID string) bool {
 	for _, id := range m.DeniedUsers {
 		if id == userID {
@@ -287,10 +271,9 @@ func (h *Hub) TotalClientCount() int {
 // RegisterClient creates a new client and starts its read/write pumps.
 // Returns the client for external reference (e.g., to track in tests).
 //
-// isDmGranted reflects CampaignContext.IsDmGranted resolved at auth time;
-// it lets the broadcast loop deliver RequiresDM messages to non-Owner
-// users that the campaign Owner has explicitly trusted with DM-only
-// visibility, without a per-message DB hit.
+// isDmGranted reflects CampaignContext.IsDmGranted resolved at auth time; it
+// lets the broadcast loop deliver RequiresDM messages to non-Owner users the
+// campaign Owner has explicitly trusted, without a per-message DB hit.
 func (h *Hub) RegisterClient(conn WSConn, campaignID, userID, source string, role int, isDmGranted bool) *Client {
 	client := &Client{
 		ID:          uuid.New().String(),

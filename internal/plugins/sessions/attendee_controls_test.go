@@ -1,16 +1,10 @@
 package sessions
 
-// The session detail page must offer RSVP controls to every member, not only to
-// members who already hold a session_attendees row.
-//
-// THE DEFECT: InviteAll runs at session-creation time and nowhere else, and no
-// route adds an attendee afterwards. AttendeeList rendered the buttons inside
-// `for _, a := range attendees { if a.UserID == currentUserID }` and the whole
-// block sat inside the `len(attendees) != 0` branch — so a player who joined the
-// campaign after a session existed opened the page, read "3 going · 4 invited",
-// and found no control anywhere. Posting the endpoint directly answered 404.
-// The Director had no invite action either; the only escape was deleting and
-// recreating the session, losing its notes, recap and entity links.
+// The session detail page must offer RSVP controls to every member, not only
+// to members who already hold a session_attendees row: InviteAll runs only at
+// session-creation time, so a member who joins later has no attendee row
+// until AttendeeList's rendering (and the Director's invite action) accounts
+// for that case too.
 
 import (
 	"context"

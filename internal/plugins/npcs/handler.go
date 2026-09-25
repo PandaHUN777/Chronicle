@@ -56,11 +56,9 @@ func (h *Handler) Index(c echo.Context) error {
 // NPCSection renders the NPCs/Monsters section embedded in the Characters page:
 // a featured portrait row (entities bearing featureTag) above the full
 // role-aware list. It satisfies entities.NPCSectionProvider (injected there), so
-// the core entities plugin never imports this addon. Role matches the gallery's
-// (CountAPI's cc.VisibilityRole()) so reveal/hide visibility is unchanged —
-// both sides now promote a DM-granted co-DM to Owner for visibility (operator
-// ruling, .ai/todo.md 2026-09-12: the co-DM promotion crosses plugin lines),
-// so a co-DM sees dm_only/custom-restricted NPCs here too, same as an Owner.
+// the core entities plugin never imports this addon. Role matches CountAPI's
+// cc.VisibilityRole(), which promotes a DM-granted co-DM to Owner, so a co-DM
+// sees dm_only/custom-restricted NPCs here too, same as an Owner.
 func (h *Handler) NPCSection(ctx context.Context, cc *campaigns.CampaignContext, userID, csrfToken, featureTag string) templ.Component {
 	cid := cc.Campaign.ID
 	role := cc.VisibilityRole()

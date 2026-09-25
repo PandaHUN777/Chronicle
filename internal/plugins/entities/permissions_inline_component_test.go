@@ -1,26 +1,18 @@
-// permissions_inline_component_test.go — pins the
-// C-PERMISSIONS-INLINE-COMPONENT invariants that prevent the legacy
-// DM-only checkbox from creeping back into the create form / edit form
-// and that protect against the silent flip-to-public regression the
-// dispatch flagged as a data-disclosure risk.
-//
-// The risks pinned here are:
+// permissions_inline_component_test.go pins the invariants that keep the
+// legacy DM-only checkbox from creeping back into the create/edit forms and
+// guard against a silent flip-to-public data-disclosure regression:
 //
 //   1. EntityCreateFormComponent must not render a `<input ... id="is_private" ...>`
-//      checkbox. Operators reach for "Page Permissions" via the slide-in card.
-//      A new is_private checkbox would re-introduce the duplicate-affordance
-//      confusion the dispatch eliminated.
+//      checkbox. Permissions are set via the slide-in card instead.
 //
-//   2. EntityEditFormComponent must not render the legacy hidden
-//      `<input type="hidden" name="is_private" ...>` that used to ride
-//      on the edit-form save. The form no longer carries is_private at
-//      all — UpdateEntityInput.IsPrivate is nil-preserving — so adding
-//      it back would also be a regression.
+//   2. EntityEditFormComponent must not render a hidden
+//      `<input type="hidden" name="is_private" ...>` — the form no longer
+//      carries is_private at all, since UpdateEntityInput.IsPrivate is
+//      nil-preserving.
 //
 //   3. The polymorphic Update service preserves the entity's current
-//      IsPrivate when input.IsPrivate is nil. This is the load-bearing
-//      service-layer behavior that lets the form/metadata handlers drop
-//      is_private without flipping every entity to public on next save.
+//      IsPrivate when input.IsPrivate is nil, so the form/metadata handlers
+//      can drop is_private without flipping every entity to public on save.
 
 package entities
 
@@ -69,12 +61,10 @@ func TestEntityCreateFormComponent_NoIsPrivateCheckbox(t *testing.T) {
 	}
 }
 
-// TestEntityEditFormComponent_NoHiddenIsPrivate pins that the edit
-// form no longer ships the legacy hidden `is_private` input. The
-// service layer preserves IsPrivate when the field is absent
-// (UpdateEntityInput.IsPrivate is *bool / nil-preserving), so any
-// regression that re-adds the hidden input either ignores the new
-// preservation contract or silently round-trips stale state.
+// TestEntityEditFormComponent_NoHiddenIsPrivate pins that the edit form
+// ships no hidden `is_private` input. The service layer preserves
+// IsPrivate when the field is absent (UpdateEntityInput.IsPrivate is *bool),
+// so re-adding the hidden input would silently round-trip stale state.
 func TestEntityEditFormComponent_NoHiddenIsPrivate(t *testing.T) {
 	cc := &campaigns.CampaignContext{
 		Campaign:   &campaigns.Campaign{ID: "camp-1", Name: "Test"},
@@ -100,13 +90,10 @@ func TestEntityEditFormComponent_NoHiddenIsPrivate(t *testing.T) {
 	}
 }
 
-// TestUpdate_PreservesIsPrivateWhenInputNil pins the service-level
-// behavior that backs the "silently flip-to-public" guard the
-// dispatch flagged as critical. When the form/metadata handlers omit
-// is_private (i.e. UpdateEntityInput.IsPrivate == nil), the service
-// must keep the entity's existing IsPrivate value. Without this, the
-// permissions toggle removal becomes a data-disclosure regression on
-// every entity-title save.
+// TestUpdate_PreservesIsPrivateWhenInputNil pins that when the
+// form/metadata handlers omit is_private (UpdateEntityInput.IsPrivate ==
+// nil), the service keeps the entity's existing IsPrivate value — otherwise
+// every entity-title save silently flips it to public.
 func TestUpdate_PreservesIsPrivateWhenInputNil(t *testing.T) {
 	entityRepo := &mockEntityRepo{
 		findByIDFn: func(_ context.Context, _ string) (*Entity, error) {

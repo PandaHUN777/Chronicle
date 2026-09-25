@@ -52,15 +52,14 @@ type CampaignService interface {
 	// Backdrop and branding
 	UpdateBackdropPath(ctx context.Context, campaignID string, path *string) error
 	UpdateAccentColor(ctx context.Context, campaignID string, color string) error
-	// UpdateAccentSurface sets a surface-pair accent (slot 1 or 2, C-ACCENT-TRIO
-	// rev 2); empty color resets the slot to inherit the chrome accent.
+	// UpdateAccentSurface sets a surface-pair accent (slot 1 or 2); empty
+	// color resets the slot to inherit the chrome accent.
 	UpdateAccentSurface(ctx context.Context, campaignID string, slot int, color string) error
-	// UpdateAccentAction sets the campaign's semantic slot 2 "Action highlight"
-	// accent (C-ACCENT-SLOTS); empty resets the slot to inherit the site accent.
+	// UpdateAccentAction sets the campaign's "Action highlight" accent;
+	// empty resets the slot to inherit the site accent.
 	UpdateAccentAction(ctx context.Context, campaignID string, color string) error
-	// UpdateAccentApp sets the campaign's semantic slot 3 "App accent"
-	// (C-ACCENT-SLOTS); empty resets the slot to inherit the legacy surface
-	// pair, then the site accent.
+	// UpdateAccentApp sets the campaign's "App accent"; empty resets the
+	// slot to inherit the legacy surface pair, then the site accent.
 	UpdateAccentApp(ctx context.Context, campaignID string, color string) error
 	// UpdateBranding sets the campaign's custom brand name and logo path.
 	UpdateBranding(ctx context.Context, campaignID, brandName, brandLogo string) error
@@ -81,14 +80,11 @@ type CampaignService interface {
 	// module pin, or "" if none.
 	GetFoundryModulePin(ctx context.Context, campaignID string) (string, error)
 	// SetFoundryModulePinMode writes the campaign's pin_mode setting
-	// (one of foundry_vtt.PinMode* constants) for Option B's three-
-	// state pin semantic. Added in C-FMC-ADMIN-UX-AUDIT Chunk 1.
-	// Validation is the caller's responsibility (foundry_vtt's
-	// SetPinMode handler validates via IsValidPinMode before
-	// calling).
+	// (one of foundry_vtt.PinMode* constants). Validation is the
+	// caller's responsibility, via foundry_vtt.IsValidPinMode.
 	SetFoundryModulePinMode(ctx context.Context, campaignID, mode string) error
 	// GetFoundryModulePinMode returns the campaign's pin_mode, or
-	// empty string for "not yet set" (pre-Chunk-6 backfill state).
+	// empty string if not yet set.
 	GetFoundryModulePinMode(ctx context.Context, campaignID string) (string, error)
 	// CampaignExistsByID is a thin existence check for adapters that
 	// don't need the full Campaign struct.
@@ -101,8 +97,7 @@ type CampaignService interface {
 	// GetEventTierDefinitions returns the campaign's event tier vocabulary.
 	// Returns the platform default trio (major/standard/detail) when the
 	// campaign has no custom tier defs set — matches the empty-means-
-	// default semantic used for AccentColor / FontFamily / etc. V2 Wave 0
-	// PR 2 (cordinator/dispatches/chronicle/C-CAL-V2-SCHEMA-FOUNDATION.md §5).
+	// default semantic used for AccentColor / FontFamily / etc.
 	GetEventTierDefinitions(ctx context.Context, campaignID string) ([]TierDefinition, error)
 	// SetEventTierDefinitions replaces the campaign's tier vocabulary.
 	// Validates exactly-one-default, non-empty array, unique slugs,
@@ -541,11 +536,11 @@ func (s *campaignService) RemoveMember(ctx context.Context, campaignID, userID s
 		return apperror.NewInternal(fmt.Errorf("removing member: %w", err))
 	}
 
-	// A removed member must not keep their co-DM grant (C-PERM-DMGRANT-REVOKE).
-	// Left in place, the id survives in settings.dm_grant_ids indefinitely, and
-	// on a PUBLIC campaign that is a live leak: AllowPublicCampaignAccess admits
-	// an authenticated non-member as RoleNone, the grant still resolves, and
-	// VisibilityRole() hands them RoleOwner over every dm_only object.
+	// A removed member must not keep their co-DM grant. Left in place, the id
+	// survives in settings.dm_grant_ids indefinitely, and on a PUBLIC campaign
+	// that is a live leak: AllowPublicCampaignAccess admits an authenticated
+	// non-member as RoleNone, the grant still resolves, and VisibilityRole()
+	// hands them RoleOwner over every dm_only object.
 	if err := s.revokeDmGrant(ctx, campaignID, userID); err != nil {
 		return err
 	}
@@ -826,9 +821,9 @@ func (s *campaignService) UpdateAccentColor(ctx context.Context, campaignID stri
 }
 
 // UpdateAccentSurface sets one of the campaign's surface-pair accents
-// (C-ACCENT-TRIO rev 2, slot 1 or 2). Same contract as UpdateAccentColor:
-// hex color string or empty to reset (the surface then inherits the chrome
-// accent via CSS fallback at consumers). Load-merge-write on settings JSON.
+// (slot 1 or 2). Same contract as UpdateAccentColor: hex color string or
+// empty to reset (the surface then inherits the chrome accent via CSS
+// fallback at consumers). Load-merge-write on settings JSON.
 func (s *campaignService) UpdateAccentSurface(ctx context.Context, campaignID string, slot int, color string) error {
 	if slot != 1 && slot != 2 {
 		return apperror.NewBadRequest("invalid accent surface slot")
@@ -858,11 +853,11 @@ func (s *campaignService) UpdateAccentSurface(ctx context.Context, campaignID st
 	return s.repo.UpdateSettings(ctx, campaignID, string(settingsJSON))
 }
 
-// UpdateAccentAction sets the campaign's semantic slot 2 "Action highlight"
-// accent (C-ACCENT-SLOTS): primary buttons, hover/press states, FABs. Same
-// contract as UpdateAccentColor: hex color string or empty to reset (the
-// action highlight then inherits the site accent via CSS fallback at
-// consumers). Load-merge-write on settings JSON.
+// UpdateAccentAction sets the campaign's "Action highlight" accent: primary
+// buttons, hover/press states, FABs. Same contract as UpdateAccentColor: hex
+// color string or empty to reset (the action highlight then inherits the
+// site accent via CSS fallback at consumers). Load-merge-write on settings
+// JSON.
 func (s *campaignService) UpdateAccentAction(ctx context.Context, campaignID string, color string) error {
 	// Same strict #RRGGBB validation as the other accent slots (empty resets).
 	if color != "" && !isValidHexColor(color) {
@@ -885,12 +880,11 @@ func (s *campaignService) UpdateAccentAction(ctx context.Context, campaignID str
 	return s.repo.UpdateSettings(ctx, campaignID, string(settingsJSON))
 }
 
-// UpdateAccentApp sets the campaign's semantic slot 3 "App accent"
-// (C-ACCENT-SLOTS): per-app identity for character pages, the calendar app,
-// and other apps. Same contract as UpdateAccentColor: hex color string or
-// empty to reset (the app accent then inherits the legacy surface-pair
-// primary, then the site accent, via CSS fallback at consumers).
-// Load-merge-write on settings JSON.
+// UpdateAccentApp sets the campaign's "App accent": per-app identity for
+// character pages, the calendar app, and other apps. Same contract as
+// UpdateAccentColor: hex color string or empty to reset (the app accent
+// then inherits the legacy surface-pair primary, then the site accent, via
+// CSS fallback at consumers). Load-merge-write on settings JSON.
 func (s *campaignService) UpdateAccentApp(ctx context.Context, campaignID string, color string) error {
 	if color != "" && !isValidHexColor(color) {
 		return apperror.NewBadRequest("invalid color format, expected #RRGGBB")
@@ -1117,10 +1111,10 @@ func (s *campaignService) GetFoundryModulePin(ctx context.Context, campaignID st
 }
 
 // SetFoundryModulePinMode updates CampaignSettings.FoundryModulePinMode
-// and re-persists the settings JSON. Added in C-FMC-ADMIN-UX-AUDIT
-// Chunk 1 — companion to SetFoundryModulePin. Validation lives at the
-// foundry_vtt service layer (see foundry_vtt.IsValidPinMode); this
-// method writes whatever the caller passes through.
+// and re-persists the settings JSON. Companion to SetFoundryModulePin.
+// Validation lives at the foundry_vtt service layer (see
+// foundry_vtt.IsValidPinMode); this method writes whatever the caller
+// passes through.
 func (s *campaignService) SetFoundryModulePinMode(ctx context.Context, campaignID, mode string) error {
 	campaign, err := s.repo.FindByID(ctx, campaignID)
 	if err != nil {
@@ -1139,8 +1133,7 @@ func (s *campaignService) SetFoundryModulePinMode(ctx context.Context, campaignI
 }
 
 // GetFoundryModulePinMode returns the campaign's pin_mode setting, or
-// empty string if not yet set (pre-Chunk-6 backfill state). Companion
-// to GetFoundryModulePin.
+// empty string if not yet set. Companion to GetFoundryModulePin.
 func (s *campaignService) GetFoundryModulePinMode(ctx context.Context, campaignID string) (string, error) {
 	campaign, err := s.repo.FindByID(ctx, campaignID)
 	if err != nil {
@@ -1178,10 +1171,10 @@ func (s *campaignService) UpdateDmGrants(ctx context.Context, campaignID string,
 		return apperror.NewNotFound("campaign not found")
 	}
 
-	// Validate and dedup before storing. Once membership gates whether a grant
-	// is HONOURED (middleware.go), an unvalidated write is the remaining way to
-	// get an id into the list that should never have been there — and a grant
-	// held by a non-member is exactly the state C-PERM-DMGRANT-REVOKE closes.
+	// Validate and dedup before storing. Membership gates whether a grant is
+	// HONOURED (middleware.go), but an unvalidated write is still the way to
+	// get an id into the list that should never have been there — a grant
+	// held by a non-member.
 	seen := make(map[string]bool, len(userIDs))
 	clean := make([]string, 0, len(userIDs))
 	for _, id := range userIDs {
@@ -1242,8 +1235,8 @@ func (s *campaignService) UpdateFontFamily(ctx context.Context, campaignID, font
 // platformDefaultTiers is the platform-wide event tier vocabulary
 // returned by GetEventTierDefinitions when a campaign has no override.
 // Slugs are stable for upgrades; renaming or removing requires a
-// migration of every campaign storing those slugs on Event.Tier (V2
-// Wave 0 PR 2 calendar_events.tier column).
+// migration of every campaign storing those slugs on the
+// calendar_events.tier column.
 var platformDefaultTiers = []TierDefinition{
 	{Slug: "major", Name: "Major", Color: "#ef4444", Prominence: 100, IsDefault: false},
 	{Slug: "standard", Name: "Standard", Color: "#6366f1", Prominence: 50, IsDefault: true},
@@ -1302,8 +1295,7 @@ func validateTierDefinitions(defs []TierDefinition) error {
 // back to the platform default trio when the campaign has none set.
 // Mirrors the empty-means-default pattern used for AccentColor +
 // FontFamily + etc. — no migration backfill needed for existing
-// campaigns (per Option B locked 2026-05-28 post-C-THEME-CUSTOMIZATION-
-// AUDIT). Returns a defensive copy of the default slice so the caller
+// campaigns. Returns a defensive copy of the default slice so the caller
 // can't mutate platformDefaultTiers via the returned reference.
 func (s *campaignService) GetEventTierDefinitions(ctx context.Context, campaignID string) ([]TierDefinition, error) {
 	campaign, err := s.repo.FindByID(ctx, campaignID)
@@ -1413,11 +1405,11 @@ func (s *campaignService) UpdateSidebarConfig(ctx context.Context, campaignID st
 	if req.Items != nil && len(*req.Items) > maxSidebarConfigEntries {
 		return apperror.NewBadRequest("sidebar items list is too long")
 	}
-	// Stored-XSS / open-redirect guard (audit-R2 Finding 1): owner-supplied link
-	// URLs are rendered to every campaign visitor (incl. anonymous on public
-	// campaigns) via templ.SafeURL, so reject any non-http(s)/non-relative URL.
-	// Validates the REQUEST's incoming link items (merge semantics: nil = field
-	// absent, nothing new to validate; the render-time guard re-checks regardless).
+	// Stored-XSS / open-redirect guard: owner-supplied link URLs are rendered
+	// to every campaign visitor (incl. anonymous on public campaigns) via
+	// templ.SafeURL, so reject any non-http(s)/non-relative URL. Validates
+	// the REQUEST's incoming link items (merge semantics: nil = field absent,
+	// nothing new to validate; the render-time guard re-checks regardless).
 	if req.Items != nil {
 		for _, it := range *req.Items {
 			if it.Type != "link" || it.URL == "" {
@@ -1442,7 +1434,7 @@ func (s *campaignService) UpdateSidebarConfig(ctx context.Context, campaignID st
 	// longer carries the legacy fields, so the Marshal below would drop them and
 	// permanently destroy the operator's saved customization on the very first
 	// write. Converting lazily on write self-heals the straggler onto items,
-	// exactly as the reconciler would, before the merge applies. (0b / RC-15.3)
+	// exactly as the reconciler would, before the merge applies.
 	if len(config.Items) == 0 {
 		if converted, ok := convertLegacySidebarConfig(campaign.SidebarConfig); ok {
 			config = converted

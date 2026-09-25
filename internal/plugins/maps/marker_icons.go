@@ -1,18 +1,14 @@
-// marker_icons.go — Chronicle's canonical map-marker icon vocabulary
-// (C-MAPS-EDITOR-PIN-AND-ICON-PARITY, Part A).
+// marker_icons.go is Chronicle's canonical map-marker icon vocabulary.
 //
-// Chronicle is authoritative for the marker icon set (Option 1 / §A4 coupling
-// inversion: Chronicle is the world database). A marker stores its icon as the
-// canonical Font Awesome class string (e.g. "fa-castle"); that same ID travels
-// over the Foundry sync wire. The Foundry module keeps a translation table
-// that maps each canonical ID to its own render mechanism, so the SAME ID
-// means the SAME concept on both sides — which is what closes the
-// icon-mismatch the operator hit.
+// Chronicle is authoritative for the marker icon set: a marker stores its
+// icon as the canonical Font Awesome class string (e.g. "fa-castle"), and
+// that same ID travels over the Foundry sync wire. The Foundry module keeps
+// a translation table mapping each canonical ID to its own render mechanism,
+// so the SAME ID means the SAME concept on both sides.
 //
 // This file is the single source of truth: the editor's icon picker renders
 // from it, and GET /campaigns/:id/maps/marker-icons exposes it so the Foundry
-// module (a separate repo) can fetch the canonical list and align its
-// translation table against a concrete contract rather than a hardcoded copy.
+// module can align its translation table against a concrete contract.
 package maps
 
 // MarkerIcon is one entry in the canonical vocabulary. ID is the stable Font

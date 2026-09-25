@@ -97,10 +97,10 @@ func TestGetFieldsAPI_StripsGMFieldsForNonGM(t *testing.T) {
 	}
 }
 
-// TestGetFieldsAPI_StripsOwnerOnlyFieldsForNonOwner pins C-FIELDS-OWNER-FILTER
-// at the GetFieldsAPI egress: an owner_only field's VALUE is present for the
-// entity's claimed owner and for a GM-tier viewer, but absent for a fellow
-// player who is neither.
+// TestGetFieldsAPI_StripsOwnerOnlyFieldsForNonOwner pins that at the
+// GetFieldsAPI egress, an owner_only field's value is present for the
+// entity's claimed owner and for a GM-tier viewer, but absent for a
+// fellow player who is neither.
 func TestGetFieldsAPI_StripsOwnerOnlyFieldsForNonOwner(t *testing.T) {
 	owner := "player-1"
 	et := &EntityType{ID: 7, Fields: []FieldDefinition{

@@ -40,8 +40,7 @@ func (h *MediaAPIHandler) SetURLSigner(signer *media.URLSigner) {
 }
 
 // SetCampaignService wires campaign membership lookups, needed to resolve
-// the caller's role for ListMedia's visibility gate (finding 3,
-// .ai/designs/2026-09-12-security-audit-findings.md). Called during wiring
+// the caller's role for ListMedia's visibility gate. Called during wiring
 // in app/routes.go.
 func (h *MediaAPIHandler) SetCampaignService(svc campaigns.CampaignService) {
 	h.campaignSvc = svc
@@ -93,15 +92,12 @@ type apiMediaFileResponse struct {
 }
 
 // toAPIResponse converts a MediaFile to an API-safe response with signed
-// URLs. Every URL is minted for media.ViewerAPIKey (ADR-058 decision 6):
-// this handler serves ONLY Bearer-token-authenticated syncapi callers
-// (Foundry VTT, and any other REST integration), never a browser session,
-// and those callers fetch the URLs they receive here as cross-origin
-// <img> requests that cannot carry a Chronicle session cookie. ViewerAPIKey
-// is the fixed sentinel media.URLSigner.Verify's anonymous-request carve-out
-// exists for — see that doc comment for exactly why a single sentinel
-// (rather than one value per API key) is both sufficient and all a
-// cookieless request could ever prove anyway.
+// URLs. Every URL is minted for media.ViewerAPIKey (ADR-058): this handler
+// serves ONLY Bearer-token-authenticated syncapi callers, never a browser
+// session, and those callers fetch these URLs as cross-origin <img>
+// requests that cannot carry a Chronicle session cookie. See
+// media.URLSigner.Verify's doc comment for why a single sentinel key
+// suffices here.
 func (h *MediaAPIHandler) toAPIResponse(file *media.MediaFile) apiMediaFileResponse {
 	resp := apiMediaFileResponse{
 		ID:           file.ID,
@@ -140,13 +136,11 @@ func (h *MediaAPIHandler) toAPIResponse(file *media.MediaFile) apiMediaFileRespo
 // Gated at Scribe+ (in addition to the route's RequirePermission(PermRead)):
 // this endpoint has no entity-visibility filter to apply — media_files
 // carries no reference to the entity it illustrates, so there is no cheap
-// "only what this caller can see" query (finding 3's structural note,
-// .ai/designs/2026-09-12-security-audit-findings.md). Below Scribe it
-// returns an empty page rather than every row's id, filename and a signed
-// URL. This mirrors the threshold the web app already uses for bulk
-// campaign media access (media/routes.go: the picker list and campaign
-// media browser are both Scribe+/Owner) — a Player has never had a "list
-// all campaign media" surface, in the app or here.
+// "only what this caller can see" query. Below Scribe it returns an empty
+// page rather than every row's id, filename and a signed URL. This mirrors
+// the threshold the web app already uses for bulk campaign media access
+// (media/routes.go: the picker list and campaign media browser are both
+// Scribe+/Owner).
 func (h *MediaAPIHandler) ListMedia(c echo.Context) error {
 	campaignID := c.Param("id")
 	ctx := c.Request().Context()

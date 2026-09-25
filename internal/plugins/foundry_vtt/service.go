@@ -13,15 +13,11 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/plugins/packages"
 )
 
-// CampaignSettingsAdapter is the narrow contract foundry_vtt needs
-// from the campaigns plugin: read/write FoundryModulePin on
-// CampaignSettings, and check whether a campaign exists. Implemented
-// by an adapter in routes.go that wraps the campaigns service.
-//
-// Defined here (not in campaigns) because the dependency points
-// FROM foundry_vtt TO campaigns — the campaigns plugin doesn't know
-// foundry_vtt exists. Adapter pattern keeps the import direction
-// one-way.
+// CampaignSettingsAdapter is the narrow contract foundry_vtt needs from
+// the campaigns plugin: read/write FoundryModulePin on CampaignSettings,
+// and check whether a campaign exists. Implemented by an adapter in
+// routes.go that wraps the campaigns service — defined here, not in
+// campaigns, because the campaigns plugin must not import foundry_vtt.
 type CampaignSettingsAdapter interface {
 	// GetFoundryModulePin returns the campaign's current pin
 	// string. Empty string = latest-tracking (auto-resolve to the
@@ -34,10 +30,7 @@ type CampaignSettingsAdapter interface {
 
 	// GetFoundryModulePinMode returns the campaign's pin_mode setting
 	// — one of foundry_vtt.PinMode* constants, or empty string for
-	// "not yet set." Added in C-FMC-ADMIN-UX-AUDIT Chunk 1; consumed
-	// by Chunk 2's hook + Chunks 3/4's UIs. Until Chunk 2 ships,
-	// empty-pin campaigns continue to behave per the pre-existing
-	// C-FMC-6 preserve-state design regardless of pin_mode.
+	// "not yet set."
 	GetFoundryModulePinMode(ctx context.Context, campaignID string) (string, error)
 
 	// SetFoundryModulePinMode writes the campaign's pin_mode.
@@ -51,21 +44,14 @@ type CampaignSettingsAdapter interface {
 }
 
 // PackageReader is the narrow contract foundry_vtt needs from the
-// packages plugin. Same one-way-import-direction reasoning as
-// CampaignSettingsAdapter — but routes.go wires the packages
-// service directly here since packages doesn't import foundry_vtt.
+// packages plugin, wired directly (packages doesn't import foundry_vtt).
 type PackageReader interface {
 	// ListPackages enumerates the catalog. foundry_vtt filters by
-	// PackageTypeFoundryModule to find the one foundry-module
-	// package (typically Chronicle-Foundry-Module). Multiple rows
-	// would be unusual but supported — foundry_vtt picks the first
-	// installed one.
+	// PackageTypeFoundryModule and picks the first installed match.
 	ListPackages(ctx context.Context) ([]packages.Package, error)
 
-	// GetPackage returns a single package by ID. Used by the per-row
-	// admin fragment handler (NW-2.2 Chunk G) to look up a package
-	// the admin templates lazy-load actions for. Returns the package
-	// or an error if not found.
+	// GetPackage returns a single package by ID, or an error if not
+	// found. Used by the admin per-row fragment handler.
 	GetPackage(ctx context.Context, id string) (*packages.Package, error)
 
 	// InstallDirForVersion returns the on-disk path for a specific
@@ -81,14 +67,9 @@ type PackageReader interface {
 	ListVersions(ctx context.Context, packageID string) ([]packages.PackageVersion, error)
 }
 
-// SecurityEventLogger writes one row per admin action to the audit
-// log table. Same shape as admin's SecurityService.LogEvent; passed
-// as an interface so the plugin doesn't import admin directly.
-//
-// Used for foundry_vtt.module_force_pin (admin direct-pins a campaign)
-// and foundry_vtt.module_update_notify (admin notifies older-version
-// campaigns) — distinct event types so the audit trail can
-// distinguish "told the owner to update" from "updated for them".
+// SecurityEventLogger writes one row per admin action to the audit log
+// table. Same shape as admin's SecurityService.LogEvent; passed as an
+// interface so the plugin doesn't import admin directly.
 type SecurityEventLogger interface {
 	LogEvent(ctx context.Context, eventType, userID, actorID, ip, userAgent string, details map[string]any) error
 }
@@ -133,24 +114,16 @@ type Service interface {
 
 	// --- public manifest endpoint ---
 
-	// BuildManifestForCampaign reads the on-disk module.json for
-	// the campaign's resolved version, rewrites the descriptor-
-	// declared fields with per-campaign signed Chronicle URLs, and
-	// returns the JSON bytes. The downloadPath is the absolute
-	// path to the version's extracted directory (the download
-	// handler will stream the same module.json's content from
-	// there — Foundry's download endpoint fetches the same dir).
-	//
-	// Returns *Error on failure so the handler can pick the right
-	// HTTP status + JSON shape.
+	// BuildManifestForCampaign reads the on-disk module.json for the
+	// campaign's resolved version, rewrites the descriptor-declared
+	// fields with per-campaign signed Chronicle URLs, and returns the
+	// JSON bytes plus the version's install directory. Returns *Error
+	// on failure so the handler can pick the right HTTP status.
 	BuildManifestForCampaign(ctx context.Context, campaignID string) (manifestJSON json.RawMessage, downloadDir string, err error)
 
 	// BuildDownloadParams returns the params needed to stream a
-	// per-campaign rewritten zip from the download endpoint:
-	// install dir to walk, path of module.json within it, and the
-	// rewritten manifest bytes to embed in place of the on-disk
-	// module.json. Added in C-FMC-7 — see resolveCampaignManifest
-	// for the shared resolution + rewrite logic.
+	// per-campaign rewritten zip from the download endpoint. See
+	// resolveCampaignManifest for the shared resolution logic.
 	BuildDownloadParams(ctx context.Context, campaignID string) (DownloadParams, error)
 
 	// --- owner pin management ---
@@ -165,101 +138,70 @@ type Service interface {
 
 	// --- owner tab fragment data ---
 
-	// OwnerTabData assembles the OwnerTabData struct for the
-	// owner settings tab fragment. Handles the empty-state cases
-	// (no foundry-module package registered, no version installed)
-	// by setting flags on the returned struct rather than
-	// returning errors.
+	// OwnerTabData assembles the OwnerTabData struct for the owner
+	// settings tab fragment. Empty-state cases (no package registered,
+	// no version installed) are flags on the struct, not errors.
 	OwnerTabData(ctx context.Context, campaignID string) (OwnerTabData, error)
 
 	// GetBannerStatus reports whether the campaign should see the
-	// "newer version available" dashboard banner. Returns HasUpdate=
-	// false when the catalog is empty, the campaign resolves to the
-	// latest installed version, or any lookup fails — the banner is
-	// best-effort UX, not security state.
+	// "newer version available" dashboard banner. Best-effort UX: any
+	// lookup failure yields HasUpdate=false rather than an error.
 	GetBannerStatus(ctx context.Context, campaignID string) (BannerStatus, error)
 
-	// --- admin operations (C-FMC-5c) ---
+	// --- admin operations ---
 
 	// FindFoundryPackage looks up the foundry-module typed package
-	// row. Public on the Service interface so the admin handlers can
-	// resolve packageID → slug + version list without re-implementing
-	// the type filter. Returns (nil, nil) if no foundry-module
-	// package is registered.
+	// row. Returns (nil, nil) if no foundry-module package is
+	// registered.
 	FindFoundryPackage(ctx context.Context) (*packages.Package, error)
 
-	// GetPackageByID looks up a single package by ID. Used by the
-	// admin per-row fragment handler (NW-2.2 Chunk G) to validate
-	// that a fragment request's :id matches a foundry-module typed
-	// package before rendering. Thin wrapper around packages.GetPackage
-	// kept on the Service surface so the handler doesn't need a
-	// separate PackageReader handle.
+	// GetPackageByID looks up a single package by ID. Thin wrapper
+	// around packages.GetPackage kept on the Service surface so
+	// handlers don't need a separate PackageReader handle.
 	GetPackageByID(ctx context.Context, id string) (*packages.Package, error)
 
-	// CampaignsUsingVersion returns the campaigns currently pinned
-	// to a specific Foundry module version. The admin's expandable
-	// "Campaigns Using v0.1.5" card lists these.
+	// CampaignsUsingVersion returns the campaigns currently pinned to a
+	// specific Foundry module version.
 	CampaignsUsingVersion(ctx context.Context, version string) ([]CampaignUsage, error)
 
-	// AutoTrackingCampaigns returns the campaigns with no explicit
-	// foundry_module_pin — they auto-follow whichever module version is
-	// newest. The admin's per-version card shows their count so an empty
-	// exact-pin list doesn't read as "no campaign uses this module".
+	// AutoTrackingCampaigns returns campaigns with no explicit
+	// foundry_module_pin — they auto-follow the newest module version.
 	AutoTrackingCampaigns(ctx context.Context) ([]CampaignUsage, error)
 
 	// ForcePinCampaign mutates a campaign's FoundryModulePin directly,
-	// bypassing the owner-side flow. Used by the admin "Force-update
-	// this campaign" action. Validates the target version exists on
-	// disk + logs a security_events row for the audit trail.
+	// bypassing the owner-side flow. Validates the target version exists
+	// on disk and logs a security_events row for the audit trail.
 	ForcePinCampaign(ctx context.Context, campaignID, version, actorID, actorIP, actorUA string) error
 
-	// NotifyCampaignOfUpdate logs a security_events row + sends an
-	// SMTP courtesy email (best-effort). Does NOT change the pin —
-	// this is the "tell the owner" action that complements the
-	// "do it for them" force-pin path. Audit trail distinction:
-	// foundry_vtt.module_update_notify vs foundry_vtt.module_force_pin.
+	// NotifyCampaignOfUpdate logs a security_events row and sends an
+	// SMTP courtesy email (best-effort). Does NOT change the pin — this
+	// is the "tell the owner" action, complementing force-pin.
 	NotifyCampaignOfUpdate(ctx context.Context, campaignID, newVersion, actorID, actorIP, actorUA string) error
 
-	// NotifyOlderCampaigns is the mass variant of
-	// NotifyCampaignOfUpdate. Iterates every campaign whose pin is
-	// strictly older (per semverLess) than the target version and
-	// calls the per-campaign notify path. Returns the count of
-	// campaigns notified.
+	// NotifyOlderCampaigns is the mass variant of NotifyCampaignOfUpdate:
+	// every campaign whose pin is strictly older than version. Returns
+	// the count notified.
 	NotifyOlderCampaigns(ctx context.Context, version, actorID, actorIP, actorUA string) (notified int, err error)
 
 	// ForcePinAllToVersion is the mass variant of ForcePinCampaign.
-	// Iterates every campaign whose pin is strictly older than the
-	// target and pins them all to it. Returns the count of campaigns
-	// repinned. Partial failures don't abort — each campaign's
-	// pin operation is independent.
+	// Partial failures don't abort — each campaign is independent.
 	ForcePinAllToVersion(ctx context.Context, version, actorID, actorIP, actorUA string) (pinned int, err error)
 
-	// AutoPinOnInstall is called by the install-time auto-pin hook
-	// (C-FMC-6) after a foundry-module package is installed. Every
-	// campaign with an empty pin (auto-tracking) gets explicit-pinned
-	// to `previousVersion` so it stays on the version it was
-	// effectively running — admin sees the version spread via the
-	// "Campaigns Using v0.X" expandable UI and decides per-campaign
-	// whether to bump.
-	//
-	// Returns the count of campaigns affected. Empty previousVersion
-	// (first-ever install) is a no-op. Per-campaign security_events
-	// are logged with type EventModuleAutoPinOnInstall; the install
-	// summary lives in a separate event of type
-	// EventModuleAutoPinInstallSummary.
+	// AutoPinOnInstall runs after a foundry-module package installs:
+	// each auto-tracking campaign in "preserve" pin_mode is explicit-
+	// pinned to previousVersion so it stays on the version it was
+	// running. Empty previousVersion (first-ever install) is a no-op.
+	// Per-campaign events use EventModuleAutoPinOnInstall; a single
+	// EventModuleAutoPinInstallSummary covers the whole install.
 	AutoPinOnInstall(ctx context.Context, previousVersion, newVersion, actorID, actorIP, actorUA string) (affected int, err error)
 
-	// MigrateAutoPinToVersion is the C-FMC-6 one-time migration's
+	// MigrateAutoPinToVersion is the one-time bootstrap migration's
 	// inner step: pin every empty-pin campaign to the given version,
-	// logging EventModuleAutoPinMigration per campaign.
-	//
-	// Distinct from AutoPinOnInstall because the audit event type
-	// differs (migration vs. install-hook) and because this path
-	// doesn't short-circuit on previous==new — the migration's
-	// whole point is to make an effective state explicit.
+	// logging EventModuleAutoPinMigration per campaign. Unlike
+	// AutoPinOnInstall it never short-circuits on previous==new.
 	MigrateAutoPinToVersion(ctx context.Context, version string) (affected int, err error)
 
-	// --- admin auto-pin banner (C-FMC-8; deferred from C-FMC-6) ---
+	// --- admin auto-pin banner ---
 
 	// GetUnreadAutoPinSummary returns the latest auto-pin install
 	// summary if the admin hasn't dismissed it yet, or nil if there's
@@ -280,19 +222,13 @@ type service struct {
 	settings CampaignSettingsAdapter
 	pkgs     PackageReader
 	// registry centralizes the "one foundry-module per Chronicle"
-	// assumption. Added in C-FMC-ADMIN-UX-AUDIT Chunk 1. All new
-	// "find the foundry-module package" call sites should go through
-	// `s.registry.FoundryPackage(ctx)`; the legacy `FindFoundryPackage`
-	// method on this service is now a thin wrapper around the
-	// registry for backward compat with existing callers.
+	// assumption; new call sites should use s.registry.FoundryPackage
+	// directly rather than the legacy FindFoundryPackage wrapper.
 	registry *PackageRegistry
 	baseURL  string // public Chronicle origin, trimmed of trailing slash
 
-	// kv is the site-settings KV store (settings.SettingsRepository
-	// in production). Used by the auto-pin install hook to persist
-	// the summary + by the banner handler to read it. Optional —
-	// nil disables the banner path softly (tests without settings
-	// don't need it).
+	// kv is the site-settings KV store, used to persist and read the
+	// auto-pin summary. Optional — nil disables the banner path softly.
 	kv SettingsKVStore
 
 	// Admin-action dependencies. Nil-safe — the per-campaign owner
@@ -316,9 +252,7 @@ const (
 	EventModuleUpdateNotify = "foundry_vtt.module_update_notify"
 
 	// EventModuleAutoPinOnInstall — one per campaign auto-pinned by
-	// the install hook (C-FMC-6). Records the from-version + the
-	// new installed version + the campaign so the audit log shows
-	// exactly which campaigns the install affected.
+	// the install hook. Records from-version + new version + campaign.
 	EventModuleAutoPinOnInstall = "foundry_vtt.module_autopin_on_install"
 
 	// EventModuleAutoPinInstallSummary — single event per install
@@ -328,10 +262,8 @@ const (
 	EventModuleAutoPinInstallSummary = "foundry_vtt.module_autopin_install_summary"
 
 	// EventModuleAutoPinMigration — one per campaign touched by the
-	// one-time C-FMC-6 migration (auto-tracking → explicit pin to
-	// the currently-installed version). Distinct event type from the
-	// install-hook variant so the migration is auditable as a
-	// separate operation.
+	// one-time bootstrap migration (auto-tracking → explicit pin),
+	// kept distinct from the install-hook variant for auditability.
 	EventModuleAutoPinMigration = "foundry_vtt.module_autopin_migration"
 )
 
@@ -408,13 +340,12 @@ func (s *service) RotateCampaignToken(ctx context.Context, campaignID string) (s
 	return s.buildURL(campaignID, newVer), nil
 }
 
-// buildURL assembles the public install URL using the locked
-// foundry-vtt namespace. NOT driven by the per-package descriptor
-// (yet) — the descriptor's manifestEndpoint affects what gets
-// written INTO the served module.json, while THIS URL is the
-// outside-the-server one Foundry hits. They're the same shape
-// today but separated so a future per-module descriptor could
-// override.
+// buildURL assembles the public install URL using the fixed
+// foundry-vtt namespace. Not driven by the per-package descriptor:
+// the descriptor's manifestEndpoint affects what's written INTO the
+// served module.json, while this is the outside-the-server URL
+// Foundry hits — same shape today, kept separate so a future
+// per-module descriptor could override it.
 func (s *service) buildURL(campaignID string, tokenVersion int) string {
 	signed := s.tokens.Sign(campaignID, tokenVersion)
 	return fmt.Sprintf("%s/api/v1/campaigns/%s/foundry-vtt/module.json?token=%s",
@@ -451,12 +382,8 @@ func (s *service) VerifyManifestToken(ctx context.Context, campaignID, token str
 // BuildManifestForCampaign is the serve-time core. Reads the on-disk
 // module.json for the resolved version, rewrites descriptor-declared
 // fields with per-campaign signed Chronicle URLs, returns the JSON.
-//
-// No caching — module.json is small (< 5 KB), reading fresh per
-// request keeps the post-install hook's version rewrite visible
-// immediately. If profiling shows the file read is a hotspot, add
-// a single-flight cache keyed on (packageID, version) at a future
-// PR.
+// No caching — module.json is small and reading fresh keeps a version
+// rewrite visible immediately.
 func (s *service) BuildManifestForCampaign(ctx context.Context, campaignID string) (json.RawMessage, string, error) {
 	params, err := s.resolveCampaignManifest(ctx, campaignID)
 	if err != nil {
@@ -465,27 +392,13 @@ func (s *service) BuildManifestForCampaign(ctx context.Context, campaignID strin
 	return params.RewrittenManifest, params.InstallDir, nil
 }
 
-// BuildDownloadParams returns everything the download handler needs
-// to stream a per-campaign rewritten zip: the install dir to walk,
-// the path of module.json within it (so the handler can swap in the
-// rewritten bytes), and the rewritten manifest bytes themselves.
-//
-// Same resolution path as BuildManifestForCampaign — both methods
-// call resolveCampaignManifest, which is the single source of truth
-// for the descriptor + rewrite logic. The manifest endpoint serves
-// the rewritten JSON; the download endpoint embeds the same bytes
-// into the streamed zip's module.json entry. Both stay consistent
-// because they come from the same call.
-//
-// Added in C-FMC-7 to fix the bug where Foundry's update checks
-// reverted to GitHub after install. The download endpoint used to
-// stream the install dir as-is, so the zip's embedded module.json
-// carried the upstream GitHub URLs; Foundry's first manifest fetch
-// hit Chronicle (because the install URL was Chronicle's), but
-// every update check after that read the extracted on-disk
-// module.json, which still pointed at GitHub. Per-campaign zip
-// rewriting at download time embeds Chronicle URLs into the zip's
-// module.json so subsequent update checks stay on Chronicle.
+// BuildDownloadParams returns everything the download handler needs to
+// stream a per-campaign rewritten zip: the install dir to walk, the
+// path of module.json within it, and the rewritten manifest bytes to
+// substitute there. Shares resolveCampaignManifest with
+// BuildManifestForCampaign so both serve-time paths stay consistent —
+// the zip's embedded module.json must carry Chronicle URLs, not the
+// upstream ones, or Foundry's later update checks revert to GitHub.
 func (s *service) BuildDownloadParams(ctx context.Context, campaignID string) (DownloadParams, error) {
 	return s.resolveCampaignManifest(ctx, campaignID)
 }
@@ -552,11 +465,9 @@ func (s *service) resolveCampaignManifest(ctx context.Context, campaignID string
 		return DownloadParams{}, ErrInternal("stat_install_dir", statErr)
 	}
 
-	// 4. Load this version's descriptor (or fall back to defaults).
-	//    Errors from a present-but-invalid descriptor surface to
-	//    the operator via the categorized error; a missing descriptor
-	//    is the normal path for modules without FM-PKG-DESCRIPTOR
-	//    yet shipped.
+	// 4. Load this version's descriptor, or fall back to defaults if
+	//    the module ships none. A present-but-invalid descriptor is a
+	//    real error and surfaces to the operator.
 	desc, descErr := loadDescriptor(installDir)
 	if descErr != nil && descErr != errDescriptorNotFound {
 		// Real validation error — surface it.
@@ -619,10 +530,8 @@ func (s *service) resolveCampaignManifest(ctx context.Context, campaignID string
 }
 
 // substituteURLTemplate replaces {campaign_id} and {token} in a URL
-// template with the campaign-specific values. Defined as a method-
-// less helper so it's trivially testable. Substitution is literal
-// string replace, not template parsing — the template is tightly
-// constrained by schema v1.
+// template with literal string replacement (no template parsing —
+// the template shape is constrained by descriptor schema v1).
 func substituteURLTemplate(tmpl, campaignID, token string) string {
 	out := strings.ReplaceAll(tmpl, "{campaign_id}", campaignID)
 	out = strings.ReplaceAll(out, "{token}", token)
@@ -631,19 +540,14 @@ func substituteURLTemplate(tmpl, campaignID, token string) string {
 
 // FindFoundryPackage looks up the foundry-module typed package row.
 // Returns (nil, nil) if none exists — caller treats this as the
-// "no package registered" empty state.
-//
-// As of C-FMC-ADMIN-UX-AUDIT Chunk 1, this method delegates to
-// `s.registry.FoundryPackage(ctx)` so the "one foundry-module per
-// Chronicle" assumption lives in one place (package_registry.go).
-// Kept here as a thin wrapper for backward compat with existing call
-// sites that hold a Service reference; new call sites should prefer
-// the registry directly.
+// "no package registered" empty state. Delegates to
+// s.registry.FoundryPackage so the "one foundry-module per Chronicle"
+// assumption lives in one place (package_registry.go); prefer the
+// registry directly at new call sites.
 func (s *service) FindFoundryPackage(ctx context.Context) (*packages.Package, error) {
 	if s.registry == nil {
-		// Defensive: pre-Chunk-1 callers / tests that construct a
-		// service struct without the registry-init code path. Fall
-		// through to the historical inline lookup so nothing breaks.
+		// Defensive: callers/tests that construct a service struct
+		// without registry init fall through to an inline lookup.
 		all, err := s.pkgs.ListPackages(ctx)
 		if err != nil {
 			return nil, ErrInternal("list_packages", err)
@@ -659,8 +563,7 @@ func (s *service) FindFoundryPackage(ctx context.Context) (*packages.Package, er
 }
 
 // GetPackageByID is a thin wrapper around the packages service's
-// GetPackage so the admin per-row fragment handler (NW-2.2 Chunk G)
-// can validate a fragment request's :id without holding a separate
+// GetPackage, kept on Service so handlers don't need a separate
 // PackageReader handle.
 func (s *service) GetPackageByID(ctx context.Context, id string) (*packages.Package, error) {
 	return s.pkgs.GetPackage(ctx, id)
@@ -743,11 +646,8 @@ func (s *service) OwnerTabData(ctx context.Context, campaignID string) (OwnerTab
 		out.CurrentVersion = pin
 	}
 
-	// pin_mode is populated as a separate adapter call. Soft-fail
-	// (treat error as empty mode) so a campaigns-side issue with the
-	// new field doesn't break the entire owner tab — Chunk 3's UI
-	// can render a sensible empty-state when the mode is missing.
-	// Added in C-FMC-ADMIN-UX-AUDIT Chunk 1.
+	// Soft-fail: treat a read error as empty mode so a campaigns-side
+	// issue doesn't break the whole owner tab.
 	mode, modeErr := s.settings.GetFoundryModulePinMode(ctx, campaignID)
 	if modeErr == nil {
 		out.CurrentPinMode = mode
@@ -775,16 +675,10 @@ func (s *service) OwnerTabData(ctx context.Context, campaignID string) (OwnerTab
 	return out, nil
 }
 
-// listInstalledVersionsOnDisk enumerates the version directories
-// inside the foundry-module install root. Best-effort — a read
-// failure returns an empty slice so the owner tab still renders.
-//
-// Sorted descending (newest semver-ish first) using simple lex
-// sort on the version strings. Foundry module versions are
-// SemVer-compatible (v0.1.5, etc.), and lex sort matches numeric
-// sort for the canonical zero-padded shape. If a deployment ships
-// non-canonical versions, this still produces a stable order; the
-// dropdown is for owners to pick, not for chronological accuracy.
+// listInstalledVersionsOnDisk enumerates the version directories inside
+// the foundry-module install root, sorted descending by lex order (matches
+// numeric order for canonical zero-padded semver like v0.1.5). Best-effort
+// — a read failure returns an empty slice so the owner tab still renders.
 func (s *service) listInstalledVersionsOnDisk(slug string) []string {
 	// The packages plugin owns the on-disk layout convention;
 	// we re-derive the root from InstallDirForVersion by
@@ -809,7 +703,7 @@ func (s *service) listInstalledVersionsOnDisk(slug string) []string {
 	return versions
 }
 
-// --- admin operations (C-FMC-5c) ---
+// --- admin operations ---
 
 // CampaignsUsingVersion lists campaigns currently pinned to the given
 // version. Used by the admin's expandable "Campaigns Using v0.1.5"
@@ -823,11 +717,9 @@ func (s *service) CampaignsUsingVersion(ctx context.Context, version string) ([]
 }
 
 // AutoTrackingCampaigns lists campaigns with an empty foundry_module_pin —
-// the ones that auto-follow the newest installed module version rather than
-// being frozen to a specific one. Surfaced on the admin's per-version card
-// so a version whose exact-pin list is empty still shows how many campaigns
-// track latest (the common case under the promote default), instead of the
-// card reading as "nobody uses this module".
+// the ones that auto-follow the newest installed module version. Surfaced
+// on the admin's per-version card so an empty exact-pin list doesn't read
+// as "nobody uses this module".
 func (s *service) AutoTrackingCampaigns(ctx context.Context) ([]CampaignUsage, error) {
 	usage, err := s.repo.CampaignsWithEmptyPin(ctx)
 	if err != nil {
@@ -837,20 +729,14 @@ func (s *service) AutoTrackingCampaigns(ctx context.Context) ([]CampaignUsage, e
 }
 
 // ForcePinCampaign is the admin "Force-update this campaign to v0.X"
-// action. Validates the version is actually installed on disk before
-// touching CampaignSettings — refuses to pin to a missing version so
-// Foundry update checks don't immediately 404.
-//
-// Logs a security_events row (EventModuleForcePin) for the audit
-// trail. The event details include version + actor metadata so the
-// admin dashboard can render "Admin <name> force-pinned campaign
-// <id> to v0.1.5" in the audit log.
+// action. Validates the version is installed on disk before touching
+// CampaignSettings, so Foundry update checks don't immediately 404, and
+// logs a security_events row (EventModuleForcePin) for the audit trail.
 func (s *service) ForcePinCampaign(ctx context.Context, campaignID, version, actorID, actorIP, actorUA string) error {
 	if version == "" {
-		// Pinning to empty is the "clear pin / latest-tracking"
-		// operation, which doesn't make sense for a force-update
-		// flow — admin would use the per-campaign unpin endpoint
-		// instead. Reject loudly.
+		// Empty version means "clear pin / latest-tracking", which
+		// doesn't apply to a force-update; reject rather than silently
+		// no-op.
 		return &Error{
 			Category: ErrCategoryValidation,
 			Code:     "force_pin_empty_version",
@@ -863,18 +749,9 @@ func (s *service) ForcePinCampaign(ctx context.Context, campaignID, version, act
 		}
 	}
 
-	// Validate the version is installed on disk. Reuses SetPinnedVersion's
-	// validation path (which calls FindFoundryPackage + InstallDirForVersion).
-	//
-	// C-FMC-9: wrap the error with explicit context. SetPinnedVersion can
-	// return any of several typed errors (NoPackageRegistered,
-	// PinnedVersionNotInstalled, internal_get_pin, set_foundry_module_pin).
-	// Returning them raw made it hard to distinguish "force-pin failed
-	// because the version isn't installed" from "force-pin failed because
-	// the DB write rejected" in operator-facing reports — the wrapped
-	// error keeps the original typed error intact (via %w) while making
-	// the audit log say "force-pin: ..." so it's obvious the failure is
-	// on the force-pin code path.
+	// Reuses SetPinnedVersion's validation (installed-on-disk check).
+	// Wrap the error so the audit log can tell a force-pin failure from
+	// other SetPinnedVersion callers while keeping the typed error (%w).
 	if err := s.SetPinnedVersion(ctx, campaignID, version); err != nil {
 		return fmt.Errorf("force-pin campaign %q to %q: %w", campaignID, version, err)
 	}
@@ -891,14 +768,10 @@ func (s *service) ForcePinCampaign(ctx context.Context, campaignID, version, act
 	return nil
 }
 
-// NotifyCampaignOfUpdate logs the audit event + sends a courtesy SMTP
-// email (when configured). Does NOT change the pin — the owner stays
-// in control of the actual update timing.
-//
-// SMTP failures are intentionally swallowed: the in-app banner (via
-// security_events) is the primary surface, email is supplementary.
-// The audit event still gets logged so the operator's dashboard can
-// see "notify was triggered, email may or may not have arrived".
+// NotifyCampaignOfUpdate logs the audit event and sends a courtesy SMTP
+// email (when configured). Does NOT change the pin. SMTP failures are
+// swallowed: the in-app banner (via security_events) is the primary
+// surface, email is supplementary.
 func (s *service) NotifyCampaignOfUpdate(ctx context.Context, campaignID, newVersion, actorID, actorIP, actorUA string) error {
 	if s.events == nil {
 		// Without an events sink, the notify is a no-op — the
@@ -972,13 +845,10 @@ func (s *service) ForcePinAllToVersion(ctx context.Context, version, actorID, ac
 	return count, nil
 }
 
-// GetBannerStatus reports whether the dashboard banner should fire.
-// Empty pin (latest-tracking) → no banner, the campaign auto-resolves
-// to latest. Pin matches or exceeds the latest installed version →
-// no banner. Pin strictly older → banner shows pin → latest.
-//
-// All errors swallow to zero-value because the banner is soft UX —
-// a flaky DB read shouldn't crash the campaign dashboard.
+// GetBannerStatus reports whether the dashboard banner should fire: only
+// when the campaign's pin is strictly older than the latest installed
+// version. Errors swallow to zero-value — the banner is soft UX, not
+// worth failing the dashboard over.
 func (s *service) GetBannerStatus(ctx context.Context, campaignID string) (BannerStatus, error) {
 	pkg, err := s.FindFoundryPackage(ctx)
 	if err != nil || pkg == nil || pkg.InstalledVersion == "" {
@@ -1004,32 +874,21 @@ func (s *service) GetBannerStatus(ctx context.Context, campaignID string) (Banne
 	}, nil
 }
 
-// AutoPinOnInstall is the install-time auto-pin path. previousVersion
-// is the foundry-module version installed BEFORE the current install
-// (captured by packages.InstallVersion and passed through the
-// PostInstallHook).
+// AutoPinOnInstall is the install-time auto-pin path. previousVersion is
+// the foundry-module version installed before the current install.
 //
-// Behavior is per-campaign, driven by each auto-tracking campaign's
-// foundry_module_pin_mode (C-FMC audit "Chunk 2" — previously this hook
-// ignored pin_mode and unconditionally froze every campaign, which made
-// "force update" appear to do nothing and the owner auto-mode a no-op):
-//   - "preserve": explicit-pin to previousVersion so the campaign stays
-//     on the version it was effectively running. The admin bumps it
-//     manually from the C-FMC-5c "Campaigns Using v0.X" UI.
-//   - "promote" (and the empty/unset DEFAULT, per audit D1): leave the
-//     pin empty so the campaign keeps auto-tracking the newest installed
-//     version — i.e. it follows this install forward automatically.
+// Per-campaign behavior is driven by each auto-tracking campaign's
+// foundry_module_pin_mode: "preserve" explicit-pins to previousVersion so
+// the campaign stays on the version it was running (the admin bumps it
+// manually via the "Campaigns Using v0.X" UI); "promote" and the
+// empty/unset default leave the pin empty so the campaign keeps
+// auto-tracking the newest installed version. A mode read error is
+// treated as promote, never as a silent freeze.
 //
-// A mode read error is treated as the promote default (leave alone),
-// never as a silent freeze.
-//
-// Empty previousVersion (first-ever install) is a no-op — there's no
-// prior state to preserve.
-//
-// Logs one EventModuleAutoPinOnInstall per preserved campaign + a
-// single EventModuleAutoPinInstallSummary that drives the admin
-// notification surface. Partial failures don't abort the fan-out;
-// each campaign is independent.
+// Empty previousVersion (first-ever install) is a no-op. Logs one
+// EventModuleAutoPinOnInstall per preserved campaign plus a single
+// EventModuleAutoPinInstallSummary; partial failures don't abort the
+// fan-out.
 func (s *service) AutoPinOnInstall(ctx context.Context, previousVersion, newVersion, actorID, actorIP, actorUA string) (int, error) {
 	if previousVersion == "" {
 		// First-ever install of the foundry-module package. No prior
@@ -1050,10 +909,8 @@ func (s *service) AutoPinOnInstall(ctx context.Context, previousVersion, newVers
 
 	affected := 0
 	for _, c := range campaigns {
-		// Only "preserve" mode freezes the campaign at previousVersion.
-		// "promote" and the empty/unset default leave the pin empty so the
-		// campaign keeps auto-tracking the newest installed version. A mode
-		// read error defaults to promote (do nothing) rather than freezing.
+		// Only "preserve" mode freezes the campaign; a mode read error
+		// defaults to promote (do nothing) rather than freezing.
 		mode, modeErr := s.settings.GetFoundryModulePinMode(ctx, c.CampaignID)
 		if modeErr != nil || mode != PinModePreserve {
 			continue
@@ -1092,9 +949,8 @@ func (s *service) AutoPinOnInstall(ctx context.Context, previousVersion, newVers
 			})
 	}
 
-	// C-FMC-8: persist the summary to the settings KV so the admin
-	// /admin/packages banner can read + display it. Soft-fail: the
-	// summary is supplementary; missing it doesn't break the install.
+	// Persist the summary to the settings KV so the admin /admin/packages
+	// banner can read it. Soft-fail: the summary is supplementary.
 	_ = s.storeAutoPinSummary(ctx, AutoPinSummary{
 		PreviousVersion: previousVersion,
 		NewVersion:      newVersion,
@@ -1105,23 +961,11 @@ func (s *service) AutoPinOnInstall(ctx context.Context, previousVersion, newVers
 	return affected, nil
 }
 
-// MigrateAutoPinToVersion pins every empty-pin campaign to the
-// given version. Logs EventModuleAutoPinMigration per campaign.
-// Called from AutoPinMigrate (the one-time bootstrap path).
-//
-// Distinct from AutoPinOnInstall in three ways:
-//   - No short-circuit when previous==new: the migration's whole
-//     point is to make an effective state explicit, so a same-
-//     version pin is the meaningful operation.
-//   - Different event type (EventModuleAutoPinMigration) so the
-//     audit log distinguishes "migration ran at startup" from
-//     "install-hook fired on a version change".
-//   - No summary event (the AutoPinMigrate caller emits its own
-//     completion log line; a single summary event for a one-time
-//     migration adds noise without diagnostic value).
-//
-// Partial failures are skipped + logged; the count reflects only
-// successful pins.
+// MigrateAutoPinToVersion pins every empty-pin campaign to the given
+// version, logging EventModuleAutoPinMigration per campaign. Unlike
+// AutoPinOnInstall it never short-circuits on previous==new, since the
+// point is to make the effective state explicit. Partial failures are
+// skipped; the count reflects only successful pins.
 func (s *service) MigrateAutoPinToVersion(ctx context.Context, version string) (int, error) {
 	if version == "" {
 		return 0, fmt.Errorf("MigrateAutoPinToVersion: empty version")

@@ -6,10 +6,9 @@ import (
 	"testing"
 )
 
-// These tests pin the DS-SEC-AUDIT-R1 CRITICAL fix: statblock strings are
-// stripped of HTML metacharacters on write and on read, so widget innerHTML
-// interpolation of organization/role/size/etc. cannot execute
-// attacker-authored markup.
+// These tests pin the stored-XSS fix: statblock strings are stripped of HTML
+// metacharacters on write and on read, so widget innerHTML interpolation of
+// organization/role/size/etc. cannot execute attacker-authored markup.
 
 func TestSanitizeStatblockJSON_StripsAnglesEverywhere(t *testing.T) {
 	raw := json.RawMessage(`{

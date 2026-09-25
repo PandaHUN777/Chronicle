@@ -263,11 +263,10 @@ fi
 mv "$MANIFEST.partial" "$MANIFEST"
 printf 'artifact=manifest file=%s\n' "$MANIFEST"
 
-# 5) Retention sweep. Mirrors the rotator pattern in
-# internal/database/healthcheck.go:352-385: parse the timestamp out of
-# the filename and compare against the cutoff. Glob across all four
-# operator-script artifact families; never touches chronicle_pre_migrate_*
-# (those are managed by the Go in-process rotator).
+# 5) Retention sweep: parse the timestamp out of the filename and compare
+# against the cutoff. Glob across all four operator-script artifact
+# families; never touches chronicle_pre_migrate_* (managed by the Go
+# in-process rotator).
 CUTOFF="$(date -u -d "${BACKUP_RETENTION_DAYS} days ago" +%Y%m%d 2>/dev/null \
     || date -u -v-"${BACKUP_RETENTION_DAYS}d" +%Y%m%d 2>/dev/null \
     || echo "")"

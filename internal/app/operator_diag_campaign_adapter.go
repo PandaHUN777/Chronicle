@@ -15,29 +15,23 @@ import (
 )
 
 // operator_diag_campaign_adapter.go injects the PER-CAMPAIGN read window into
-// the operator diagnostics: the four checks that answer "why does MY campaign
-// look like this?" (`calendar.render`, `calendar.config`, `campaign.surfaces`,
-// `campaign.config`).
+// the operator diagnostics: the checks that answer "why does MY campaign look
+// like this?" (`campaign.surfaces`, `campaign.config`).
 //
-// It lives here for the same reason entityDiagAdapter does: internal/systems
-// must not import the calendar / campaigns / addons / entities plugins, so the
-// app layer implements the interface and wires it at startup.
+// It lives here, not in internal/systems, because that package must not
+// import the campaigns / addons / entities plugins; the app layer implements
+// the interface and wires it at startup.
 //
-// READ-ONLY BY CONSTRUCTION. Every call below is a Get/List/Is. Nothing here
-// writes, and nothing here is reachable except from the admin-gated diagnostics
-// route.
+// READ-ONLY BY CONSTRUCTION: every call below is a Get/List/Is, reachable only
+// from the admin-gated diagnostics route.
 //
-// EVERY READ DEGRADES INDIVIDUALLY. A campaign whose addon table cannot be read
-// still reports its calendars; a calendar whose stored moon count cannot be read
-// still reports what the Block draws. The failure lands in a Note the renderer
-// prints, never in a zero — "no moons" and "nobody could read the moons table"
-// must not render the same, and a struct full of zero values is exactly how they
-// come to.
+// EVERY READ DEGRADES INDIVIDUALLY: a failure lands in a Note the renderer
+// prints, never in a zero value, so "no blocks" and "nobody could read the
+// layout" never render the same.
 type campaignDiagAdapter struct {
 	campaigns campaigns.CampaignService
 	addons    addons.AddonService
-	// CALV5-PLACEHOLDER: `calendars calendar.CalendarService` was here.
-	entities entities.EntityService
+	entities  entities.EntityService
 
 	// routes returns the LIVE Echo route table, supplied as a closure so this
 	// file never imports Echo (CLAUDE.md: no Echo types outside handler files).
@@ -50,88 +44,15 @@ type campaignDiagAdapter struct {
 	sidebarCalendarPath string
 }
 
-// calendarAddonSlug is the addon every calendar route gates on
-// (addons.RequireAddon(addonSvc, …)). Disabling it makes the entire feature
-// answer as if it did not exist.
-//
-// It is an ALIAS of the plugin's own exported identifier, never a re-typed
-// literal. tools/check-plugin-isolation.sh (T-B2) rejects a plugin-name string
-// spelled outside the owning plugin, and it is right to: a copy here would keep
-// naming the old addon after a rename, and the diagnostic would report the
-// calendar as disabled on every campaign while the product worked fine.
+// calendarAddonSlug is the addon the campaign-page calendar routes used to
+// gate on. Kept as an alias of the plugin's own identifier, never a re-typed
+// literal — tools/check-plugin-isolation.sh (T-B2) enforces this. Still read
+// by SurfaceFacts below to report the addon's state; CALV5-PLACEHOLDER: it is
+// no longer load-bearing for those routes (see the note SurfaceFacts writes)
+// until V5 restores the gate.
 const calendarAddonSlug = calendar.PluginSlug
 
-// ── calendar.render + calendar.config ───────────────────────────────────────
-
-// CalendarFacts reads the calendar state behind one campaign's Bench, for one
-// viewer (userID may be empty, which traces the owner path).
-//
-// IT REPRODUCES THE BENCH'S OWN LOADERS RATHER THAN A CONVENIENT SUBSTITUTE:
-// the owner/player list split (buildBench keeps ListCalendars and
-// ListVisibleCalendars separate to preserve the W5a visibility rule), then the
-// spine's batched EagerLoadCalendars — which is what benchHydrate calls, and
-// therefore the only loader that applies the real-Moon fallback. A diagnostic
-// that hydrated through the 60-method service instead would report zero moons
-// on exactly the calendar the operator is asking about.
-func (a campaignDiagAdapter) CalendarFacts(ctx context.Context, campaignID, userID string) (systems.CampaignCalendarFacts, error) {
-	out := systems.CampaignCalendarFacts{CampaignID: campaignID}
-	camp, err := a.campaigns.GetByID(ctx, campaignID)
-	if err != nil {
-		if apperror.SafeCode(err) == 404 {
-			return out, nil // Found stays false — the renderer says "no such campaign"
-		}
-		return out, err
-	}
-	out.Found = true
-	out.CampaignName = camp.Name
-	_ = userID
-
-	// The addon row is still readable and still gates the (absent) routes, so
-	// it is still worth reporting — a disabled addon and a rebuilt plugin are
-	// different answers to "why is there no calendar".
-	a.fillCalendarAddon(ctx, campaignID, &out)
-
-	// CALV5-PLACEHOLDER: everything else this method read is gone with the
-	// plugin — BlockSpine(), the owner/player list split (ListCalendars vs
-	// ListVisibleCalendars), the spine's EagerLoadCalendars hydration, the
-	// stored-vs-drawn moon counts, calendar_active, the campaign default, and
-	// the viewer's stored Bench sections + Block layers.
-	//
-	// It reports that as a NOTE rather than returning a zero-valued struct,
-	// because this file's own rule is that "no moons" and "nobody could read
-	// the moons table" must never render the same. "The calendar is being
-	// rebuilt" is a third answer again, and the operator asking `calendar.render`
-	// why the page looks empty deserves it in one line.
-	out.Notes = append(out.Notes,
-		"The calendar plugin is being rebuilt (V5). Its tables are dropped and its "+
-			"render path does not exist, so there is nothing to trace: no spine, no "+
-			"calendars, no active/default pointers, no stored sections or layers. "+
-			"This is expected during the rebuild — it is not a degraded plugin.")
-	return out, nil
-}
-
-func (a campaignDiagAdapter) fillCalendarAddon(ctx context.Context, campaignID string, out *systems.CampaignCalendarFacts) {
-	if a.addons == nil {
-		out.AddonNote = "the addons service is not wired into this adapter"
-		return
-	}
-	enabled, err := a.addons.IsEnabledForCampaign(ctx, campaignID, calendarAddonSlug)
-	if err != nil {
-		out.AddonNote = err.Error()
-		return
-	}
-	out.AddonEnabled = &enabled
-}
-
-// fillViewer resolves the two roles the Bench actually uses. They are DIFFERENT
-// numbers and the page reads both: RequireRole compares the MEMBERSHIP role,
-// while cc.VisibilityRole() promotes a DM-grantee to Owner. Reporting one of
-// them would make half the gate traces wrong.
-// CALV5-PLACEHOLDER: fillViewer / fillCalendarLists / hydrateForDiag /
-// fillStoredMoonCount / fillViewerPrefs stood here. They reproduced the Bench's
-// own loaders on purpose — a diagnostic that hydrated through the 60-method
-// service instead would have reported zero moons on exactly the calendar the
-// operator was asking about. V5 rebuilds them against its own producer.
+// ── campaign.surfaces ───────────────────────────────────────────────────────
 
 func (a campaignDiagAdapter) SurfaceFacts(ctx context.Context, campaignID string) (systems.CampaignSurfaceFacts, error) {
 	out := systems.CampaignSurfaceFacts{CampaignID: campaignID, SidebarCalendarPath: a.sidebarCalendarPath}
@@ -228,9 +149,8 @@ func (a campaignDiagAdapter) fillAddonRows(ctx context.Context, campaignID strin
 }
 
 // fillEntityTypeLayouts records the blocks on each entity type's PAGE TEMPLATE
-// and on its category dashboard. Both are places an operator can hand-place a
-// block, and the 2026-08-11 question ("is a skybox block placed anywhere?")
-// cannot be answered from the campaign columns alone.
+// and on its category dashboard, since both are places an operator can
+// hand-place a block and neither is visible from the campaign columns alone.
 func (a campaignDiagAdapter) fillEntityTypeLayouts(ctx context.Context, campaignID string, out *systems.CampaignConfigFacts) {
 	if a.entities == nil {
 		out.LayoutsNote = "the entities service is not wired into this adapter, so entity templates were NOT read"
@@ -296,13 +216,9 @@ func dashboardBlockTypes(l *campaigns.DashboardLayout) []string {
 	return out
 }
 
-// templateBlockTypes flattens an entity page template to its block types.
-//
-// It descends into container blocks (`two_column`, `tabs`, `section`, …), whose
-// children live in the Config map rather than in a typed field. A flattener that
-// stopped at the top level would report a campaign as having no skybox block
-// while one sat inside a tab — an answer that is confidently wrong, which is the
-// single failure mode this whole diagnostic family exists to remove.
+// templateBlockTypes flattens an entity page template to its block types,
+// descending into container blocks (`two_column`, `tabs`, `section`, …) whose
+// children live in the untyped Config map rather than a typed field.
 func templateBlockTypes(rows []entities.TemplateRow) []string {
 	var out []string
 	for _, row := range rows {

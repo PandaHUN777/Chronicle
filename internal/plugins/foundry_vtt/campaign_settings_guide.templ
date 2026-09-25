@@ -1,16 +1,13 @@
 // campaign_settings_guide.templ holds the foundry-specific portion of
 // the per-campaign Settings -> Integrations tab's "VTT Setup Guides"
 // section. Lazy-loaded by campaigns.settings.templ via HTMX so the
-// campaigns plugin stays foundry-agnostic per Pillar 2.
-//
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (the
-// fragment-lazy-load convention) + NW-2.2 Chunk D.
+// campaigns plugin stays foundry-agnostic.
 //
 // URL: GET /campaigns/:id/foundry-vtt/setup-guide-fragment (owner-gated)
 //
 // Owns the Foundry-VTT-labeled disclosure inside the VTT Setup Guides
-// card. The card itself stays in campaigns (it's the generic "here are
-// the VTT integrations" container); the Foundry disclosure is the
+// card. The card itself stays in campaigns (the generic "here are the
+// VTT integrations" container); the Foundry disclosure is the
 // type-specific entry inside.
 
 package foundry_vtt
@@ -44,12 +41,8 @@ templ CampaignSettingsFoundryGuide(campaignID string, isOwner bool) {
 						</button>
 					</div>
 				</div>
-				// Foundry module pin + dynamic install URL. Inner
-				// fragment ALREADY served by foundry_vtt at
-				// /campaigns/:id/foundry-vtt/settings-tab; this guide
-				// inlines the lazy-load slot from the original
-				// campaigns/settings.templ verbatim. C-FMC-9 fallback
-				// on responseError preserved.
+				// Foundry module pin + dynamic install URL, lazy-loaded
+				// from the /foundry-vtt/settings-tab fragment.
 				if isOwner {
 					<div
 						id="foundry-module-pin-section"

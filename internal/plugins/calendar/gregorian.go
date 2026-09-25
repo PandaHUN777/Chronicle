@@ -3,15 +3,6 @@ package calendar
 import "time"
 
 // gregorian.go — the two real-world date helpers the domain model depends on.
-//
-// CALV5 SALVAGE: both are recovered verbatim from the pre-deletion tree
-// (22ac88a~1), where they lived in handler.go and worldstate.go respectively —
-// a presentation file and a service file, neither of which V5 is bringing back.
-// They are pure, they have no dependencies beyond time, and Calendar's own
-// methods call them, so the domain is where they belong. Moving them here is
-// the only change; the arithmetic is untouched.
-//
-// See cordinator/plans/2026-08-21-calendar-v5-salvage-manifest.md.
 
 // daysInGregorianMonth returns the length of a real-world month, leap years
 // included. `month` is 0-based, matching the model's real-time month index —
@@ -21,14 +12,11 @@ func daysInGregorianMonth(year, month int) int {
 }
 
 // gregorianJDN is the Julian Day Number for a proleptic-Gregorian date (the
-// standard Fliegel–Van Flandern integer formula). Local + exact.
+// standard Fliegel–Van Flandern integer formula).
 //
-// It is the shared true-day counter for real-time calendars: the real-Moon
-// phase math, the display weekday column and recurrence expansion all count
-// real-time days through it, so none of them drifts across a Gregorian leap
-// day. Keeping ONE counter is the point — the pre-deletion plugin's worst
-// structural bug was two independent day counts that disagreed by a day per
-// leap year, so a moon disc could contradict the grid cell it sat in.
+// It must be the ONE shared day counter for real-time calendars — moon phase
+// math, the weekday column and recurrence expansion all count through it, so
+// none of them can drift from the others across a leap day.
 func gregorianJDN(y, m, d int) int {
 	a := (14 - m) / 12
 	yy := y + 4800 - a

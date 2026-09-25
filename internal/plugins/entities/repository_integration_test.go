@@ -12,18 +12,15 @@ import (
 )
 
 // TestEntityTypeRepository_Integration exercises every entity_types read path
-// against a real MariaDB so the claimable column added in migration 000029 is
+// against a real MariaDB so the claimable column (migration 000029) is
 // actually round-tripped through the SELECT column list and scanEntityType.
-// A scan/column-order drift panics at runtime (the scan binds by position, not
-// name) and never surfaces in `go build` or the mock-based unit tests — only a
-// live query catches it, which is the point of this test.
+// A scan/column-order drift panics at runtime (the scan binds by position,
+// not name) and never surfaces in `go build` or the mock-based unit tests —
+// only a live query catches it.
 //
-// Discovery + skip rules:
-//   - Skipped under `-short` (so `make test-unit` never needs a DB).
-//   - DSN comes from CHRONICLE_TEST_DB_DSN, else the DB_* env vars, else the
-//     dev default that matches the Makefile's DATABASE_URL
-//     (chronicle:chronicle@tcp(127.0.0.1:3306)/chronicle). If no DB answers,
-//     the test SKIPS rather than fails, so it's safe in CI without a database.
+// Skipped under `-short`. DSN comes from CHRONICLE_TEST_DB_DSN, else the
+// DB_* env vars, else the dev default matching the Makefile's DATABASE_URL.
+// If no DB answers, the test SKIPS rather than fails.
 //
 // Run with: `make docker-up && make migrate-up && make test-int`.
 func TestEntityTypeRepository_Integration(t *testing.T) {

@@ -132,14 +132,12 @@ func (h *Handler) EntityHistory(c echo.Context) error {
 		return apperror.NewBadRequest("entity ID is required")
 	}
 
-	// IDOR + visibility guard (SEC-IDOR-2): the entity must belong to the
-	// caller's campaign and be viewable by them, mirroring entities.GetEntry's
-	// GetByID-campaign + CheckEntityAccess gate. The campaign-scoped query below
-	// is the unconditional backstop; this adds the per-entity visibility check.
-	// ADR-057 slice 2 (P1FIX): use cc.VisibilityRole(), not the raw
-	// cc.MemberRole, so a Co-DM allowed onto a dm_only entity's page (the
-	// entities plugin's Show handler, ADR-057 slice 1) isn't 404'd loading
-	// that entity's History panel.
+	// IDOR + visibility guard: the entity must belong to the caller's
+	// campaign and be viewable by them, mirroring entities.GetEntry's
+	// GetByID-campaign + CheckEntityAccess gate. The campaign-scoped query
+	// below is the unconditional backstop; this adds the per-entity
+	// visibility check. Uses cc.VisibilityRole(), not the raw cc.MemberRole,
+	// so a Co-DM allowed onto a dm_only entity's page isn't 404'd here.
 	if h.entityGuard != nil {
 		campaignID, canView, err := h.entityGuard.ResolveEntityView(
 			c.Request().Context(), entityID, int(cc.VisibilityRole()), auth.GetUserID(c))

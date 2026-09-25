@@ -334,17 +334,9 @@ func TestConcurrentRecordAndSnapshot(t *testing.T) {
 	}
 }
 
-// TestRecordBoundsPath is the regression guard for an unbounded field that hid
-// behind a usually-short one.
-//
-// Path is normally a route template this codebase wrote, so it looked harmless
-// and went unbounded while its sibling Err was truncated from the start. But
-// PathFor's fallback branch stores raw request bytes, that branch IS reachable
-// (a panic in global middleware on an unmatched route records unconditionally,
-// because RecordPanic never consults ShouldRecord), and net/http accepts a
-// request line up to ~1 MiB. Measured before the fix: a 1 MiB GET put 349,526
-// bytes into ONE entry, so a full ring retained ~90 MB — in a buffer whose only
-// purpose is to be small enough to paste into a chat window.
+// TestRecordBoundsPath pins that Path is truncated like Err: PathFor's fallback
+// branch can store raw, attacker-controlled request bytes (an unmatched-route
+// panic records unconditionally via RecordPanic), so Path must be bounded too.
 func TestRecordBoundsPath(t *testing.T) {
 	r := NewRing(4)
 	long := "/" + strings.Repeat("a", maxPathLen*50)

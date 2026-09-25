@@ -1,25 +1,12 @@
-// dm_grant_dashboard_test.go — ADR-057 slice 2 (P1FIX dispatch, review
-// finding on the slice-1 commit).
+// dm_grant_dashboard_test.go pins ADR-057: the dashboard's "recently updated
+// entities" list must be gated on cc.VisibilityRole(), not the raw
+// cc.MemberRole, so a Co-DM (Player + DM grant) sees dm_only entities there
+// the same as in the entities plugin's own list and category views.
 //
-// Show and OwnerDashboard both fetch the dashboard's "recently updated
-// entities" list via h.recentLister.ListRecentForDashboard(ctx, campaignID,
-// int(cc.MemberRole), userID, 8) — the ONLY visibility gate on that list (it
-// threads straight through to entities' repository visibilityFilter, the
-// same rule CheckEntityAccess and GetChildren use). A Co-DM (Player + DM
-// grant) already sees dm_only entities in the entities plugin's own list and
-// category views (VisibilityRole()-gated), so the dashboard passing the raw
-// MemberRole instead disagreed with itself: dm_only entities the Co-DM can
-// open directly vanish from the "recently updated" dashboard widget.
-//
-// This test does not render the full dashboard page (CampaignShowPage pulls
-// in sidebar/addon/system wiring unrelated to this fix and isn't the thing
-// under test); it drives the real Show handler up to and including the
-// ListRecentForDashboard call — the call this fix changes — and captures the
-// role integer actually passed, recovering from any unrelated template panic
-// so that capture still lands. this is not a stub of the rule under test:
-// VisibilityRole()'s promotion is real production code (model.go), and the
-// assertion is on the literal argument value the handler passed to an
-// injected collaborator.
+// This drives the real Show handler up to the ListRecentForDashboard call
+// and captures the role integer actually passed (recovering from any
+// unrelated template panic so the capture still lands), rather than
+// rendering the full dashboard page or stubbing VisibilityRole() itself.
 package campaigns
 
 import (
@@ -81,11 +68,9 @@ func callShowCapturingRole(t *testing.T, h *Handler, c echo.Context) {
 	_ = h.Show(c)
 }
 
-// TestShow_RecentEntities_UsesPromotedVisibilityRole pins the dashboard half
-// of the ADR-057 review finding: the "recently updated" entity list must be
-// gated on cc.VisibilityRole() (Owner=3 for a Co-DM), not the raw
-// cc.MemberRole (Player=1), so it agrees with what the Co-DM can already open
-// directly.
+// TestShow_RecentEntities_UsesPromotedVisibilityRole pins that the
+// "recently updated" entity list is gated on cc.VisibilityRole()
+// (Owner=3 for a Co-DM), not the raw cc.MemberRole (Player=1).
 func TestShow_RecentEntities_UsesPromotedVisibilityRole(t *testing.T) {
 	h := NewHandler(dashboardStubCampaignService{})
 	capture := &roleCaptureRecentLister{}

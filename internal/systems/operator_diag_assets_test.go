@@ -178,10 +178,9 @@ func TestAssetContainsAcceptsBothPathForms(t *testing.T) {
 	}
 }
 
-// TestAssetContainsMissingFilePointsAtEmbedded is the incident, encoded. Someone
-// looking for a plugin's asset under the static root will not find it there,
-// ever, and the miss must hand them the next step instead of confirming their
-// wrong hypothesis.
+// TestAssetContainsMissingFilePointsAtEmbedded pins that a miss under the
+// static root hands the reader a next step (check host.embedded) instead of
+// just confirming "not found", since a plugin asset may live only embedded.
 func TestAssetContainsMissingFilePointsAtEmbedded(t *testing.T) {
 	root := t.TempDir()
 	sr := staticRoot{CWD: filepath.Dir(root), Path: root, Exists: true}
@@ -272,12 +271,10 @@ func TestEmbeddedListsFilesAndSaysTheyAreNotOnDisk(t *testing.T) {
 	}
 }
 
-// TestEmbeddedFallbackAdviceIsNotTheOnDiskAdvice guards a wording bug found by
-// running the real thing: the shared token verdict used to advise "check the
-// working directory", which is meaningless for bytes compiled into the binary.
-// Embedded assets have no working directory; a fallback there means the plugin
-// FS was mounted for serving but never registered for hashing. Confidently
-// wrong advice is the failure mode this whole workstream exists to prevent.
+// TestEmbeddedFallbackAdviceIsNotTheOnDiskAdvice pins that the embedded-asset
+// fallback names its own cause instead of the on-disk one: embedded assets
+// have no working directory, so a fallback there means the plugin FS was
+// mounted for serving but never registered for hashing.
 func TestEmbeddedFallbackAdviceIsNotTheOnDiskAdvice(t *testing.T) {
 	stub := func(p string) string { return p + "?v=buildtoken" }
 	out := renderHostEmbeddedFrom(fakeEmbedded, "", stub, "buildtoken")
@@ -470,22 +467,13 @@ func TestAssetDiagnosticsAreRegistered(t *testing.T) {
 		t.Errorf("host.embedded's Desc must say grepping the filesystem finds nothing; got: %s", desc)
 	}
 
-	// Ordering: the asset diagnostics belong with host.build/host.runtime at the
-	// top, ahead of every system.*/packages.* check, for the same reason —
-	// "what is being served" is unanswerable until "by which build, from where"
-	// is settled.
-	//
-	// host.errors/host.errors-summary were inserted between host.runtime and
-	// host.assets in the errors stage — "what has it been getting wrong?" is
-	// the question an operator arrives with, and it is cheap.
-	//
-	// The widgets/plugins stage then added three more. host.deploy-check sits
-	// SECOND, immediately after host.build: it is the single check an operator
-	// runs after a deploy and it assembles what four of the others answer
-	// apart. host.widgets/host.plugins sit after the raw asset listings because
-	// both are INTERPRETATIONS of those same two storage mechanisms — a reader
-	// who disbelieves a row should be able to drop to host.assets/host.embedded
-	// and look at the file itself.
+	// Ordering: host.* diagnostics lead the catalog, ahead of every
+	// system.*/packages.* check, because "what is being served" is
+	// unanswerable until "by which build, from where" is settled.
+	// host.deploy-check sits second, right after host.build, as the single
+	// check to run after a deploy. host.widgets/host.plugins sit after the
+	// raw asset listings since both interpret the same two storage
+	// mechanisms a reader can drop down to and inspect directly.
 	want := []string{
 		"host.build", "host.deploy-check", "host.runtime",
 		"host.errors", "host.errors-summary",

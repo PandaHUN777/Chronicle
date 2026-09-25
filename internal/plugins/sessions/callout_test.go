@@ -6,13 +6,10 @@ import (
 	"time"
 )
 
-// C-RSVP-P10 — the player call-to-action.
-//
-// The banner is the one thing in the app shell that speaks to a player without
-// being asked, so every claim it can make is tested: that it stays silent when
-// there is nothing to say, that it never speaks for a notification the player
-// is not expected to answer, that the urgent thing outranks the standing one,
-// and that nothing from the database reaches the page as markup.
+// The player call-to-action banner: stays silent when there is nothing to
+// say, never speaks for a notification the player is not expected to answer,
+// the urgent thing outranks the standing one, and nothing from the database
+// reaches the page as markup.
 
 func note(ntype string, read bool, link string) Notification {
 	n := Notification{Type: ntype, CreatedAt: time.Now().UTC()}

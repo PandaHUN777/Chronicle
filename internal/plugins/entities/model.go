@@ -94,10 +94,8 @@ type TemplateBlock struct {
 // CharacterLayout is the default page layout for player-character types: the
 // dynamic character-sheet surface (the "big widget") full-width, then the
 // player-notes block. Owners can customize it in the layout editor like any
-// other layout — every block is a normal block. It no longer carries a
-// trailing permissions row (ADR-057 decision 5: visibility editing lives
-// only in edit mode, via form.templ's inline widget, not an auto-appended
-// read-page block).
+// other layout. Visibility editing lives only in edit mode via form.templ's
+// inline widget, never an auto-appended read-page row (ADR-057 decision 5).
 func CharacterLayout() EntityTypeLayout {
 	return EntityTypeLayout{
 		Rows: []TemplateRow{
@@ -122,9 +120,8 @@ func CharacterLayout() EntityTypeLayout {
 // Includes a full-width player-notes block so operators get per-player notes
 // on every new type without hunting through edit forms; it is
 // addon/identity-gated at render time, so it costs nothing on types where it
-// doesn't apply. No longer carries a trailing permissions row (ADR-057
-// decision 5: visibility editing lives only in edit mode, via form.templ's
-// inline widget, not an auto-appended read-page block).
+// doesn't apply. Visibility editing lives only in edit mode, not an
+// auto-appended read-page row (ADR-057 decision 5).
 func DefaultLayout() EntityTypeLayout {
 	return EntityTypeLayout{
 		Rows: []TemplateRow{
@@ -281,17 +278,14 @@ type FieldDefinition struct {
 	// callers, so GM secrets never reach a player's browser (server is the
 	// authority; a client-side hide is not a fix). Absent/false =
 	// player-visible. Populated from a system manifest's gm_only annotation
-	// via preset application + EnsureFieldMetadataFromManifests. See
-	// C-FIELDS-GM-FILTER / audit M-1.
+	// via preset application + EnsureFieldMetadataFromManifests.
 	GMOnly bool `json:"gm_only,omitempty"`
 	// OwnerOnly marks the field's VALUE as visible only to GM-tier roles
 	// (same bar as GMOnly) AND the entity's own claimed owner
 	// (Entity.OwnerUserID): it is stripped from fields_data for every other
 	// Player-tier viewer, including fellow players who are not this entity's
-	// owner. Unlike GMOnly (a true GM-exclusive secret, hidden even from the
-	// owner), OwnerOnly is for content that is private between one player
-	// and the GM — e.g. a character's backstory — but not party-wide. See
-	// C-FIELDS-OWNER-FILTER.
+	// owner. Unlike GMOnly (hidden even from the owner), OwnerOnly is for
+	// content private between one player and the GM but not party-wide.
 	OwnerOnly bool `json:"owner_only,omitempty"`
 }
 
@@ -458,10 +452,9 @@ type CreateEntityRequest struct {
 
 // UpdateEntityRequest holds the data submitted by the entity edit form.
 //
-// is_private no longer rides on the form. The permissions slide-in card
-// owns that field and writes directly via /permissions. See dispatch
-// C-PERMISSIONS-INLINE-COMPONENT and UpdateEntityInput.IsPrivate
-// (pointer-typed for preserve-on-absence semantics).
+// is_private does not ride on this form: the permissions slide-in card owns
+// that field and writes directly via /permissions. See
+// UpdateEntityInput.IsPrivate.
 type UpdateEntityRequest struct {
 	Name              string     `json:"name" form:"name"`
 	TypeLabel         string     `json:"type_label" form:"type_label"`
@@ -490,34 +483,22 @@ type CreateEntityInput struct {
 
 // UpdateEntityInput is the validated input for updating an entity.
 //
-// This is a PARTIAL update and every field carries its own presence, per
-// the contract ruled on 2026-08-07 (sweep R4): an ABSENT key preserves the
-// stored value, an EXPLICIT null clears it, a present value replaces it.
+// This is a PARTIAL update: an ABSENT field preserves the stored value, an
+// EXPLICIT null clears it, and a present value replaces it. ParentID and
+// TypeLabel use patch.Field for this; a plain string with "" meaning
+// "clear" cannot express "absent", which silently detaches entities on any
+// partial caller that omits the field (e.g. Foundry sync).
 //
-// ParentID and TypeLabel became patch.Field in that sweep. They were plain
-// strings with "" meaning "clear", which a partial caller cannot avoid
-// sending: syncapi's apiUpdateEntityRequest had no parent_id member at all,
-// so EVERY sync push from Foundry silently detached the entity from the
-// Chronicle hierarchy, and every AI-workspace commit-update did the same.
-// Now nil/absent preserves, "" or an explicit null clears, and a value sets.
+// IsPrivate stays a plain *bool: nil means "don't change", non-nil means
+// "set to this value" — the same three-state contract on a NOT NULL
+// column. The permissions widget is the sole authoritative writer of it;
+// other in-app handlers must not send it.
 //
-// IsPrivate stays a plain *bool: nil already means "don't change" and
-// non-nil means "set to this value", which is the same three-state contract
-// on a NOT NULL column (there is no "cleared" is_private). That predates
-// this sweep — C-PERMISSIONS-INLINE-COMPONENT made the in-app form-side
-// handlers stop carrying the field, so the service must preserve on absent;
-// the permissions widget is the sole authoritative writer. What the sweep
-// fixed is the WIRE side: syncapi bound it to a value-typed bool, so a
-// Foundry actor-sync push of {name} alone bound false and PUBLISHED a
-// hidden character entity to every player.
-//
-// ImagePath is the one value-typed field left, and it is inert: the service
-// never reads it. That is its own defect (campaign import believes it is
-// applying image paths through this input and is not) — booked in
-// .ai/todo.md rather than fixed here, because it is a different bug from
-// the class this sweep was ruled on. The cross-plugin structural ratchet in
-// internal/patch/partial_update_contract_test.go carries it as a NAMED
-// exception, so a NEW value-typed field cannot land quietly beside it.
+// TODO(keyxmakerx/Chronicle#613): ImagePath is a value-typed field the
+// service never reads — campaign import believes it applies image paths
+// through this input and does not. internal/patch/partial_update_contract_test.go
+// carries it as a named exception so a new value-typed field can't land
+// quietly beside it.
 type UpdateEntityInput struct {
 	Name              patch.Field[string]
 	TypeLabel         patch.Field[string] // absent = preserve; "" or null = clear.
@@ -548,18 +529,10 @@ func DefaultListOptions() ListOptions {
 // OrderByClause returns a safe SQL ORDER BY clause based on the Sort field.
 //
 // Every branch ends with `e.id ASC`. None of the leading sort columns is
-// unique — an import or a seed gives thousands of entities the same
-// updated_at/created_at, and names collide freely (only
-// uq_entities_campaign_slug is unique) — so without a tiebreaker the order
-// of tied rows is whatever the plan happens to emit. That is not stable
-// across the statements of one LIMIT/OFFSET walk: MariaDB picks a
-// priority-queue sort while LIMIT+OFFSET is small and falls back to a full
-// filesort once it is not, and the two disagree about which tied rows land
-// in a given window. Measured on MariaDB 10.11 over 50,000 entities sharing
-// one updated_at, a page-by-page walk returned 563 entities twice and 563
-// not at all; with the `e.id` tiebreaker the same walk returned each exactly
-// once. The primary key makes each sort a total order, which is what
-// OFFSET paging assumes.
+// unique, so without a tiebreaker MariaDB's plan can disagree between
+// statements of one LIMIT/OFFSET walk about which tied rows land in a given
+// window, causing pages to skip or repeat rows. The primary key makes each
+// sort a total order, which OFFSET paging requires.
 func (o ListOptions) OrderByClause() string {
 	switch o.Sort {
 	case "updated":
@@ -661,13 +634,12 @@ type MergeResult struct {
 }
 
 // ClaimRoster carries the GM owner-overview data for a claimable category
-// dashboard (PC-CLAIM-3). It is assembled by the Index handler ONLY for a
-// Scribe+ viewer of a claimable entity type with the Player Character Claiming
-// addon enabled; it is nil otherwise, in which case the roster panel is not
-// rendered. Characters lists every entity of the category (not just the
-// paginated dashboard page) so the overview is complete; Members is the set of
-// assignable owners for the reassign dropdown; OwnerNames resolves an entity's
-// owner_user_id to a display name.
+// dashboard. It is assembled by the Index handler only for a Scribe+ viewer
+// of a claimable entity type with the Player Character Claiming addon
+// enabled; nil otherwise, in which case the roster panel is not rendered.
+// Characters lists every entity of the category (not just the paginated
+// dashboard page); Members is the set of assignable owners for the reassign
+// dropdown; OwnerNames resolves an entity's owner_user_id to a display name.
 type ClaimRoster struct {
 	Characters []Entity                   // All characters of the category, by name.
 	Members    []campaigns.CampaignMember // Campaign members assignable as owners.

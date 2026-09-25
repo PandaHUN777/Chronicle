@@ -1,21 +1,7 @@
-// import_review_a11y_test.go — lightweight a11y assertions over the
-// review screen's rendered HTML. The goal is keyboard-only + screen-
-// reader operability, not a comprehensive axe-style audit (the
-// audit is a Chronicle-wide effort surfaced in V1-F's status
-// report).
-//
-// Asserts:
-//   - skip-link present (Skip to Submit lands focus on the
-//     submit button without tabbing through every row)
-//   - role attributes (region/listitem/radiogroup/status) populate
-//     the screen-reader tree
-//   - every interactive element on a representative row carries
-//     either an aria-label or a wrapping <label> with text content
-//   - no `onclick=` attributes leak from the templ-rendered output
-//     (Alpine @click compiles to event handlers, not the legacy
-//     `onclick` attribute — failure mode is mistaken raw HTML edits)
-//
-// Per V1-F dispatch §A11y — review screen.
+// import_review_a11y_test.go pins keyboard-only + screen-reader
+// operability of the review screen's rendered HTML: the skip-link,
+// landmark roles, per-control aria-labels, and that Alpine's @click
+// never leaks a legacy onclick= attribute.
 
 package ai_workspace
 
@@ -96,18 +82,12 @@ func TestImportReview_A11y_LandmarkRoles(t *testing.T) {
 
 // TestImportReview_A11y_FormControlsLabelled — every <input> and
 // <select> emitted in a representative row carries either an
-// aria-label or sits inside a <label> with text content.
-//
-// Implementation: count attributes by occurrence rather than strict
-// AST parse — Chronicle doesn't depend on golang.org/x/net/html in
-// the importer test path; substring checks are sufficient for the
-// happy-path coverage this test exists to guarantee.
+// aria-label or sits inside a <label> with text content. Checked by
+// substring rather than an HTML parse (no x/net/html dependency).
 func TestImportReview_A11y_FormControlsLabelled(t *testing.T) {
 	out := renderReview(t, representativeReviewData())
 
-	// Every aria-label expected on bulk + row controls. Failure of
-	// any one means a refactor stripped the label without a
-	// replacement.
+	// Every aria-label expected on bulk + row controls.
 	wantLabels := []string{
 		"Default category to apply",
 		"Default visibility for new entities",
@@ -142,10 +122,8 @@ func TestImportReview_A11y_NoLegacyOnclick(t *testing.T) {
 	}
 }
 
-// TestImportReview_A11y_TagAndSubcategoryChips — V1-F dispatch
-// §Review-screen polish items #2 (tags chips) + #3 (subcategory).
-// Front-matter `tags: [scholar]` + `subcategory: scholar` MUST
-// surface on the row.
+// TestImportReview_A11y_TagAndSubcategoryChips pins that front-matter
+// `tags: [scholar]` + `subcategory: scholar` surface on the row.
 func TestImportReview_A11y_TagAndSubcategoryChips(t *testing.T) {
 	out := renderReview(t, representativeReviewData())
 	// Distinct chip icons + the chip text value. The representative
@@ -164,9 +142,8 @@ func TestImportReview_A11y_TagAndSubcategoryChips(t *testing.T) {
 	}
 }
 
-// TestImportReview_A11y_HxPushUrl — V1-F Bug 2 fix part (a): the
-// commit form must declare hx-push-url so HTMX registers a history
-// entry on submit (browser Back from the result has a destination).
+// TestImportReview_A11y_HxPushUrl pins that the commit form declares
+// hx-push-url, so browser Back from the result has a destination.
 func TestImportReview_A11y_HxPushUrl(t *testing.T) {
 	out := renderReview(t, representativeReviewData())
 	if !strings.Contains(out, `hx-push-url="/campaigns/camp-1/settings?tab=ai-workspace"`) {

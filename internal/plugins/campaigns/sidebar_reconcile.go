@@ -102,12 +102,11 @@ func convertLegacySidebarConfig(raw string) (SidebarConfig, bool) {
 	}
 	// Custom sections and links, reproducing the retired app.templ custom-nav
 	// loop's order EXACTLY: top-level links (Section == "") first, then each
-	// section followed by ITS links (Section == section.ID). The earlier
-	// conversion flattened this — all sections, then all links, dropping the
-	// legacyNavLink.Section grouping — so the boot reconciler back-wrote a
-	// scrambled order permanently (RC-15.3). Position/After were vestigial in
-	// that render (never applied: the loop ranged the stored slices), so stored
-	// order within each group is the faithful reproduction of what shipped.
+	// section followed by ITS links (Section == section.ID) — grouping by
+	// legacyNavLink.Section, not a flat sections-then-links order, is what the
+	// legacy render actually did. Position/After were vestigial in that render
+	// (never applied: the loop ranged the stored slices), so stored order
+	// within each group is the faithful reproduction of what shipped.
 	for _, l := range lc.CustomLinks {
 		if l.Section == "" {
 			items = append(items, legacyLinkItem(l))

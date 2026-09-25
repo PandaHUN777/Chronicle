@@ -1,18 +1,12 @@
 // Tests for PreMigrationCheck — the operator-facing fail-loud guard
-// against C-FMC-5c silently dropping foundry_module_versions rows.
+// against a migration silently dropping foundry_module_versions rows.
 //
-// Three paths pinned:
+// Three paths pinned: table doesn't exist → nil; table exists and is
+// empty → nil (safe to migrate); table exists with rows → error
+// naming the row count and the manual DROP TABLE escape hatch.
 //
-//  1. Table doesn't exist (fresh deploy / migration already ran) → nil.
-//  2. Table exists + empty → nil. The migration is safe to run.
-//  3. Table exists + has rows → ERROR with the operator-actionable
-//     four-clause message including the row count + the manual
-//     DROP TABLE escape hatch.
-//
-// Uses a small in-package fake (fakeChecker) rather than sqlmock so
-// the test doesn't pull a new dep into go.mod just for this one
-// check. The fakeChecker satisfies the unexported preMigrationChecker
-// interface that preMigrationCheck consumes.
+// Uses a small in-package fake (fakeChecker) satisfying the
+// unexported preMigrationChecker interface, rather than sqlmock.
 package foundry_vtt
 
 import (
@@ -59,13 +53,10 @@ func TestPreMigrationCheck_TableExistsEmpty(t *testing.T) {
 	}
 }
 
-// TestPreMigrationCheck_TableHasRows — the operator-actionable
-// failure path. Pre-check refuses to let startup proceed; the error
-// message must include the row count and the manual DROP TABLE
-// escape hatch so the operator knows exactly what to do.
-//
-// Critical contract: this test failing means the C-FMC-5c migration
-// could silently destroy operator data.
+// TestPreMigrationCheck_TableHasRows is the operator-actionable
+// failure path: pre-check refuses to let startup proceed, and the
+// error must include the row count and the manual DROP TABLE escape
+// hatch. Failing here means the migration could silently destroy data.
 func TestPreMigrationCheck_TableHasRows(t *testing.T) {
 	err := preMigrationCheck(context.Background(), fakeChecker{exists: true, count: 3})
 	if err == nil {

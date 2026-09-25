@@ -9,17 +9,12 @@ import (
 // Used by the admin's "notify older-version campaigns" action to filter
 // campaigns whose pin is older than a given target.
 //
-// Ported from foundry_modules/semver.go (deleted in C-FMC-5c). Handles
-// the Foundry module version dialect:
-//
-//   - Optional leading "v" (Foundry release tags vary on this)
-//   - 3-segment dotted decimals: "0.1.5", "1.10.0"
-//   - Optional pre-release after "-": "0.2.0-beta.1" sorts < "0.2.0"
-//
-// Non-numeric segments compare lexicographically. Missing segments
-// are treated as 0 ("1.0" == "1.0.0"). Permissive on purpose —
-// Chronicle isn't enforcing strict semver, just ordering versions
-// the way operators expect.
+// Handles the Foundry module version dialect: optional leading "v",
+// 3-segment dotted decimals ("0.1.5", "1.10.0"), and an optional
+// pre-release after "-" ("0.2.0-beta.1" sorts < "0.2.0"). Non-numeric
+// segments compare lexicographically; missing segments are treated as
+// 0 ("1.0" == "1.0.0"). Permissive on purpose — this orders versions
+// the way operators expect, not strict semver.
 func semverLess(a, b string) bool {
 	pa, pra := splitVersion(a)
 	pb, prb := splitVersion(b)

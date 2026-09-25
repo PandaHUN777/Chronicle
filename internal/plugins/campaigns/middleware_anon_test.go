@@ -1,8 +1,8 @@
 package campaigns
 
-// middleware_anon_test.go — C-PERM-ANON-IDENTITY. Pins that AllowPublicCampaignAccess
-// gives non-member viewers the public identity (RoleNone, below RolePlayer)
-// rather than RolePlayer, so Player-only / Player-role-tag-granted content never
+// middleware_anon_test.go pins that AllowPublicCampaignAccess gives
+// non-member viewers the public identity (RoleNone, below RolePlayer) rather
+// than RolePlayer, so Player-only / Player-role-tag-granted content never
 // leaks to the public. Real members keep their actual role.
 
 import (

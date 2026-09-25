@@ -1,26 +1,6 @@
-// C-FMC-DRIFT-GUARD: drift tests pinning errors.go ↔ .ai.md ↔
-// error-catalog.json alignment.
-//
-// Four checks:
-//
-//   1. TestErrorCatalog_NoDriftFromConstructors — every Err*
-//      constructor in errors.go has a row in .ai.md's catalog.
-//   2. TestErrorCatalog_NoOrphanedRows — every row in .ai.md's
-//      catalog has a backing constructor in errors.go.
-//   3. TestErrorCatalog_CategoriesMatchConstructorBodies — the
-//      Category column in .ai.md matches what the constructor's
-//      &Error{...} body actually sets.
-//   4. TestErrorCatalog_JSONArtifactMatchesSource — the committed
-//      error-catalog.json equals what BuildJSONArtifact produces
-//      from the live errors.go.
-//
-// If any test fails, the failure message tells the operator the
-// exact file to fix + the regeneration command. The drift guard
-// IS the verification — reviewers don't need to remember to
-// check three files manually.
-//
-// Adding a new error code workflow: see .ai.md "Adding a new
-// error code" runbook.
+// Drift tests pinning errors.go, .ai.md's error catalog, and
+// error-catalog.json against each other. See .ai.md "Adding a new
+// error code" for the workflow.
 package foundry_vtt
 
 import (
@@ -173,12 +153,8 @@ func TestErrorCatalog_JSONArtifactMatchesSource(t *testing.T) {
 }
 
 // TestParseConstructors_RecognizesWildcardErrInternal pins the
-// special-case behavior: ErrInternal's Code is a parameter, not a
-// literal. The parser must recognize this and emit Wildcard=true
-// rather than failing with "Code value should be a string literal".
-//
-// This is a focused unit test on the parser itself; the other
-// tests are integration-level.
+// special case: ErrInternal's Code is a parameter, not a literal, so
+// the parser must emit Wildcard=true rather than fail.
 func TestParseConstructors_RecognizesWildcardErrInternal(t *testing.T) {
 	constructors, err := ParseConstructors(loadErrorsSource(t), "errors.go")
 	if err != nil {

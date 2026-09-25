@@ -53,8 +53,7 @@ type SyncAPIRepository interface {
 	GetStats(ctx context.Context, since time.Time) (*APIStats, error)
 	GetCampaignStats(ctx context.Context, campaignID string, since time.Time) (*APIStats, error)
 
-	// Calendar date beacon (C-SYNC-DATE-BEACON, extended by
-	// C-SYNC-APPLIED-BEACON).
+	// Calendar date beacon.
 	GetCalendarDateBeacon(ctx context.Context, campaignID string) (*CalendarDateBeacon, error)
 	UpsertCalendarDateBeacon(ctx context.Context, beacon *CalendarDateBeacon) error
 	ConfirmCalendarDateBeacon(ctx context.Context, campaignID string, year, month, day int, appliedAt time.Time) error
@@ -739,15 +738,15 @@ func buildLogFilter(f RequestLogFilter) (string, []any) {
 	return where, args
 }
 
-// --- Calendar Date Beacon (C-SYNC-DATE-BEACON, extended by C-SYNC-APPLIED-BEACON) ---
+// --- Calendar Date Beacon ---
 
 // GetCalendarDateBeacon returns the campaign's served-date beacon, or nil
 // (no error) if none has been recorded yet. Also returns the applied-date
-// fields (C-SYNC-APPLIED-BEACON) when a confirm has landed; nil
-// AppliedAt means "never confirmed", independent of whether the served
-// fields (Year/Month/Day/ServedAt) hold a real value — see
-// ConfirmCalendarDateBeacon's doc comment for the create-before-any-GET
-// case where a row exists with served fields still at their 0/0 sentinel.
+// fields when a confirm has landed; nil AppliedAt means "never confirmed",
+// independent of whether the served fields (Year/Month/Day/ServedAt) hold
+// a real value — see ConfirmCalendarDateBeacon's doc comment for the
+// create-before-any-GET case where a row exists with served fields still
+// at their 0/0 sentinel.
 func (r *syncAPIRepository) GetCalendarDateBeacon(ctx context.Context, campaignID string) (*CalendarDateBeacon, error) {
 	b := CalendarDateBeacon{CampaignID: campaignID}
 	var appliedYear, appliedMonth, appliedDay sql.NullInt64
@@ -803,18 +802,14 @@ func (r *syncAPIRepository) UpsertCalendarDateBeacon(ctx context.Context, beacon
 // the update path — last_served_* (and its own row, if one exists from a
 // prior GET) are left exactly as RecordCalendarDateBeacon last wrote them.
 //
-// The insert branch (no beacon row yet for this campaign — a confirm may
-// legitimately arrive before any served-date GET, e.g. a fresh module
-// install that applies its first date without Chronicle ever having
-// served one) must still supply a value for the pre-existing NOT NULL
-// last_served_year/month/day/last_served_at columns from #548's original
-// migration (005). It uses year/month/day = 0 — the same "unset" sentinel
-// calendar_api_handler.go's defaultIfZero already relies on elsewhere in
-// this codebase, since a real served date's month/day is always 1-31 —
-// and last_served_at = appliedAt (a valid, non-zero timestamp, so this
-// never depends on NO_ZERO_DATE sql_mode behavior). Callers reading the
-// served half (e.g. GetCalendarSyncBeacon) MUST treat Month == 0 as "never
-// served" rather than trusting Year/Month/Day/ServedAt blindly.
+// The insert branch (no beacon row yet — a confirm may legitimately arrive
+// before any served-date GET, e.g. a fresh module install) must still
+// supply a value for the NOT NULL last_served_year/month/day/last_served_at
+// columns. It uses year/month/day = 0 as an "unset" sentinel, since a real
+// served date's month/day is always 1-31 — and last_served_at = appliedAt
+// (a valid, non-zero timestamp). Callers reading the served half (e.g.
+// GetCalendarSyncBeacon) MUST treat Month == 0 as "never served" rather
+// than trusting Year/Month/Day/ServedAt blindly.
 func (r *syncAPIRepository) ConfirmCalendarDateBeacon(ctx context.Context, campaignID string, year, month, day int, appliedAt time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO sync_calendar_date_beacons

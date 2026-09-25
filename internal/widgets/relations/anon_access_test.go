@@ -1,12 +1,11 @@
-// anon_access_test.go — C-PUBLIC-VIEW-FIX-R2 content-level coverage.
-//
-// Drives real anonymous HTTP requests through the public-campaign middleware
-// chain into ListRelations, asserting: (1) the source-entity gate — a private
-// source entity's relations are never served to anon, and a foreign-campaign
-// entity ID is rejected (IDOR); (2) target filtering — a relation whose TARGET
-// the viewer cannot see is dropped (its name/slug are the leak) while visible
-// targets remain. GraphAPI node filtering is covered at the service level in
-// service_test.go (TestGetFilteredGraphData_HidesPrivateNodes).
+// anon_access_test.go drives real anonymous HTTP requests through the
+// public-campaign middleware chain into ListRelations, asserting: (1) the
+// source-entity gate — a private source entity's relations are never served
+// to anon, and a foreign-campaign entity ID is rejected (IDOR); (2) target
+// filtering — a relation whose target the viewer cannot see is dropped (its
+// name/slug are the leak) while visible targets remain. GraphAPI node
+// filtering is covered at the service level in service_test.go
+// (TestGetFilteredGraphData_HidesPrivateNodes).
 package relations
 
 import (
@@ -131,11 +130,11 @@ func TestListRelations_AnonTargetFiltering(t *testing.T) {
 	}
 }
 
-// TestListRelations_NilGateFailsClosed pins the fail-closed contract (currently
-// unexercised): a handler wired WITHOUT its EntityGate must never serve
-// relations. The missing-gate guard returns apperror.NewInternal → 5xx, not a
-// 200 leak, so a wiring mistake fails loud instead of silently exposing every
-// entity's relation graph. (C-ENTITY-VIS-PARITY 4b)
+// TestListRelations_NilGateFailsClosed pins the fail-closed contract: a
+// handler wired without its EntityGate must never serve relations. The
+// missing-gate guard returns apperror.NewInternal → 5xx, not a 200 leak, so a
+// wiring mistake fails loud instead of silently exposing every entity's
+// relation graph.
 func TestListRelations_NilGateFailsClosed(t *testing.T) {
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/campaigns/camp-1/entities/any-ent/relations", nil)

@@ -1,9 +1,8 @@
-// registry.go — the dynamic widget-type registry (C-WIDGET-BINDING-P1-SPINE).
-// Widget types register their behavior here DECLARATIVELY instead of being
-// hardcoded into each block's renderer. The registry is the app-code guard for
-// the widget_type namespace (a registered slug == a valid widget_type value),
-// preserving modularity: a new widget type plugs in by registering, with no
-// schema change.
+// The dynamic widget-type registry. Widget types register their behavior
+// here declaratively instead of being hardcoded into each block's renderer.
+// The registry is the app-code guard for the widget_type namespace (a
+// registered slug == a valid widget_type value), so a new widget type plugs
+// in by registering, with no schema change.
 package widgetbindings
 
 import (
@@ -28,24 +27,22 @@ type InstanceRef struct {
 	Color string `json:"color,omitempty"`
 }
 
-// CreateInput is the generic payload for WidgetType.CreateInstance
-// (C-WIDGET-BINDING-P4a). The binding HTTP handler collects form fields into
-// it (so the handler stays widget-type-agnostic) and each WidgetType
-// type-asserts it and reads what it needs — calendar uses Name; Raw carries
-// any extra fields a future type wants without changing this boundary.
+// CreateInput is the generic payload for WidgetType.CreateInstance. The
+// binding HTTP handler collects form fields into it (so the handler stays
+// widget-type-agnostic) and each WidgetType type-asserts it and reads what
+// it needs; Raw carries any extra fields a type wants without changing this
+// boundary.
 type CreateInput struct {
 	Name string
 	Raw  map[string]string
 }
 
 // BlockRenderContext is the seam that lets the binding handler re-render a
-// widget's entity block WITHOUT importing the widget plugin
-// (C-WIDGET-BINDING-P4b). Dependency points the safe way: widget plugins
-// depend on widgetbindings, so widgetbindings delegates rendering back through
-// the registry via WidgetType.RenderBlock. It is built from primitives plus the
-// already-imported campaigns type — no widget-plugin import. The Resolution is
-// pre-computed by the caller (the block closure on first render; the handler on
-// a bind/unbind) so RenderBlock is a pure "render this resolved instance".
+// widget's entity block without importing the widget plugin: widget plugins
+// depend on widgetbindings, so widgetbindings delegates rendering back
+// through the registry via WidgetType.RenderBlock. The Resolution is
+// pre-computed by the caller, so RenderBlock is a pure "render this
+// resolved instance".
 type BlockRenderContext struct {
 	CC         *campaigns.CampaignContext
 	HostID     string // the entity id (host)
@@ -56,13 +53,8 @@ type BlockRenderContext struct {
 }
 
 // WidgetType declares one widget type's behavior to the framework. Owning
-// plugins (calendar in P1; maps/timeline later) implement it and register an
-// instance at startup; the binding Service drives resolution through it without
-// importing the plugin.
-//
-// P1 uses InstanceExists + DefaultInstance (+ Slug). ListInstances and
-// CreateInstance are part of the contract for the P4 picker and may return
-// ErrNotImplemented until then.
+// plugins implement it and register an instance at startup; the binding
+// Service drives resolution through it without importing the plugin.
 type WidgetType interface {
 	// Slug is the persisted widget_type discriminator (e.g. "calendar").
 	Slug() string
@@ -84,12 +76,10 @@ type WidgetType interface {
 	// CreateInstance powers the P4 "create new" flow.
 	CreateInstance(ctx context.Context, campaignID string, input any) (instanceID string, err error)
 
-	// RenderBlock re-renders this widget's entity block for the resolved host
-	// (C-WIDGET-BINDING-P4b). It lets a bind/unbind return a swappable fragment
-	// instead of forcing a full page reload — the widget plugin owns the block
-	// template, the binding handler just asks the registry to render it. Wrap the
-	// output in BlockHost so the rendered fragment carries the stable swap-target
-	// id (initial render and post-mutation swap are then byte-identical).
+	// RenderBlock re-renders this widget's entity block for the resolved
+	// host, letting a bind/unbind return a swappable fragment instead of
+	// forcing a full page reload. Wrap the output in BlockHost so the
+	// rendered fragment carries the stable swap-target id.
 	RenderBlock(ctx context.Context, rc BlockRenderContext) templ.Component
 }
 

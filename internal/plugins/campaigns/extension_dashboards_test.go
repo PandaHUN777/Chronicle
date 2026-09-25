@@ -1,13 +1,9 @@
-// extension_dashboards_test.go — C-EXT-HUB Phase 2 registry +
-// dispatcher tests.
-//
-// Covers the factory/registry contract + the dispatcher's three
-// resolution branches (unknown slug → missing, disabled → disabled
-// placeholder, enabled + registered → registered Content). The
-// fragment-route handler is exercised at the templ-render level via
-// the in-memory render harness; the route binding itself is asserted
-// by the wire-contract conformance test (already pinned in
-// internal/wire/).
+// extension_dashboards_test.go covers the extension dashboard
+// factory/registry contract and the dispatcher's three resolution branches
+// (unknown slug -> missing, disabled -> disabled placeholder, enabled +
+// registered -> registered content), exercised at the templ-render level.
+// Route binding itself is covered by the wire-contract conformance test in
+// internal/wire/.
 
 package campaigns
 
@@ -188,21 +184,14 @@ func TestSetExtensionEnableChecker_StoresAndIsCalled(t *testing.T) {
 	}
 }
 
-// TestExtensionEnableChecker_ErrorFailsOpen pins the audit §1.4
-// safety stance: a transient enable-check error must NOT blank the
-// operator's view. The fragment handler logs + treats as enabled.
-// Exercised via a tiny helper that re-implements the fragment's
-// enabled-resolution branch — the handler itself is light Echo glue
-// covered by the wire-contract test.
+// TestExtensionEnableChecker_ErrorFailsOpen pins that a transient
+// enable-check error must not blank the operator's view: the fragment
+// handler logs and treats it as enabled (fail-open).
 func TestExtensionEnableChecker_ErrorFailsOpen(t *testing.T) {
 	stub := stubChecker{enabled: false, err: errors.New("store unavailable")}
 	enabled, _ := stub.IsEnabledForCampaign(context.Background(), "c-1", "calendar")
-	// Direct check returns false + error; the handler's branch
-	// inverts to enabled=true on err != nil — pinning that fail-open
-	// contract via the comment + the handler implementation. The
-	// stub's raw return is exposed here so a refactor that swallows
-	// the err is loudly caught (the test asserts the handler's
-	// fail-open behavior in a focused unit test below).
+	// Direct check returns false + error; the handler's branch inverts to
+	// enabled=true on err != nil (asserted in a focused unit test below).
 	if !enabled && stub.err == nil {
 		t.Errorf("stub bug: enabled=false without an err")
 	}

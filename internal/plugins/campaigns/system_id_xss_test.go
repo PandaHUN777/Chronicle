@@ -1,11 +1,8 @@
-// system_id_xss_test.go — regression pin for C-SEC-XSS-JSATTR-SWEEP-R1 sink 3:
-// a campaign's SystemID flowed verbatim into the Game System selector's Alpine
-// `x-data` expression (`_savedSystemId: '%s'`). SystemID accepts an
-// owner-supplied `custom:<url>` value with no server-side validation, so the
-// remainder is free text that could break out of the JS string literal. This is
-// owner-only to set and owner-only to view, so it is self-XSS (LOW) — but the
-// sink is hardened anyway with jsEsc (the dispatch deliberately did NOT add new
-// `custom:`-remainder validation machinery for a self-XSS).
+// system_id_xss_test.go pins that a campaign's SystemID is jsEsc-escaped
+// before flowing into the Game System selector's Alpine `x-data` expression
+// (`_savedSystemId: '%s'`). SystemID accepts an owner-supplied
+// `custom:<url>` value with no server-side validation, so the remainder is
+// free text that could otherwise break out of the JS string literal.
 //
 // See parent_selector_xss_test.go for why the rendered discriminator is the
 // backslash: fixed renders `custom:\&#39;` (escaped quote), vulnerable renders

@@ -85,14 +85,11 @@ func TestBuildWeekOverlay_CrossZone(t *testing.T) {
 	}
 }
 
-// C-SCHED-OUT-THIS-WEEK item 3 pin ("Overlay truth"): the quick action writes
-// a SINGLE exception row spanning the whole day (0–1440, unavailable) on a
-// date that otherwise has an available recurring block. effectiveBlocks
-// (availability_overlay.go) must treat that one row as the date's complete
-// effective set (replace-day semantics) and the AvailUnavailable branch must
-// punch a hole for the WHOLE day, not just the recurring block's own hours —
-// so the member reads as unavailable across every hour, exactly as "out this
-// week" promises the DM overlay will reflect.
+// A single full-day exception row (0-1440, unavailable) must replace the
+// date's whole effective set: effectiveBlocks (availability_overlay.go)
+// treats it as the day's complete set (replace-day semantics), and the
+// AvailUnavailable branch must punch a hole for the whole day, not just the
+// recurring block's own hours.
 func TestBuildWeekOverlay_FullDayUnavailableExceptionHidesWholeDay(t *testing.T) {
 	ny := mustLoc(t, "America/New_York")
 	members := []overlayMemberInput{{UserID: "u1", Name: "Alex"}}
@@ -114,12 +111,11 @@ func TestBuildWeekOverlay_FullDayUnavailableExceptionHidesWholeDay(t *testing.T)
 	}
 }
 
-// C-SCHED-P2 0a pin — the widened projection window (-2..+8) must capture a
-// block from a >24h zone spread. Reproducer from the #530 gate: a
-// Pacific/Kiritimati (UTC+14) member's recurring Tuesday 00:00–01:00 block,
-// viewed from Pacific/Pago_Pago (UTC-11), lands on the visible week's SUNDAY
-// 23:00 — sourced from real-date offset +8 (2026-07-21, a Tuesday), a column
-// the old -1..+7 loop never visited. This test fails on the old window.
+// The widened projection window (-2..+8) must capture a block from a >24h
+// zone spread: a Pacific/Kiritimati (UTC+14) member's recurring Tuesday
+// 00:00-01:00 block, viewed from Pacific/Pago_Pago (UTC-11), lands on the
+// visible week's Sunday 23:00, sourced from real-date offset +8, a column an
+// -1..+7 window would never visit (#530).
 func TestBuildWeekOverlay_WideZoneSpread_Kiritimati_PagoPago(t *testing.T) {
 	pago := mustLoc(t, "Pacific/Pago_Pago")
 	members := []overlayMemberInput{{UserID: "kir", Name: "Teuru"}}

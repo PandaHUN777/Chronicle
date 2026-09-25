@@ -95,12 +95,10 @@ type bestiaryEntityCreatorAdapter struct {
 // CreateFromStatblock creates a new entity in a campaign from a bestiary statblock.
 // Uses entity type ID 0 (default) since the real type depends on system configuration.
 //
-// Visibility comes from the campaign's DefaultVisibility setting. The
+// Visibility comes from the campaign's DefaultVisibility setting: the
 // bestiary's EntityCreator interface has no is_private parameter and the
-// import UI has no per-import visibility control, so every import is the
-// ABSENT case: the campaign default is the only input there is. This was not
-// set at all until now, so an imported boss statblock landed visible to the
-// whole party in a campaign the DM had set to "DM Only".
+// import UI has no per-import visibility control, so the campaign default is
+// the only input there is.
 func (a *bestiaryEntityCreatorAdapter) CreateFromStatblock(ctx context.Context, campaignID, userID, name string, statblock json.RawMessage) (string, error) {
 	input := entities.CreateEntityInput{
 		Name:       name,
@@ -328,11 +326,11 @@ type addonListerAdapter struct {
 	svc addons.AddonService
 }
 
-// ListForPluginHub returns all addons formatted for the plugin hub page
-// and the C-EXT-HUB top-level Extensions hub. HasDashboard /
-// HasEntitySetup are sourced from the campaigns plugin's slug-keyed
-// capability tables so the hub catalog carries a single source of
-// truth (see internal/plugins/campaigns/extensions_hub.go).
+// ListForPluginHub returns all addons formatted for the plugin hub page and
+// the top-level Extensions hub. HasDashboard / HasEntitySetup are sourced
+// from the campaigns plugin's slug-keyed capability tables (see
+// internal/plugins/campaigns/extensions_hub.go) so the hub catalog carries a
+// single source of truth.
 func (a *addonListerAdapter) ListForPluginHub(ctx context.Context, campaignID string) ([]campaigns.PluginHubAddon, error) {
 	addonList, err := a.svc.ListForCampaign(ctx, campaignID)
 	if err != nil {
@@ -417,7 +415,7 @@ func (a *backdropUploaderAdapter) UploadBackdrop(ctx context.Context, campaignID
 
 // entityTagFetcherAdapter wraps tags.TagService to implement the
 // entities.EntityTagFetcher interface for batch tag loading in list views.
-// grantSvc backs the tag-grant glance methods (C-PERM-W1-TAG-GRANTS).
+// grantSvc backs the tag-grant glance methods.
 type entityTagFetcherAdapter struct {
 	svc      tags.TagService
 	grantSvc tags.TagGrantService
@@ -460,7 +458,7 @@ func (a *entityTagFetcherAdapter) SetEntityTags(ctx context.Context, entityID st
 }
 
 // GetEntityTagGrants resolves the tag-derived visibility grants on one entity
-// for its effective-visibility glance (C-PERM-W1-TAG-GRANTS).
+// for its effective-visibility glance.
 func (a *entityTagFetcherAdapter) GetEntityTagGrants(ctx context.Context, campaignID, entityID string) ([]entities.EntityTagGrantInfo, error) {
 	if a.grantSvc == nil {
 		return nil, nil
@@ -513,26 +511,17 @@ func (a *entityVisibilityFilterAdapter) FilterViewableEntityIDs(ctx context.Cont
 	return a.svc.FilterViewableEntityIDs(ctx, campaignID, entityIDs, role, userID)
 }
 
-// CALV5-PLACEHOLDER: ten cross-plugin bridge adapters stood here, wiring the
-// calendar to the rest of Chronicle in both directions:
-//
-//	toward the calendar — timelineForCalendarAdapter, calendarSyncLinkAdapter,
-//	calendarEntityCreatorAdapter, calendarRSVPNotifierAdapter,
-//	calendarAvailabilityAdapter (member zones, exception dates, offered
-//	windows), calendarBenchScheduleAdapter, calendarOwnWeekAdapter;
-//
-//	away from it — calendarListerAdapter, calendarEventListerAdapter and
-//	calendarEraListerAdapter, which fed timeline its CalendarRef /
-//	CalendarEventRef / CalendarEra.
-//
-// The outward three are simply not wired now; timeline already treats those
-// interfaces as optional and nil-guards them (service.go's calEras returns
-// nil, nil when unset), which is why timeline still builds and runs.
-//
-// V5 re-implements these against its own service. NOTE the shape they had:
-// every one of them was a NARROW interface owned by the CONSUMING plugin, not
-// a shared type — that is Chronicle rule 8 working, and it is the reason this
-// deletion was surgical rather than a cascade.
+// CALV5-PLACEHOLDER: V5 must re-implement ten cross-plugin bridge adapters
+// against its own service — toward the calendar: timelineForCalendarAdapter,
+// calendarSyncLinkAdapter, calendarEntityCreatorAdapter,
+// calendarRSVPNotifierAdapter, calendarAvailabilityAdapter (member zones,
+// exception dates, offered windows), calendarBenchScheduleAdapter,
+// calendarOwnWeekAdapter; away from it: calendarListerAdapter,
+// calendarEventListerAdapter, calendarEraListerAdapter (fed timeline its
+// CalendarRef/CalendarEventRef/CalendarEra — timeline nil-guards these as
+// optional, so it still builds and runs without them). Each was a narrow
+// interface owned by the consuming plugin, not a shared type — keep that
+// shape so the rebuild stays surgical rather than a cascade.
 type wsSessionAuthAdapter struct {
 	svc auth.AuthService
 }
@@ -576,18 +565,15 @@ func (a *wsCampaignRoleAdapter) IsUserDmGranted(ctx context.Context, campaignID,
 	return a.svc.IsUserDmGranted(ctx, campaignID, userID)
 }
 
-// CALV5-PLACEHOLDER: calendarEventPublisherAdapter stood here — the bridge
-// from the calendar's PublishCalendarEvent to the websocket bus. Deleted with
-// the plugin; nothing publishes calendar events now.
+// CALV5-PLACEHOLDER: V5 must rebuild calendarEventPublisherAdapter — the
+// bridge from the calendar's PublishCalendarEvent to the websocket bus.
+// Nothing publishes calendar events now.
 //
-// READ THIS BEFORE REBUILDING IT (V5). Its failure mode is silent and it has
-// already happened once: the switch ended in `default: return`, so an emitter
-// whose event type had no case here published into nothing. Two live emitters
-// — worldstate SetWorldState and SetWeatherZones — were dead letters for
-// months: the GM's meteors, eclipses and weather-zone edits never once reached
-// a client, and nothing anywhere reported it. The Foundry module's own docs
-// carried "blocked on Chronicle" for a gap that had been fixed 26 days
-// earlier, because nobody could see the wire.
+// This adapter's failure mode is silent: a switch ending in `default: return`
+// means an emitter whose event type has no case here publishes into nothing,
+// with nothing reporting the drop. Rebuild it WITH a test that walks every
+// emitter's event type and asserts a case exists — a publisher without that
+// test is how this bug returns.
 //
 // The mapping it carried, so V5 has the checklist rather than rediscovering it:
 //   "event.created"                            -> ws.MsgCalendarEventCreated
@@ -607,10 +593,6 @@ func (a *wsCampaignRoleAdapter) IsUserDmGranted(ctx context.Context, campaignID,
 //   (calendar.worldstate.changed also had a DM-gated twin that set
 //   RequiresDM = true — the dm_only worldstate payload must never reach a
 //   player's socket.)
-//
-// Rebuild it WITH a test that walks every emitter's event type and asserts a
-// case exists — routes_calendar_ws_test.go was that test, and it is deleted
-// with the adapter. A publisher without that test is how this bug returns.
 
 // entityEventPublisherAdapter bridges the websocket.EventBus to the
 // entities.EntityEventPublisher interface.
@@ -724,9 +706,8 @@ func (a *sidebarAutoAdderAdapter) AddEntityTypeToSidebar(ctx context.Context, ca
 }
 
 // defaultSidebarAddons are the addon shortcuts the default sidebar shows in its
-// top nav (each rendered only when its addon is enabled). They mirror the
-// pre-C-NAV-V3 legacy hardcoded links (Journal + Calendar) so a never-customized
-// campaign renders the same top nav after the legacy fallback path was removed.
+// top nav (each rendered only when its addon is enabled): Journal + Calendar,
+// so a never-customized campaign renders that same top nav.
 var defaultSidebarAddons = []campaigns.SidebarItem{
 	{Type: "addon", Slug: "notes", Label: "Journal", Icon: "fa-book-open", Visible: true},
 	{Type: "addon", Slug: "calendar", Label: "Calendar", Icon: "fa-calendar-days", Visible: true},
@@ -865,11 +846,10 @@ type mapEventPublisherAdapter struct {
 // emit funnels the same way — one place to audit, not five.
 //
 // rules is nil for source kinds that don't carry per-user overrides
-// (tokens, fog); those pass dmOnly with rules=nil, same as before S1.
+// (tokens, fog); those pass dmOnly with rules=nil.
 // The hub (internal/websocket/hub.go) is what actually enforces this per
-// recipient — this method only COMPUTES the audience, per ADR-055 rule 3
-// applied to this channel: broadcast to everyone and hope the client
-// hides it, or send a redacted stub, are both the thing rule 3 forbids.
+// recipient — this method only computes the audience, per ADR-055 rule 3:
+// broadcasting to everyone and hoping the client hides it is forbidden.
 func (a *mapEventPublisherAdapter) publishWithAudience(msgType ws.MessageType, campaignID, resourceID string, payload any, dmOnly bool, rules *maps.VisibilityRules) {
 	msg := ws.NewMessage(msgType, campaignID, resourceID, payload)
 	msg.RequiresDM = dmOnly
@@ -921,13 +901,9 @@ func (a *mapEventPublisherAdapter) PublishTokenEvent(eventType string, campaignI
 }
 
 // PublishTokenPositionEvent broadcasts a token position update via WebSocket.
-// The fast-drag path doesn't carry the source token, so we conservatively
-// treat position updates as everyone-visible — a hidden token's position
-// is leaked to non-GMs only as percentage coordinates with no other
-// metadata, which is the same shape clients already filter on receipt.
-// To plug that gap fully, the service would need to thread is_hidden
-// through PublishTokenPositionEvent; leave a TODO to revisit when the
-// drag path can afford the extra fetch.
+// The fast-drag path doesn't carry the source token, so it can't apply the
+// token's visibility the way PublishTokenEvent does.
+// TODO(keyxmakerx/Cordinator#168): carry the token's visibility on this path.
 func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID string, x, y float64) {
 	if campaignID == "" {
 		return
@@ -941,13 +917,9 @@ func (a *mapEventPublisherAdapter) PublishTokenPositionEvent(campaignID, tokenID
 // PublishLayerEvent broadcasts a map layer event via WebSocket. Layers
 // don't carry a visibility flag — they're z-order containers — so layer
 // events are everyone-visible. Hiding individual drawings/tokens on a
-// layer happens via their own visibility/is_hidden gates.
-//
-// Before C-MAP-EVT this adapter flattened all lifecycle events to
-// MsgLayerUpdated, which forced Foundry to refetch the full layer list
-// just to find out what changed. Now the eventType drives the message
-// type so clients can discriminate create / update / delete and apply
-// a targeted local mutation.
+// layer happens via their own visibility/is_hidden gates. eventType drives
+// the message type so clients can discriminate create/update/delete and
+// apply a targeted local mutation instead of refetching the full layer list.
 func (a *mapEventPublisherAdapter) PublishLayerEvent(eventType string, campaignID string, layer *maps.Layer) {
 	if campaignID == "" {
 		return
@@ -969,12 +941,9 @@ func (a *mapEventPublisherAdapter) PublishLayerEvent(eventType string, campaignI
 // PublishFogEvent broadcasts a fog-of-war event via WebSocket. All fog
 // events are GM-only — non-GM clients should never learn the shape of
 // the fog mask, since that'd reveal what they haven't explored yet.
-//
-// Before C-MAP-EVT this adapter flattened all lifecycle events to
-// MsgFogUpdated and squeezed the actual event name into the payload.
-// Promoting eventType to the message type lets clients dispatch
-// without parsing the payload first; the redundant "event" key in the
-// payload stays for backwards compatibility with the existing handler.
+// eventType drives the message type so clients can dispatch without
+// parsing the payload; the redundant "event" key in the payload stays
+// for backwards compatibility with the existing handler.
 func (a *mapEventPublisherAdapter) PublishFogEvent(eventType string, campaignID, mapID string, region *maps.FogRegion) {
 	if campaignID == "" {
 		return
@@ -1019,11 +988,9 @@ func (a *mapEventPublisherAdapter) PublishMarkerEvent(eventType string, campaign
 	a.publishWithAudience(msgType, campaignID, marker.ID, marker, marker.IsDMOnly(), maps.ParseVisibilityRules(marker.VisibilityRules))
 }
 
-// (foundryVTTBannerAdapter + GetFoundryModuleBanner removed in NW-2.2
-// Chunk D2-cleanup. The campaigns show page now lazy-loads the banner
-// via foundry_vtt's /foundry-vtt/show-banner-fragment route, which
-// owns the adapter shape internally. Per
-// cordinator/reports/chronicle/2026-05-26-c-d2-cleanup-verification.md.)
+// (The campaigns show page lazy-loads the Foundry banner via
+// foundry_vtt's /foundry-vtt/show-banner-fragment route, which owns
+// the adapter shape internally.)
 
 // foundryCampaignSettingsAdapter wraps campaigns.CampaignService to
 // implement foundry_vtt.CampaignSettingsAdapter without creating
@@ -1043,16 +1010,14 @@ func (a *foundryCampaignSettingsAdapter) GetFoundryModulePin(ctx context.Context
 	return a.svc.GetFoundryModulePin(ctx, campaignID)
 }
 
-// SetFoundryModulePinMode delegates to the campaigns service. Added
-// in C-FMC-ADMIN-UX-AUDIT Chunk 1; consumed by Chunk 3's owner-side
-// UI (the new always-promote checkbox).
+// SetFoundryModulePinMode delegates to the campaigns service, consumed by
+// the owner-side UI's always-promote checkbox.
 func (a *foundryCampaignSettingsAdapter) SetFoundryModulePinMode(ctx context.Context, campaignID, mode string) error {
 	return a.svc.SetFoundryModulePinMode(ctx, campaignID, mode)
 }
 
-// GetFoundryModulePinMode delegates to the campaigns service. Added
-// in C-FMC-ADMIN-UX-AUDIT Chunk 1; consumed by OwnerTabData
-// population so the owner-side templ (Chunk 3) renders the right
+// GetFoundryModulePinMode delegates to the campaigns service, consumed by
+// OwnerTabData population so the owner-side templ renders the right
 // initial state.
 func (a *foundryCampaignSettingsAdapter) GetFoundryModulePinMode(ctx context.Context, campaignID string) (string, error) {
 	return a.svc.GetFoundryModulePinMode(ctx, campaignID)
@@ -1288,10 +1253,8 @@ func (a *entityTypeListerForGraphAdapter) ListEntityTypesForGraph(ctx context.Co
 // seams the post / relation / tag widgets consume (posts.EntityGate,
 // tags.EntityGate, relations.EntityGate / relations.EntityViewFilter). It lets
 // those widgets honor entity visibility + campaign binding without importing the
-// entities repo directly (plugin-isolation, rule 8). Introduced by
-// cordinator/dispatches/chronicle/C-PUBLIC-VIEW-FIX-R2.md to close the anon
-// private-entity leaks + cross-campaign IDOR. Cites: 2026-05-21-core-tenets §T-B1,
-// §T-B2.
+// entities repo directly (plugin isolation), closing anonymous private-entity
+// leaks and cross-campaign IDOR.
 type entityAccessAdapter struct {
 	svc entities.EntityService
 }
@@ -1523,10 +1486,9 @@ func (a *App) loadSystemsFromPackages(pkgService packages.PackageService) {
 
 // registerManifestRenderers walks every loaded system manifest and
 // auto-registers an EntityShowRenderer for every entry in its `renderers`
-// field. This is the CH4.5 path that lets JSON-only system packages ship
-// page-level renderers without shipping Go: the manifest declares
-// {slug, widget} pairs, and we register a renderer that emits the widget
-// mount point and lets boot.js take over.
+// field, letting JSON-only system packages ship page-level renderers
+// without shipping Go: the manifest declares {slug, widget} pairs, and
+// the renderer emits the widget mount point and lets boot.js take over.
 //
 // Must be called after loadSystemsFromPackages (so packaged manifests are
 // in the registry) and before SetGlobalEntityShowRendererRegistry (so
@@ -1602,11 +1564,8 @@ func (a *App) RegisterRoutes() {
 	smtpService := smtp.NewSMTPService(smtpRepo, a.Config.Auth.SecretKey)
 	smtpHandler := smtp.NewHandler(smtpService)
 
-	// NW-2.2 Chunk A pilot: register smtp in the App's metadata registry.
-	// Per cordinator/decisions/2026-05-23-plugin-registration.md. Slug is
-	// the canonical plugin identifier; HealthCheck wraps the existing
-	// PluginHealth registry lookup so the registry surface exposes a
-	// uniform health signal.
+	// Register smtp in the App's metadata registry. HealthCheck wraps the
+	// existing PluginHealth registry lookup for a uniform health signal.
 	a.registerPlugin(PluginRegistration{
 		Slug: smtp.PluginSlug,
 		HealthCheck: func() error {
@@ -1643,26 +1602,19 @@ func (a *App) RegisterRoutes() {
 	}()
 
 	// One-shot boot reconcilers for entity_types, run SERIALLY in a single
-	// goroutine. The permissions-block backfill that used to lead this chain
-	// is gone: ADR-057 decision 5 removed the permissions block from the read
-	// page, so there is nothing to backfill into a layout any more. Its
-	// lesson is kept because the hazard is not — any two reconcilers that
-	// each read a full pre-backfill snapshot and then rewrite the whole
-	// layout_json per row will have the second clobber the first's block on a
-	// type missing BOTH, leaving that type with only one of them until the
-	// next boot (#514 backfill lost-update race). So a new layout_json
-	// reconciler joins THIS chain rather than starting its own goroutine. The
-	// gm_only field-flag sync runs last; it touches a different column
-	// (fields, not layout_json) so it cannot clobber the layout backfills,
-	// but keeping all entity_types reconcilers in one ordered goroutine is
-	// the simplest guarantee. Each step is idempotent; a failure is logged
-	// and the chain continues so one bad step can't strand the others.
+	// goroutine: any two reconcilers that each read a full pre-backfill
+	// snapshot and rewrite the whole layout_json per row would have the
+	// second clobber the first's block on a type missing both. A new
+	// layout_json reconciler must join this chain, not start its own
+	// goroutine. gm_only field-flag sync runs last since it touches a
+	// different column (fields, not layout_json). Each step is idempotent;
+	// a failure is logged and the chain continues.
 	go func() {
 		ctx := context.Background()
 
 		// Player Notes was only wired into new default layouts, so custom
-		// sub-categories created earlier never showed the block even with the
-		// addon enabled (cordinator#7).
+		// sub-categories created earlier never showed the block even with
+		// the addon enabled.
 		if n, err := entityService.EnsureEntityNotesBlockInDefaults(ctx); err != nil {
 			slog.Warn("entity_types: player-notes block backfill failed", slog.Any("error", err))
 		} else if n > 0 {
@@ -1670,13 +1622,13 @@ func (a *App) RegisterRoutes() {
 		}
 
 		// Converge gm_only field flags from installed system manifests onto
-		// existing types so the GM-field egress filter (audit M-1) covers
-		// characters created before the manifest carried gm_only.
+		// existing types so the GM-field egress filter covers characters
+		// created before the manifest carried gm_only.
 		reconcileFieldGMFlags(ctx, entityService)
 
-		// Same convergence for owner_only field flags (C-FIELDS-OWNER-FILTER)
-		// so backstory-style fields become owner-private on types created
-		// before the manifest carried owner_only.
+		// Same convergence for owner_only field flags, so backstory-style
+		// fields become owner-private on types created before the manifest
+		// carried owner_only.
 		reconcileFieldOwnerOnlyFlags(ctx, entityService)
 	}()
 
@@ -1687,10 +1639,9 @@ func (a *App) RegisterRoutes() {
 	campaignService := campaigns.NewCampaignService(campaignRepo, userFinder, smtpService, entityService, a.Config.BaseURL)
 
 	// One-time, idempotent boot reconciler: convert any campaign still on the
-	// legacy sidebar model onto the unified items model (C-NAV-V3). Runs
-	// synchronously before serving so a straggler never renders the default
-	// sidebar in place of its saved order. Safe on every boot (no-op once
-	// converted); best-effort so a failure can't block startup.
+	// legacy sidebar model onto the unified items model. Runs synchronously
+	// before serving so a straggler never renders the default sidebar in
+	// place of its saved order.
 	if n, err := campaignService.EnsureSidebarItems(context.Background()); err != nil {
 		slog.Error("sidebar items reconcile failed", slog.String("error", err.Error()))
 	} else if n > 0 {
@@ -1744,8 +1695,7 @@ func (a *App) RegisterRoutes() {
 
 	// Expose the entities plugin's embedded static assets at
 	// /static/plugins/entities/ (currently js/characters.js, the Characters
-	// page's mini→full launch enhancement). Per
-	// cordinator/decisions/2026-05-25-plugin-static-assets.md.
+	// page's mini→full launch enhancement).
 	a.registerPlugin(PluginRegistration{
 		Slug:     entities.PluginSlug,
 		StaticFS: echo.MustSubFS(entities.StaticAssetsFS, "static"),
@@ -1795,10 +1745,9 @@ func (a *App) RegisterRoutes() {
 	settingsService := settings.NewSettingsService(settingsRepo)
 	mediaService.SetStorageLimiter(&storageLimiterAdapter{svc: settingsService})
 
-	// Beta registration gate (B-R4): the auth service reads the site registration
-	// mode from settings and validates invite-only signups against live campaign
-	// invites. Both deps are optional at the auth layer (nil ⇒ open), wired here
-	// now that settings + invites exist.
+	// The auth service reads the site registration mode from settings and
+	// validates invite-only signups against live campaign invites. Both
+	// deps are optional at the auth layer (nil ⇒ open).
 	auth.ConfigureRegistrationGate(authService, settingsService, &registrationInviteCheckerAdapter{invites: inviteService})
 
 	// Migration 26 added media_files.content_hash for per-campaign upload
@@ -1832,15 +1781,11 @@ func (a *App) RegisterRoutes() {
 		return a.Config.Upload.MaxSize
 	}
 
-	// Initialize HMAC URL signer for secure media access.
-	//
-	// The same secret feeds foundry_vtt.NewTokenSigner below, where
-	// it signs the per-campaign manifest tokens Foundry stores
-	// indefinitely. Auto-generating in-memory and discarding on
-	// restart used to silently invalidate every outstanding Foundry
-	// token (cordinator Issue #17 / C-UPDATER-MANIFEST-403).
-	// LoadOrInitSigningSecret persists the auto-generated secret so
-	// it survives restarts; env-managed deploys see no behavior change.
+	// Initialize HMAC URL signer for secure media access. The same secret
+	// feeds foundry_vtt.NewTokenSigner below, where it signs per-campaign
+	// manifest tokens Foundry stores indefinitely — an in-memory-only secret
+	// discarded on restart would silently invalidate every outstanding
+	// token, so LoadOrInitSigningSecret persists the auto-generated one.
 	signingSecret, secretSource, secretErr := media.LoadOrInitSigningSecret(
 		a.Config.Upload.SigningSecret,
 		a.Config.Upload.SigningSecretFile,
@@ -1882,27 +1827,22 @@ func (a *App) RegisterRoutes() {
 	// Wire campaign membership checker for private media access control.
 	mediaHandler.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
 
-	// ADR-058 decision 1: a picture inherits the visibility of the pages
-	// that use it. Reuses the SAME entityVisibilityFilterAdapter sessions,
-	// npcs and armory already wire above/below — media does not get a
-	// fourth copy of the entity visibility predicate, only another
-	// pointer at the one canonical seam.
+	// ADR-058: a picture inherits the visibility of the pages that use it.
+	// Reuses the same entityVisibilityFilterAdapter sessions, npcs and
+	// armory wire above/below — never a second copy of the predicate.
 	mediaHandler.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
 
-	// ADR-058 decision 5: the SAME two seams, wired onto the SERVICE too
-	// (not just the handler) so mediaService.Upload can decide whether a
-	// content-hash dedup match is safe to merge. That decision is made deep
-	// inside Upload, before any HTTP-layer check runs, and applies to every
-	// caller of Upload (notes attachments, campaign backdrops, the Foundry
-	// sync API) — not just the /media/upload route. Same adapter instances
-	// as above; never a second copy of either predicate.
+	// Same two seams, wired onto the service too, so mediaService.Upload
+	// can decide whether a content-hash dedup match is safe to merge — a
+	// decision made deep inside Upload, before any HTTP-layer check, so it
+	// applies to every caller (notes attachments, campaign backdrops, the
+	// Foundry sync API), not just the /media/upload route.
 	mediaService.SetMemberChecker(&mediaMemberCheckerAdapter{svc: campaignService})
 	mediaService.SetEntityVisibilityFilter(&entityVisibilityFilterAdapter{svc: entityService})
 
-	// ADR-058 Consequences: caches the entity-scoped access decision per
-	// (file, viewer) so a lookup isn't repeated on every image request.
-	// Same *redis.Client every other Redis-backed cache in this codebase
-	// uses (e.g. entities.Handler.SetCache); nil-safe if Redis init failed.
+	// Caches the entity-scoped access decision per (file, viewer) so a
+	// lookup isn't repeated on every image request. Nil-safe if Redis init
+	// failed.
 	mediaHandler.SetCache(a.Redis)
 
 	media.RegisterRoutes(e, mediaHandler, authService, resolveMaxUpload, a.Config.Upload.ServeRateLimit)
@@ -1935,13 +1875,10 @@ func (a *App) RegisterRoutes() {
 	// Admin Restore plugin: lists backup manifests in BACKUP_DIR and
 	// shells out to scripts/restore.sh under a typed-RESTORE
 	// confirmation. Reverses ADR-035's "sysadmin-only" stance — see
-	// ADR-036 for the policy reasoning.
-	//
-	// Always registered: BackupDir now defaults to /app/data/backups in
-	// config.Load, so the panic in restore.NewService(BackupDir=="") is
-	// unreachable from production wiring. Removing the conditional fixes
-	// the "Restore link is in the sidebar but 404s" bug that operators
-	// who hadn't set BACKUP_DIR explicitly hit on first deploy.
+	// ADR-036 for the policy reasoning. Always registered: BackupDir
+	// defaults to /app/data/backups in config.Load, so
+	// restore.NewService(BackupDir=="") is unreachable from production
+	// wiring.
 	restoreSvc := restore.NewService(restore.Config{
 		ScriptPath: a.Config.RestoreScriptPath,
 		BackupDir:  a.Config.BackupDir,
@@ -2013,8 +1950,8 @@ func (a *App) RegisterRoutes() {
 	// Wire addon checker into entity handler for conditional attributes rendering.
 	entityHandler.SetAddonChecker(addonService)
 	// Wire the same checker into the entity service so CreateEntityType can
-	// gate player-character sub-type creation on the Player Character Claiming
-	// addon (PC-CLAIM-2).
+	// gate player-character sub-type creation on the Player Character
+	// Claiming addon.
 	entityService.SetAddonChecker(addonService)
 
 	// Content extensions: user-installable content packs (calendar presets,
@@ -2027,10 +1964,9 @@ func (a *App) RegisterRoutes() {
 	extensions.RegisterCampaignRoutes(e, extHandler, campaignService, authService)
 	extensions.RegisterAssetRoutes(e, extHandler)
 
-	// C-EXT-HUB Phase 1: let the top-level Extensions hub (campaigns
-	// plugin) embed the per-campaign Content Packs list as a card.
-	// Inverts the import direction so campaigns stays
-	// extensions-agnostic at compile time.
+	// Let the top-level Extensions hub (campaigns plugin) embed the
+	// per-campaign Content Packs list as a card, inverting the import
+	// direction so campaigns stays extensions-agnostic at compile time.
 	campaignHandler.SetContentPacksCardRenderer(extHandler)
 
 	// Package manager: external repo management for systems and Foundry module.
@@ -2065,20 +2001,17 @@ func (a *App) RegisterRoutes() {
 		}
 		// Rebuild + republish the entity-show-renderer registry so a newly
 		// installed/updated system's page renderers (e.g. a character sheet)
-		// take effect WITHOUT a server restart. Build fully, then publish — no
-		// observable half-built state for in-flight requests. (Bug 5a: previously
-		// registerManifestRenderers ran only at boot, so a package update's
-		// renderer binding required a restart.)
+		// take effect without a server restart. Build fully, then publish —
+		// no observable half-built state for in-flight requests.
 		freshRegistry := entities.NewEntityShowRendererRegistry()
 		registerManifestRenderers(freshRegistry)
 		entities.SetGlobalEntityShowRendererRegistry(freshRegistry)
 
-		// Converge gm_only field flags now that the freshly installed/updated
-		// manifest is in the registry, so an updated system that newly marks a
-		// field gm_only (audit M-1) takes effect on existing types without a
-		// restart — mirrors the boot-time reconcile.
+		// Converge gm_only and owner_only field flags now that the
+		// freshly installed/updated manifest is in the registry, so an
+		// updated system's flag changes take effect on existing types
+		// without a restart — mirrors the boot-time reconcile.
 		reconcileFieldGMFlags(context.Background(), entityService)
-		// Same convergence for owner_only field flags (C-FIELDS-OWNER-FILTER).
 		reconcileFieldOwnerOnlyFlags(context.Background(), entityService)
 	})
 	packages.ConfigureSettings(pkgService, settingsRepo)
@@ -2246,28 +2179,19 @@ func (a *App) RegisterRoutes() {
 	// and quota failures are recorded in the admin security dashboard.
 	mediaHandler.SetSecurityLogger(securityService)
 
-	// foundry_vtt sub-plugin (C-FMC-5b + C-FMC-5c): the Foundry-VTT-
-	// specific extension to the generic packages plugin. Owns every
-	// Foundry-specific behavior: per-campaign signed manifest URLs,
-	// per-campaign pinning, chronicle-package.json descriptor reading
-	// + the post-install module.json version rewrite, admin "campaigns
-	// using v0.1.5" expandable cards on /admin/packages.
-	//
-	// C-FMC-5c is the cleanup PR that deleted the parallel
-	// foundry_modules plugin, renamed the token table to
-	// foundry_vtt_campaign_tokens (via this plugin's migration 001),
-	// added admin endpoints (force-pin, notify, mass variants) here,
-	// and removed Foundry coupling from the packages plugin. After
-	// this PR ships, the packages plugin has zero Foundry-specific
-	// code — Chronicle is fully Foundry-agnostic at the packages layer.
+	// foundry_vtt sub-plugin: the Foundry-VTT-specific extension to the
+	// generic packages plugin. Owns every Foundry-specific behavior:
+	// per-campaign signed manifest URLs, per-campaign pinning,
+	// chronicle-package.json descriptor reading + the post-install
+	// module.json version rewrite, admin "campaigns using v0.1.5" cards.
+	// The packages plugin itself has zero Foundry-specific code — Chronicle
+	// is fully Foundry-agnostic at the packages layer.
 
-	// NW-2.2 Chunk A pilot: register foundry_vtt in the App's metadata
-	// registry. Per cordinator/decisions/2026-05-23-plugin-registration.md.
-	// Slug is the canonical external identifier (matches the WS protocol
-	// + the URL prefix); HealthCheck wraps the existing PluginHealth
-	// lookup via the plugin's exported PluginHealthKey const (which uses
-	// the Go-package-name underscore form for historical reasons —
-	// distinct from PluginSlug).
+	// Register foundry_vtt in the App's metadata registry. Slug is the
+	// canonical external identifier (matches the WS protocol + URL
+	// prefix); HealthCheck wraps PluginHealth via the plugin's exported
+	// PluginHealthKey const (the Go-package-name underscore form, distinct
+	// from PluginSlug).
 	a.registerPlugin(PluginRegistration{
 		Slug: foundry_vtt.PluginSlug,
 		HealthCheck: func() error {
@@ -2288,40 +2212,30 @@ func (a *App) RegisterRoutes() {
 	fvttService := foundry_vtt.NewService(
 		fvttRepo, fvttTokenSigner, fvttCampaignAdapter, pkgService,
 		securityService, smtpService, fvttOwnerLookup,
-		settingsRepo, // C-FMC-8: powers the auto-pin install banner
+		settingsRepo, // powers the auto-pin install banner
 		a.Config.BaseURL,
 	)
 	fvttHandler := foundry_vtt.NewHandler(fvttService)
-	// (Banner adapter wire removed in D2-cleanup; the campaign show
-	// page lazy-loads /foundry-vtt/show-banner-fragment instead.)
+	// The campaign show page lazy-loads /foundry-vtt/show-banner-fragment
+	// rather than using a banner adapter wire.
 	if a.PluginHealth.IsHealthy(foundry_vtt.PluginHealthKey) && a.PluginHealth.IsHealthy("packages") {
-		// Register the PostInstallHook with the packages plugin. The
-		// hook fires after every foundry-module typed install and
-		// rewrites module.json's version field to match the installed
-		// version (the fix for the operator's version-stale bug end-
-		// to-end).
+		// Fires after every foundry-module typed install and rewrites
+		// module.json's version field to match the installed version.
 		packages.RegisterPostInstallHook(pkgService, foundry_vtt.NewPostInstallHook())
-		// C-FMC-6: second hook for install-time auto-pinning. Runs
-		// alongside the C-FMC-5b version-rewrite hook. Pins auto-
-		// tracking campaigns to the previous version on every
-		// foundry-module install so the admin sees the version
-		// spread instead of silently bumping everyone.
+		// Pins auto-tracking campaigns to the previous version on every
+		// foundry-module install so the admin sees the version spread
+		// instead of silently bumping everyone.
 		packages.RegisterPostInstallHook(pkgService, foundry_vtt.NewAutoPinHook(fvttService))
 
-		// C-FMC-6: one-time auto-pin migration for pre-feature
-		// campaigns. Pins all auto-tracking campaigns to the
-		// foundry-module's currently-installed version so future
-		// installs trigger the AutoPinHook flow (which preserves
-		// state) instead of silently bumping. Idempotent via a
-		// settings key — re-runs are no-ops after first completion.
-		// Runs synchronously here so it completes before any
-		// campaign loads its settings page. Errors abort startup
-		// loudly (matches the C-FMC-5c PreMigrationCheck pattern).
+		// One-time auto-pin migration for pre-feature campaigns: pins all
+		// auto-tracking campaigns to the currently-installed version so
+		// future installs trigger the state-preserving AutoPinHook flow
+		// instead of silently bumping. Idempotent via a settings key; runs
+		// synchronously so it completes before any campaign loads its
+		// settings page. Errors abort startup loudly.
 		if err := foundry_vtt.AutoPinMigrate(context.Background(), fvttService, settingsRepo); err != nil {
 			slog.Error("foundry_vtt autopin migration failed", slog.Any("error", err))
-			// Not fatal — migration is best-effort. Log + continue.
-			// A future boot can retry once the operator addresses
-			// the underlying issue (DB connection, schema state).
+			// Not fatal — migration is best-effort; a future boot retries.
 		}
 
 		// Admin routes: "campaigns using v0.1.5" fragment + force-pin
@@ -2357,13 +2271,11 @@ func (a *App) RegisterRoutes() {
 	// fails CLOSED if this line is ever dropped, which is the intended
 	// direction for a security control.
 	syncService.SetAddonGate(addonService)
-	// One-time, idempotent startup backfill, same shape and same rules as
-	// backfillPlayerCharacterTypes above: enable sync-api for campaigns that
-	// already own API keys but have no recorded toggle state, so enforcing
-	// the toggle cannot cut off an integration that was working. Enables
-	// ONLY where no campaign_addons row exists — a row saying enabled=0 is
-	// an owner's decision and is left alone. Best-effort: a failure is
-	// logged with the manual remedy and never blocks startup.
+	// One-time, idempotent startup backfill: enable sync-api for campaigns
+	// that already own API keys but have no recorded toggle state, so
+	// enforcing the toggle cannot cut off an integration that was working.
+	// Only where no campaign_addons row exists — enabled=0 is an owner's
+	// decision and is left alone. Best-effort: logs and never blocks startup.
 	if n, err := syncapi.ReconcileAddonEnablement(context.Background(), syncService, addonService); err != nil {
 		slog.Error("sync-api addon enablement backfill failed; campaigns that already use the "+
 			"Sync API may be refused until an owner enables Sync API on the campaign's Extensions page (sidebar → Extensions)",
@@ -2379,7 +2291,6 @@ func (a *App) RegisterRoutes() {
 
 	// Wire the sync-mapping reader into the operator diagnostics so
 	// entity.sync-mappings can answer "is this entity linked to a Foundry actor?"
-	// — the root-cause check for a permanently-blank hero.
 	systems.SetSyncMappingProvider(func(ctx context.Context, campaignID, entityID string) ([]systems.SyncMappingInfo, error) {
 		ms, _, err := syncMappingSvcEarly.ListMappings(ctx, campaignID, 1000, 0)
 		if err != nil {
@@ -2408,16 +2319,12 @@ func (a *App) RegisterRoutes() {
 		slog.Warn("syncapi plugin degraded — routes not registered")
 	}
 
-	// CALV5-PLACEHOLDER: the calendar plugin's construction stood here —
+	// CALV5-PLACEHOLDER: V5 must restore the calendar plugin's construction —
 	// repository, service, handler, the RSVP repo/service/handler triple, the
-	// entity-creator seam, the RSVP reader, and the plugin registration's
-	// StaticFS mount for /static/plugins/calendar/.
-	//
-	// The plugin is still REGISTERED, with no service and no static FS: the
-	// addon row, its health key and its seat in the plugin list are what the
-	// campaign settings page, the addon gate and the operator diagnostics read,
-	// and dropping the registration would make a rebuilt calendar look like an
-	// uninstalled one. It reports degraded, which is true.
+	// entity-creator seam, the RSVP reader, and the StaticFS mount for
+	// /static/plugins/calendar/. The plugin stays registered (no service, no
+	// static FS) so the campaign settings page, the addon gate and the
+	// operator diagnostics see it as degraded rather than uninstalled.
 	a.registerPlugin(PluginRegistration{
 		Slug: calendar.PluginSlug,
 		HealthCheck: func() error {
@@ -2425,70 +2332,39 @@ func (a *App) RegisterRoutes() {
 		},
 	})
 
-	// Finding 4 (M-B2.1): plugin body scripts contributed by plugins at registration
-	// time so base.templ no longer hardcodes plugin asset paths. The calendar widget
-	// is the first contributor; future plugins append to this slice. Injected into
-	// every page's Templ context by the LayoutInjector below.
-	// Follow-up: a WidgetScript field on PluginRegistration would make this implicit
-	// (post-launch C-PLUGIN-CONTRACTS-REFACTOR).
+	// Plugin body scripts contributed by plugins at registration time so
+	// base.templ doesn't hardcode plugin asset paths; injected into every
+	// page's Templ context by the LayoutInjector below.
 	//
-	// ORDER IS LOAD-BEARING for the three Bench drivers below: base.templ emits
-	// these in slice order with `defer`, and deferred scripts execute in
-	// DOCUMENT ORDER. calendar_permissions.js captures
-	// `window.ChronicleCalVisibility` at execution time (calendar_permissions.js:22
-	// `var V = ... || null`, and its init() bails on `!V`), so cal_visibility.js
-	// MUST be listed before it.
+	// ORDER IS LOAD-BEARING: base.templ emits these in slice order with
+	// `defer`, which executes in document order — any script reading global
+	// state another sets up must come after it.
 	//
-	// WHY THE BENCH DRIVERS LIVE HERE RATHER THAN IN bench.templ. They used to be
-	// `<script src>` tags inside the Bench page body — which the App layout renders
-	// inside `<main id="main-content">`. Every sidebar link is
-	// `hx-boost="true" hx-select="#main-content" hx-swap="innerHTML"`, and boot.js
-	// sets `htmx.config.allowScriptTags = false`; htmx's makeFragment then DELETES
-	// every <script> in the swapped fragment rather than skipping it. The result was
-	// a Bench that wired itself on a direct load and silently did not when reached
-	// through the sidebar — dead day card, dead Permissions button, with the CSS in
-	// the same region surviving so nothing looked wrong. This registry emits after
-	// `{children...}`, outside the swapped region, so a boosted navigation and a
-	// full load deliver the same scripts.
+	// Scripts belong in this registry, not a `<script src>` tag inside a
+	// page body, because the App layout renders page bodies inside
+	// `<main id="main-content">`, which htmx boosted navigation
+	// (`hx-select="#main-content" hx-swap="innerHTML"`) replaces via
+	// makeFragment — and with `htmx.config.allowScriptTags = false`,
+	// makeFragment DELETES every `<script>` in the swapped fragment. A
+	// script tag inside the body wires on a direct load and silently does
+	// nothing when the page is reached via the sidebar. This registry emits
+	// after `{children...}`, outside the swapped region, so both paths
+	// deliver the same scripts. Each script re-inits on
+	// htmx:afterSettle/htmx:load and no-ops when its mount is absent, so
+	// they can be mounted unconditionally.
 	//
-	// They are mounted UNCONDITIONALLY (the page templ used to gate them on owner /
-	// day-card presence). That is safe and deliberate: all three are drivers, not
-	// data — each re-inits on htmx:afterSettle/htmx:load and returns immediately
-	// when its mount is absent, and none of them carries a permission decision (the
-	// gate is, as it always was, the producer not rendering the editor DOM and the
-	// server not honouring the route).
-	//
-	// characters.js JOINED FOR THE SAME REASON, ONE SURFACE LATER
-	// (C-HTMX-SCRIPT-SWEEP). It was a `<script src>` at the top of
-	// entities/characters.templ's body, i.e. inside the same swapped region, so
-	// every cast card's "quick look" button wired on a direct load of
-	// /campaigns/:id/characters and silently did nothing when the page was
-	// reached through the sidebar — the cards are real links, so the page looked
-	// and behaved normally right up to the click. It has no ordering dependency
-	// on anything above it and, like the Bench drivers, returns immediately when
-	// its mount (`[data-cast-peek]`) is absent, which on this registry is every
-	// page but one.
-	// CALV5-PLACEHOLDER: five calendar scripts loaded on EVERY page from here —
-	// calendar_widget.js, cal_visibility.js, calendar_permissions.js,
-	// calendar_daycard.js and calendar_theater.js. Their files are deleted, and
-	// leaving the paths would 404 on every page load in the product.
-	//
-	// Worth carrying into V5: calendar_theater.js was already dead weight before
-	// this — shipped to every page with the addon enabled, hunting a DOM hook no
-	// live template emitted, for a feature that had no route at all. One widget
-	// with one mount is partly a fix for exactly that.
+	// CALV5-PLACEHOLDER: V5 must restore five calendar scripts loaded on
+	// every page from here — calendar_widget.js, cal_visibility.js,
+	// calendar_permissions.js, calendar_daycard.js and calendar_theater.js.
+	// Their files are deleted; leaving the paths would 404 on every page.
 	pluginBodyScripts := []string{
 		"/static/plugins/" + entities.PluginSlug + "/js/characters.js",
 	}
 
-	// CALV5-PLACEHOLDER: one route survives the deletion — the seat the sidebar,
-	// the campaign dashboard blocks and the Extensions hub all link to
-	// (/campaigns/:id/apps/calendar, layouts.AddonSidebarPath("calendar")).
-	//
-	// It exists so those links do not 404. A 404 on a nav item the product still
-	// shows reads as a broken install; this reads as what it is. The legacy
-	// /calendars and /calendar paths land here too — they used to redirect to
-	// this one, and an old bookmark deserves the same answer.
+	// CALV5-PLACEHOLDER: keeps the route the sidebar, campaign dashboard and
+	// Extensions hub link to (/campaigns/:id/apps/calendar) answering with a
+	// rebuilding notice instead of 404. Legacy /calendars and /calendar
+	// paths, which used to redirect here, get the same answer.
 	calendarRebuildGroup := e.Group("/campaigns/:id",
 		auth.RequireAuth(authService),
 		campaigns.RequireCampaignAccess(campaignService),
@@ -2500,14 +2376,12 @@ func (a *App) RegisterRoutes() {
 	calendarRebuildGroup.GET("/calendar", calendarRebuildNotice)
 	calendarRebuildGroup.GET("/calendars", calendarRebuildNotice)
 
-	// CALV5-PLACEHOLDER: calendar.RegisterRoutes, calendar.RegisterRSVPRoutes
-	// and the public Foundry-facing calendar API (calendar.NewAPIHandler +
-	// RegisterPublicAPIRoutes, token-verified through fvttService, rate limited
-	// 300/min) were registered here behind the schema health gate.
-	//
-	// NOTE FOR V5: that public API is a SECOND calendar REST surface, separate
-	// from syncapi's. Both served Foundry and they overlapped. Rebuild one, not
-	// two — syncapi's is the newer and the one the module's contract documents.
+	// CALV5-PLACEHOLDER: V5 must restore calendar.RegisterRoutes,
+	// calendar.RegisterRSVPRoutes, and the public Foundry-facing calendar
+	// API (token-verified through fvttService, rate limited 300/min) behind
+	// the schema health gate. That public API overlapped syncapi's calendar
+	// surface — rebuild only syncapi's, the one the module's contract
+	// documents.
 
 	// Bestiary plugin: community creature sharing with ratings, favorites, import.
 	bestiaryRepo := bestiary.NewBestiaryRepository(a.DB)
@@ -2532,8 +2406,8 @@ func (a *App) RegisterRoutes() {
 	drawingRepo := maps.NewDrawingRepository(a.DB)
 	drawingService := maps.NewDrawingService(drawingRepo)
 	// Wire the map-existence + same-campaign check used by AssignMap on
-	// entities. This sits BELOW where entityService is constructed (1251)
-	// and is set as a post-construction dependency.
+	// entities, as a post-construction dependency (mapsService doesn't
+	// exist yet when entityService is constructed).
 	entityService.SetMapVerifier(&entityMapVerifierAdapter{svc: mapsService})
 	if a.PluginHealth.IsHealthy("maps") {
 		maps.RegisterRoutes(e, mapsHandler, campaignService, authService, addonService)
@@ -2550,11 +2424,10 @@ func (a *App) RegisterRoutes() {
 	sessionsHandler := sessions.NewHandler(sessionsService)
 	sessionsHandler.SetMemberLister(campaignService)
 	sessionsHandler.SetMailSender(smtpService, a.Config.BaseURL)
-	// CALV5-PLACEHOLDER: four post-construction setter seams stood here, wired
-	// after the sessions service existed — SetRSVPNotifier, SetAvailabilityWriter
-	// (member zones + exception dates), SetScheduleReader and SetOwnWeekReader.
-	// All four were nil-safe on the calendar side, which is the pattern V5 should
-	// keep: a degraded neighbour must never take the calendar down with it.
+	// CALV5-PLACEHOLDER: V5 must restore four post-construction setters —
+	// SetRSVPNotifier, SetAvailabilityWriter (member zones + exception
+	// dates), SetScheduleReader and SetOwnWeekReader — all nil-safe on the
+	// calendar side, so a degraded neighbour never takes the calendar down.
 
 	if a.PluginHealth.IsHealthy("sessions") {
 		sessions.RegisterRoutes(e, sessionsHandler, campaignService, authService, addonService)
@@ -2564,9 +2437,10 @@ func (a *App) RegisterRoutes() {
 
 	// Timeline plugin: interactive visual timelines with zoom levels and entity grouping.
 	timelineRepo := timeline.NewTimelineRepository(a.DB)
-	// CALV5-PLACEHOLDER: took &calendarListerAdapter{}, &calendarEventListerAdapter{}
-	// and &calendarEraListerAdapter{} as its 2nd-4th arguments. Timeline nil-guards
-	// all three, so it runs on standalone events alone until V5 re-wires them.
+	// CALV5-PLACEHOLDER: V5 must restore &calendarListerAdapter{},
+	// &calendarEventListerAdapter{} and &calendarEraListerAdapter{} as the
+	// 2nd-4th arguments. Timeline nil-guards all three, so it runs on
+	// standalone events alone until then.
 	timelineSvc := timeline.NewTimelineService(timelineRepo, nil, nil, nil)
 	timelineHandler := timeline.NewHandler(timelineSvc)
 	timelineHandler.SetMemberLister(campaignService)
@@ -2581,8 +2455,8 @@ func (a *App) RegisterRoutes() {
 	relRepo := relations.NewRelationRepository(a.DB)
 	relService := relations.NewRelationService(relRepo)
 	relService.SetMentionLinkProvider(&mentionLinkAdapter{svc: entityService})
-	// Entity-privacy gate (C-PUBLIC-VIEW-FIX-R2): hide private-entity nodes from
-	// the graph, and enforce entity privacy + campaign binding on the list.
+	// Entity-privacy gate: hide private-entity nodes from the graph, and
+	// enforce entity privacy + campaign binding on the list.
 	relEntityGate := &entityAccessAdapter{svc: entityService}
 	relService.SetEntityViewFilter(relEntityGate)
 	relHandler := relations.NewHandler(relService)
@@ -2594,8 +2468,8 @@ func (a *App) RegisterRoutes() {
 	postRepo := posts.NewPostRepository(a.DB)
 	postService := posts.NewPostService(postRepo)
 	postHandler := posts.NewHandler(postService)
-	// Entity-privacy gate (C-PUBLIC-VIEW-FIX-R2): the public posts list must
-	// respect entity visibility + campaign binding, like the entity page.
+	// Entity-privacy gate: the public posts list must respect entity
+	// visibility + campaign binding, like the entity page.
 	postHandler.SetEntityGate(&entityAccessAdapter{svc: entityService})
 	posts.RegisterRoutes(e, postHandler, campaignService, authService)
 
@@ -2620,13 +2494,12 @@ func (a *App) RegisterRoutes() {
 	tagRepo := tags.NewTagRepository(a.DB)
 	tagService := tags.NewTagService(tagRepo)
 	tagHandler := tags.NewHandler(tagService)
-	// Entity-privacy gate (C-PUBLIC-VIEW-FIX-R2): the public per-entity tag read
-	// must respect entity visibility + campaign binding, like the entity page.
+	// Entity-privacy gate: the public per-entity tag read must respect
+	// entity visibility + campaign binding, like the entity page.
 	tagHandler.SetEntityGate(&entityAccessAdapter{svc: entityService})
-	// Tag visibility grants (C-PERM-W1-TAG-GRANTS): Owner-gated CRUD plus the
-	// effective-visibility glance source. The grant service validates grant
-	// subjects against the campaign (member/group lookups) and resolves their
-	// human labels for the badge tooltip.
+	// Tag visibility grants: Owner-gated CRUD plus the effective-visibility
+	// glance source. The grant service validates grant subjects against the
+	// campaign (member/group lookups) and resolves labels for the badge.
 	tagGrantRepo := tags.NewTagPermissionRepository(a.DB)
 	tagGrantService := tags.NewTagGrantService(tagGrantRepo, tagRepo, campaignService, groupService)
 	tagHandler.SetGrantService(tagGrantService)
@@ -2639,19 +2512,19 @@ func (a *App) RegisterRoutes() {
 	// Authenticates via API keys, not browser sessions.
 	syncAPIHandler := syncapi.NewAPIHandler(syncService, entityService, campaignService, relService)
 	syncAPIHandler.SetAddonLister(&addonListerAPIAdapter{svc: addonService})
-	// Expose tag-derived grants on the permissions endpoint for Foundry ownership
-	// sync (C-PERM-W1-TAG-GRANTS), reusing the entities glance adapter.
+	// Expose tag-derived grants on the permissions endpoint for Foundry
+	// ownership sync, reusing the entities glance adapter.
 	syncAPIHandler.SetTagGrantLister(tagFetcherAdapter)
 	syncAPIHandler.SetSystemEnabler(addonService)
-	// CALV5-PLACEHOLDER: took (syncService, calendarService). The handler holds
-	// the calendar routes open with a 503 while the plugin is rebuilt (V5).
+	// CALV5-PLACEHOLDER: V5 must restore (syncService, calendarService) as
+	// arguments. The handler holds the calendar routes open with a 503 while
+	// the plugin is rebuilt.
 	calendarAPIHandler := syncapi.NewCalendarAPIHandler()
 	mediaAPIHandler := syncapi.NewMediaAPIHandler(syncService, mediaService)
 	if urlSigner != nil {
 		mediaAPIHandler.SetURLSigner(urlSigner)
 	}
-	// Needed to resolve the caller's role for ListMedia's Scribe+ gate
-	// (finding 3, .ai/designs/2026-09-12-security-audit-findings.md).
+	// Needed to resolve the caller's role for ListMedia's Scribe+ gate.
 	mediaAPIHandler.SetCampaignService(campaignService)
 
 	// Sync mapping handler for Foundry VTT bidirectional sync.
@@ -2675,11 +2548,10 @@ func (a *App) RegisterRoutes() {
 	}
 
 	// NPC plugin: gallery/hub view for revealed character entities.
-	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
-	// adapter wired into sessions above — so the NPC gallery's Player/
-	// anonymous view is narrowed by the entities plugin's own canonical
-	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
-	// .ai/designs/2026-09-12-security-audit-findings.md).
+	// The visibility gate reuses entityVisibilityFilterAdapter (the same
+	// adapter wired into sessions above), so Player/anonymous views are
+	// narrowed by entities' canonical FilterViewableEntityIDs rather than a
+	// second, hand-rolled predicate.
 	npcRepo := npcs.NewNPCRepository(a.DB)
 	npcSvc := npcs.NewNPCService(npcRepo, &npcEntityTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	npcHandler := npcs.NewHandler(npcSvc)
@@ -2691,11 +2563,7 @@ func (a *App) RegisterRoutes() {
 	entityHandler.SetNPCSectionProvider(npcHandler)
 
 	// Armory plugin: gallery/hub view for item-category entities.
-	// The visibility gate reuses entityVisibilityFilterAdapter — the SAME
-	// adapter wired into sessions above — so the Armory gallery's Player/
-	// anonymous view is narrowed by the entities plugin's own canonical
-	// FilterViewableEntityIDs instead of a hand-rolled predicate (finding 2,
-	// .ai/designs/2026-09-12-security-audit-findings.md).
+	// Same visibility-gate reasoning as the NPC plugin above.
 	armoryRepo := armory.NewArmoryRepository(a.DB)
 	armorySvc := armory.NewArmoryService(armoryRepo, &armoryItemTypeFinderAdapter{svc: entityService}, &entityVisibilityFilterAdapter{svc: entityService})
 	armoryHandler := armory.NewHandler(armorySvc)
@@ -2736,41 +2604,23 @@ func (a *App) RegisterRoutes() {
 
 	// Wire audit logging into mutation handlers so CRUD actions are recorded.
 	entityHandler.SetAuditService(auditService)
-	// CALV5-PLACEHOLDER: the calendar's remaining wiring stood here —
-	// SetAuditService, SetTierDefinitionsLister (campaign tier vocabulary for
-	// the V2 shell's event cards), RegisterExtensionDashboard (its card in the
-	// Extensions hub), SetTimelineLister, and the calendar-v4 BLOCK SPINE:
-	//
-	//   calendarBlockSpine := calendar.NewBlockService(calendar.NewBlockRepository(a.DB))
-	//   + RealTimeSeam (reached by type assertion, because ApplyRealTime lived
-	//     on *calendarService and deliberately NOT on the CalendarService
-	//     interface — putting it there would have reshaped the hand-written mock)
-	//   + SyncLinkProbe over the campaign date beacon
-	//   + calendar.InstallBlockSpine(...) as a package-level provider
-	//
-	// V5 NOTE: the spine's repository was a NARROW read surface over the same
-	// *sql.DB rather than the 60-method CalendarRepository, specifically so the
-	// mock never had to grow. That instinct was right and is worth keeping — the
-	// 60-method interface everyone routed around is one of the reasons the old
-	// plugin became hard to change.
+	// CALV5-PLACEHOLDER: V5 must restore the calendar's remaining wiring —
+	// SetAuditService, SetTierDefinitionsLister, RegisterExtensionDashboard,
+	// SetTimelineLister, and the block spine (calendar.NewBlockService +
+	// RealTimeSeam + SyncLinkProbe + calendar.InstallBlockSpine). Keep the
+	// spine's repository a narrow read surface over *sql.DB rather than a
+	// wide CalendarRepository interface — the old plugin's 60-method
+	// interface was itself a reason it became hard to change.
 
-	// Wire the PER-CAMPAIGN read window into the operator diagnostics, so the
-	// catalog can answer "why does MY campaign look like this?" and not only
-	// "which code is running". It sits HERE rather than beside the other
-	// systems.Set*Provider calls because it needs the calendar service and the
-	// Block spine, and the spine is installed on the line above — the diagnostic
-	// reads through calendar.BlockSpine() at call time anyway, so a degraded
-	// plugin reports "spine not installed" instead of a plausible empty page.
-	//
-	// The route table is passed as a CLOSURE, evaluated when the diagnostic
-	// runs. Two reasons: routes are still being registered below this line, and
-	// the closure keeps Echo out of the adapter file (CLAUDE.md — no Echo types
-	// outside handler files).
+	// Wire the per-campaign read window into the operator diagnostics, so it
+	// can answer "why does MY campaign look like this?" and not only "which
+	// code is running". The route table is a closure, evaluated when the
+	// diagnostic runs, because routes are still being registered below this
+	// line and because it keeps Echo types out of the adapter file.
 	systems.SetCampaignDiagProvider(campaignDiagAdapter{
 		campaigns: campaignService,
 		addons:    addonService,
-		// CALV5-PLACEHOLDER: `calendars: calendarService,` was here.
-		entities: entityService,
+		entities:  entityService,
 		routes: func() []systems.RouteFact {
 			live := e.Routes()
 			out := make([]systems.RouteFact, 0, len(live))
@@ -2794,8 +2644,9 @@ func (a *App) RegisterRoutes() {
 	entityHandler.SetTagFetcher(tagFetcherAdapter)
 	entityHandler.SetTimelineSearcher(timelineSvc)
 	entityHandler.SetMapSearcher(mapsService)
-	// CALV5-PLACEHOLDER: entityHandler.SetCalendarSearcher(calendarService) — the
-	// calendar's rows in global entity search. Nil-safe; search simply returns none.
+	// CALV5-PLACEHOLDER: V5 must restore
+	// entityHandler.SetCalendarSearcher(calendarService) for the calendar's
+	// rows in global entity search. Nil-safe meanwhile; search returns none.
 	entityHandler.SetSessionSearcher(sessionsService)
 	entityHandler.SetSystemSearcher(systems.NewSystemSearchAdapter(addonService))
 	entityHandler.SetMemberLister(campaignService)
@@ -2808,31 +2659,26 @@ func (a *App) RegisterRoutes() {
 	blockRegistry := entities.NewBlockRegistry()
 	entities.RegisterCoreBlocks(blockRegistry)
 
-	// Widget-binding framework (C-WIDGET-BINDING-P1-SPINE): the dynamic
-	// host↔widget-type↔instance registry + service. Widget types register
-	// declaratively; the service resolves a host's instance via the precedence
-	// chain (own binding → entity-type template → default = today's behavior).
-	// P1 registers calendar; maps/timeline/worldstate fold in later (P2/P3).
+	// Widget-binding framework: the dynamic host↔widget-type↔instance
+	// registry + service. Widget types register declaratively; the service
+	// resolves a host's instance via the precedence chain (own binding →
+	// entity-type template → default).
 	widgetRegistry := widgetbindings.NewRegistry()
-	// CALV5-PLACEHOLDER: the calendar and worldstate widget types registered
-	// here. They are deliberately NOT registered while the calendar is rebuilt,
-	// and that is SAFE for saved bindings: service.Sweep skips widget types it
-	// does not know ("unknown widget type (e.g. addon removed) — leave it be"),
-	// so a GM's existing entity→calendar bindings survive the blackout untouched
-	// and resolve again the moment V5 registers the types. Deleting the rows, or
-	// registering a type whose InstanceExists answered false, would have swept
-	// them permanently.
-	// P2: timeline (instance = a timeline record) registers as a widget type.
+	// CALV5-PLACEHOLDER: V5 must re-register the calendar and worldstate
+	// widget types. Deliberately unregistered meanwhile: service.Sweep skips
+	// widget types it does not know, so a GM's existing entity→calendar
+	// bindings survive the blackout untouched and resolve again once V5
+	// registers the types. Deleting the rows, or registering a type whose
+	// InstanceExists answers false, would sweep them permanently.
 	widgetRegistry.Register(timeline.NewTimelineWidgetType(timelineSvc))
-	// P3a: maps registers (instance = a map id; no campaign default — the
-	// legacy entity.map_id fallback lives in the map_editor closure).
+	// maps registers with no campaign default — the legacy entity.map_id
+	// fallback lives in the map_editor closure instead.
 	widgetRegistry.Register(maps.NewMapWidgetType(mapsService))
 	widgetBindingSvc := widgetbindings.NewService(widgetbindings.NewRepository(a.DB), widgetRegistry)
-	// P2: wire the delete hooks P1 left unconnected. The calendar/timeline
-	// services call OnInstanceDeleted on delete so a removed instance's
-	// bindings are swept promptly (render-time guard + Sweep are the backstop).
-	// Reached via a type assertion so the CalendarService/TimelineService
-	// interfaces stay unchanged.
+	// The calendar/timeline services call OnInstanceDeleted on delete so a
+	// removed instance's bindings are swept promptly (render-time guard and
+	// Sweep are the backstop). Reached via a type assertion so the
+	// CalendarService/TimelineService interfaces stay unchanged.
 	if t, ok := timelineSvc.(interface {
 		SetBindingCleaner(timeline.BindingCleaner)
 	}); ok {
@@ -2843,17 +2689,16 @@ func (a *App) RegisterRoutes() {
 	}); ok {
 		m.SetBindingCleaner(widgetBindingSvc)
 	}
-	// P4a: the create-or-pick binding UI (picker + bind/create/unbind, Scribe+).
+	// The create-or-pick binding UI (picker + bind/create/unbind, Scribe+).
 	widgetbindings.RegisterRoutes(e, widgetbindings.NewHandler(widgetBindingSvc, widgetRegistry), campaignService, authService)
 
 	// renderBoundBlock is the single seam every widget-bound entity block goes
-	// through on FIRST render (C-WIDGET-BINDING-P4b). It resolves the host's
-	// instance via the framework and delegates to the widget type's RenderBlock —
-	// the SAME path the binding handler uses for a post-mutation swap, so the
-	// initial render and the swap are byte-identical (same BlockHost wrapper +
-	// stable id). legacyID is the maps `entity.map_id` fallback: used as the
-	// instance only when nothing resolves, preserving pre-binding behavior
-	// (binding wins; unbound entity with a legacy map_id renders that map).
+	// through on first render. It resolves the host's instance via the
+	// framework and delegates to the widget type's RenderBlock — the same
+	// path the binding handler uses for a post-mutation swap, so the initial
+	// render and the swap are byte-identical. legacyID is the maps
+	// `entity.map_id` fallback, used only when nothing else resolves (a
+	// binding always wins).
 	renderBoundBlock := func(widgetType string, rc entities.BlockRenderContext, legacyID string) templ.Component {
 		wt, ok := widgetRegistry.Get(widgetType)
 		if !ok {
@@ -2896,10 +2741,6 @@ func (a *App) RegisterRoutes() {
 	}
 
 	// Calendar plugin blocks (requires "calendar" addon).
-	// NOTE: the old per-entity `calendar` block (BlockCalendarEvents) was
-	// retired in C-CAL-EMBED-CONVERGE-POLISH — it was never used and is
-	// superseded by `entity_calendar` (the worldstate band + #402 linked
-	// events). Entity pages now offer exactly one calendar block.
 	blockRegistry.Register(entities.BlockMeta{
 		Type: "upcoming_events", Label: "Upcoming Events", Icon: "fa-calendar-check",
 		Description: "Upcoming calendar events list", Addon: "calendar",
@@ -2911,62 +2752,41 @@ func (a *App) RegisterRoutes() {
 		// CALV5-PLACEHOLDER: was calendar.BlockUpcomingEvents(ctx.CC, limit).
 		return components.FeatureRebuildingBlock("The calendar")
 	})
-	// entity_calendar — the entity-PAGE calendar embed (C-CAL-ENTITY-PAGE-EMBED,
-	// Phase 6). Template context + REAL renderer (the closure captures
-	// calendarService, like map_editor): a compact worldstate band (#401 seed)
-	// + THIS entity's linked events (#402 EventsForEntity, dm_only filtered).
-	// Singleton — the band binds the engine's fixed #cal-v2-worldstate id, so
-	// one per page. Distinct from calendar_preview (dashboard upcoming-events
-	// card) by design.
+	// entity_calendar — the entity-page calendar embed: a compact worldstate
+	// band + this entity's linked events. Singleton per page (the band binds
+	// a fixed engine DOM id). Distinct from calendar_preview (dashboard
+	// upcoming-events card) by design.
 	blockRegistry.Register(entities.BlockMeta{
 		Type: "entity_calendar", Label: "Calendar (this entity)", Icon: "fa-calendar-days",
 		Description: "Ambient calendar + this entity's linked events",
 		Addon:       "calendar", Contexts: []string{"template"}, Singleton: true,
 	}, func(rc entities.BlockRenderContext) templ.Component {
-		// Resolve the calendar instance + render via the framework seam
-		// (C-WIDGET-BINDING-P4b): own binding → entity-type template → default
-		// (campaign default calendar = today's behavior). EntityCalendarBlock
-		// renders the friendly not-found state itself when context is missing;
-		// unbound entities render exactly as before (#411–#420 unchanged).
-		// CALV5-PLACEHOLDER: was renderBoundBlock(calendar.WidgetTypeCalendar, rc, "").
-		// Explicit rather than left to renderBoundBlock, which returns
-		// templ.NopComponent for an unregistered widget type — an invisible gap
-		// in the owner's entity layout, which reads as "my layout got edited".
+		// CALV5-PLACEHOLDER: V5 must restore
+		// renderBoundBlock(calendar.WidgetTypeCalendar, rc, ""). Explicit
+		// rebuilding notice here rather than renderBoundBlock's fallback
+		// (templ.NopComponent for an unregistered widget type), which would
+		// leave an unexplained gap in the owner's entity layout.
 		return components.FeatureRebuildingBlock("The calendar")
 	})
 
-	// entity_worldstate — the entity-PAGE worldState timepiece embed
-	// (C-CAL-WORLDSTATE-WIDGETS, Phase 6 widgetization). The "mini shelf
-	// view": the hourglass-on-shelf over a compact sky band, painted by the
-	// shared engine from the #401 seed and driven live by the worldState
-	// provider singleton — historical: the engine, the provider
-	// (widgets/worldstate_provider.js) and the skybox/worldstate widget shims
-	// were all deleted in the CALV5 clean slate; this block renders the
-	// rebuilding notice below. Completed "all
-	// three views entity-able" (calendar #411/#413, timeline Tuner #414,
-	// worldstate here). Singleton — like entity_calendar it binds the
-	// engine's fixed #cal-v2-worldstate id, so one worldState surface per
-	// page (operator picks entity_calendar OR entity_worldstate per page).
-	// Campaign-level (no per-entity data), so it works in BOTH the entity
-	// page (template) and the campaign dashboard contexts (dispatch D).
+	// entity_worldstate — the entity-page worldstate timepiece embed: an
+	// hourglass-on-shelf over a compact sky band. Singleton like
+	// entity_calendar (binds a fixed engine DOM id), and campaign-level (no
+	// per-entity data) so it also works on the campaign dashboard.
 	blockRegistry.Register(entities.BlockMeta{
 		Type: "entity_worldstate", Label: "Worldstate timepiece", Icon: "fa-hourglass-half",
 		Description: "Ambient sky + hourglass shelf for the current world date",
 		Addon:       "calendar", Contexts: []string{"template", "dashboard"}, Singleton: true,
 	}, func(rc entities.BlockRenderContext) templ.Component {
-		// Resolve the host's hourglass calendar via the "worldstate" widget type
-		// + render via the framework seam (C-WIDGET-BINDING-P4b). Empty/unbound →
-		// today's behavior (campaign default calendar). On the campaign-dashboard
-		// context rc.Entity is nil → no host → default + no affordance (P3b).
-		// CALV5-PLACEHOLDER: was renderBoundBlock(calendar.WidgetTypeWorldstate, rc, "").
+		// CALV5-PLACEHOLDER: V5 must restore
+		// renderBoundBlock(calendar.WidgetTypeWorldstate, rc, "").
 		return components.FeatureRebuildingBlock("The world state")
 	})
 
-	// skybox — the ambient SKY-ONLY block (C-SKYBOX-WIDGET): no hourglass, no
-	// per-entity binding (always the campaign's default calendar — a "which
-	// calendar" choice isn't meaningful without an hourglass to bind it to).
-	// Campaign-level, so — like entity_worldstate — it works in both the
-	// entity page (template) and the campaign dashboard contexts.
+	// skybox — the ambient sky-only block: no hourglass, no per-entity
+	// binding (always the campaign's default calendar). Campaign-level, like
+	// entity_worldstate, so it works on both the entity page and the
+	// campaign dashboard.
 	blockRegistry.Register(entities.BlockMeta{
 		Type: "skybox", Label: "Sky", Icon: "fa-cloud-sun",
 		Description: "Ambient sky only — moons, stars, weather + celestial events for the current world date",
@@ -2976,7 +2796,8 @@ func (a *App) RegisterRoutes() {
 		if rc.Entity != nil {
 			entityID = rc.Entity.ID
 		}
-		// CALV5-PLACEHOLDER: was calendar.EntitySkyboxBlock(calendarService, ...).
+		// CALV5-PLACEHOLDER: V5 must restore
+		// calendar.EntitySkyboxBlock(calendarService, ...).
 		_ = entityID
 		return components.FeatureRebuildingBlock("The sky")
 	})
@@ -2987,49 +2808,33 @@ func (a *App) RegisterRoutes() {
 		Description: "Timeline preview with events", Addon: "timeline",
 		Contexts: []string{"template"},
 	}, func(rc entities.BlockRenderContext) templ.Component {
-		// Resolve the host's bound timeline + render via the framework seam
-		// (C-WIDGET-BINDING-P4b). Unbound (no default) → empty instance →
-		// BlockTimeline keeps today's campaign preview list. Bound → that one.
+		// Unbound (no default) renders BlockTimeline's campaign preview list;
+		// bound renders that timeline instead.
 		return renderBoundBlock(timeline.WidgetTypeTimeline, rc, "")
 	})
 
 	// Maps plugin blocks (requires "maps" addon).
 	//
 	// map_editor — per-entity Map Editor block. Reads from entities.map_id
-	// (NOT from block config) so the choice lives on the entity itself,
-	// not on a shared entity-type layout. Template context only — this
-	// block is tied to a specific entity. Three render branches:
-	//   - entity has map_id: full inline editor (markers + drawings +
-	//     settings — same widget the dedicated map page uses) with a
-	//     "Change map" button for Scribe+. Players get view-only.
-	//   - no map_id + Scribe+: thumbnail picker grid.
-	//   - no map_id + Player: friendly empty state.
-	// The closure captures mapsService (built earlier in this file) so
-	// the picker grid can list the campaign's maps and the embed branch
-	// can build a full MapViewData server-side.
-	//
-	// Replaced map_preview / map_full as the recommended way to embed a
-	// map on an entity page — those were limited to view-only and stored
-	// the map_id at the layout level (same map across all entities of a
-	// type), which the operator's per-entity use case made awkward.
+	// (NOT from block config) so the choice lives on the entity itself, not
+	// a shared entity-type layout. Template context only. Three render
+	// branches: entity has map_id → full inline editor (Scribe+ can change
+	// it, Players view-only); no map_id + Scribe+ → thumbnail picker grid;
+	// no map_id + Player → friendly empty state.
 	blockRegistry.Register(entities.BlockMeta{
 		Type: "map_editor", Label: "Map Editor", Icon: "fa-map-location-dot",
 		Description: "Full per-entity map (markers, drawings, settings)",
 		Addon:       "maps", Contexts: []string{"template"},
 		// No ConfigFields — the source of truth is entity.MapID. The
 		// picker is rendered by the block itself, not the layout editor.
-		// Singleton: only one map_editor per layout. The IIFE inside
-		// MapEditorBody binds fixed DOM IDs (#map-container, #marker-modal,
-		// etc.) that would collide with multiple instances. Enforced in
-		// three layers — see BlockMeta.Singleton docstring.
+		// Singleton: only one map_editor per layout — the IIFE inside
+		// MapEditorBody binds fixed DOM IDs that would collide with
+		// multiple instances. See BlockMeta.Singleton docstring.
 		Singleton: true,
 	}, func(rc entities.BlockRenderContext) templ.Component {
-		// P4b: resolve + render via the framework seam (the embed/choose/empty
-		// branch logic now lives in maps.mapWidgetType.RenderBlock so the binding
-		// handler can re-render after a bind/unbind). LEGACY FALLBACK preserved:
-		// a widget_bindings row (widget_type="map") wins; an unbound entity with
-		// a legacy entity.map_id renders that map (identical to today). The
-		// bespoke AssignMap picker grid is superseded by the generic picker.
+		// Resolve + render via maps.mapWidgetType.RenderBlock. A
+		// widget_bindings row (widget_type="map") wins; an unbound entity
+		// with a legacy entity.map_id falls back to rendering that map.
 		legacyID := ""
 		if rc.Entity != nil && rc.Entity.MapID != nil {
 			legacyID = *rc.Entity.MapID
@@ -3044,14 +2849,8 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		// Promoted role, not the raw one: a co-DM must see in this
-		// embedded NPC block exactly what they see in the full
-		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
-		// system-assigned, so Chronicle honours it everywhere). The
-		// handlers themselves were fixed in the same change; this call
-		// site supplies the role as a PARAMETER, so it would have kept
-		// narrowing a co-DM to Player and the two surfaces would have
-		// disagreed about the same content on the same page.
+		// Use the promoted role (VisibilityRole), not the raw one, so a
+		// co-DM sees the same content here as in the full gallery.
 		cards, err := npcHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
@@ -3066,14 +2865,8 @@ func (a *App) RegisterRoutes() {
 		Contexts: []string{"template"},
 	}, func(bctx entities.BlockRenderContext) templ.Component {
 		limit := entities.BlockConfigLimit(bctx.Block.Config, "limit", 8)
-		// Promoted role, not the raw one: a co-DM must see in this
-		// embedded armory block exactly what they see in the full
-		// gallery (operator ruling, 2026-09-12 — the co-DM flag is
-		// system-assigned, so Chronicle honours it everywhere). The
-		// handlers themselves were fixed in the same change; this call
-		// site supplies the role as a PARAMETER, so it would have kept
-		// narrowing a co-DM to Player and the two surfaces would have
-		// disagreed about the same content on the same page.
+		// Use the promoted role (VisibilityRole), not the raw one, so a
+		// co-DM sees the same content here as in the full gallery.
 		cards, err := armoryHandler.GalleryBlock(context.Background(), bctx.CC.Campaign.ID, bctx.CC.VisibilityRole(), "", limit)
 		if err != nil {
 			return templ.NopComponent
@@ -3099,21 +2892,11 @@ func (a *App) RegisterRoutes() {
 	entityHandler.SetBlockRegistry(blockRegistry)
 	entityHandler.SetWidgetBlockLister(&widgetBlockListerAdapter{extHandler: extHandler})
 
-	// Slug-keyed entity-show renderer registry (CH4). System packages
-	// register character / monster / item renderers here at startup.
-	// Empty registry is fine: lookupEntityShowRenderer returns nil for
-	// every slug → show.templ falls through to the standard block
-	// dispatch. See docs/system-package-rendering.md for the
-	// system-package-author contract.
-	//
-	// V1 registers no built-in renderers — the host ships zero
-	// character-specific code by design. System packages (Draw Steel,
-	// future D&D 5.5e, etc.) hook in by adding a call here, mirroring
-	// the calendar.RegisterCalendarBlock pattern. Example, commented
-	// out until DS-CH1 lands the function:
-	//
-	//   drawsteel.RegisterEntityShowRenderers(showRegistry)
-	//
+	// Slug-keyed entity-show renderer registry. System packages register
+	// character/monster/item renderers here at startup; an empty registry
+	// is fine — lookupEntityShowRenderer returns nil for every slug and
+	// show.templ falls through to the standard block dispatch. See
+	// docs/system-package-rendering.md for the system-package contract.
 	showRegistry := entities.NewEntityShowRendererRegistry()
 	registerManifestRenderers(showRegistry)
 	entities.SetGlobalEntityShowRendererRegistry(showRegistry)
@@ -3126,25 +2909,15 @@ func (a *App) RegisterRoutes() {
 	campaignHandler.SetSystemLister(&systemListerAdapter{})
 	tagHandler.SetAuditService(auditService)
 
-	// --- AI Workspace (C-AI-WORKSPACE-V1-B) ---
-	// First plugin built under the post-NW-2.2 isolation rules.
-	// Owns the AI Export feature (relocated from internal/aiexport),
-	// the Prompt builder (Phase 3), and the AI Import surface
-	// (Phases 4-5). The renderer Service depends on narrow per-plugin
-	// listers; every plugin Service already implements them.
+	// --- AI Workspace ---
+	// Owns the AI Export feature, the Prompt builder, and the AI Import
+	// surface. The renderer Service depends on narrow per-plugin listers,
+	// which every plugin Service already implements. Owner-gated routes
+	// mount on a /campaigns/:id group that already enforces auth + campaign
+	// membership, mirroring foundry_vtt's RegisterOwnerRoutes pattern.
 	//
-	// Wiring:
-	//   1. Construct the renderer with each plugin's Service.
-	//   2. Build the plugin handler around the renderer + audit hook.
-	//   3. Register the settings-tab factory with campaigns.
-	//   4. Mount the owner-gated routes on a /campaigns/:id group
-	//      that already enforces auth + campaign membership (mirror
-	//      of foundry_vtt's RegisterOwnerRoutes pattern).
-	//
-	// D4=(c) lossless backup carve-out preserved — no edits to
-	// internal/app/export_adapters.go or the restore pipeline.
-	// CALV5-PLACEHOLDER: calendarService was the third argument (aiexport's
-	// CalendarLister). Restored when V5 lands.
+	// CALV5-PLACEHOLDER: V5 must restore calendarService as the third
+	// argument (aiexport's CalendarLister).
 	aiWorkspaceRenderer := aiexport.NewService(
 		entityService,
 		noteSvc,
@@ -3156,10 +2929,9 @@ func (a *App) RegisterRoutes() {
 	aiWorkspaceHandler := ai_workspace.NewHandler(aiWorkspaceRenderer)
 	aiWorkspaceHandler.SetAuditLogger(&aiWorkspaceAuditAdapter{svc: auditService})
 
-	// Phase 3 — Prompt builder. Reuses the relocated aiexport renderer
-	// as the content Exporter so the prompt's "Existing world context"
-	// section inherits SEC-6-AMENDED egress sanitization + the privacy
-	// modes without duplicating logic.
+	// Prompt builder reuses the aiexport renderer as the content Exporter
+	// so the prompt's "Existing world context" section inherits
+	// SEC-6-AMENDED egress sanitization + the privacy modes.
 	aiWorkspacePrompt := prompt.NewService(
 		entityService,
 		tagService,
@@ -3167,17 +2939,11 @@ func (a *App) RegisterRoutes() {
 	)
 	aiWorkspaceHandler.SetPromptBuilder(aiWorkspacePrompt)
 
-	// Phase 4 — Import parse + review. The entities service
-	// implements importer.CampaignLookup as-is (GetBySlug +
-	// GetEntityTypeBySlug + GetEntityTypes are already on its
-	// public interface). No adapter needed.
-	aiWorkspaceHandler.SetImportLookup(entityService)
-
-	// Phase 5 — Import commit. The entities service also
-	// implements importer.EntityCreator (Create + Update +
-	// UpdateEntry + CreateEntityType + the lookup methods).
-	// SEC-6-AMENDED ingress mirror is enforced by the AST pin in
+	// The entities service implements importer.CampaignLookup and
+	// importer.EntityCreator as-is; no adapter needed. SEC-6-AMENDED
+	// ingress sanitization is enforced by the AST pin in
 	// internal/plugins/ai_workspace/importer/committer_sanitize_test.go.
+	aiWorkspaceHandler.SetImportLookup(entityService)
 	aiWorkspaceHandler.SetImportCommitter(importer.NewCommitter(entityService))
 
 	campaignHandler.RegisterSettingsTab(aiWorkspaceHandler.SettingsTabFactory())
@@ -3272,14 +3038,10 @@ func (a *App) RegisterRoutes() {
 		},
 	)
 
-	// CALV5-PLACEHOLDER: both closures read through calendarService
-	// (GetCalendar, then ListUpcomingEvents) and marshalled the result for WASM
-	// extensions. They now fail loudly instead.
-	//
-	// The adapter stays WIRED rather than nil: a WASM plugin calling
-	// get_calendar gets an error it can report, where an unwired host function
-	// would trap or hand back a null the plugin would read as "no calendar
-	// configured" — the same lie the 503 above exists to avoid, one layer in.
+	// CALV5-PLACEHOLDER: V5 must rewire these closures to read through
+	// calendarService (GetCalendar, then ListUpcomingEvents) again. Until
+	// then the adapter stays wired but errors, so a WASM plugin calling
+	// get_calendar gets a reportable error instead of a misleading null.
 	errCalendarRebuilding := errors.New("calendar is being rebuilt (V5) and is unavailable to extensions")
 	wasmCalendarReader := extensions.NewWASMCalendarAdapter(
 		func(ctx context.Context, campaignID string) (json.RawMessage, error) {
@@ -3316,8 +3078,8 @@ func (a *App) RegisterRoutes() {
 		},
 	))
 
-	// CALV5-PLACEHOLDER: create_event unmarshalled a calendar.CreateEventInput
-	// and delegated to calendarService.CreateEvent. Same reasoning as the reader.
+	// CALV5-PLACEHOLDER: V5 must rewire create_event to unmarshal a
+	// calendar.CreateEventInput and delegate to calendarService.CreateEvent.
 	wasmHostEnv.SetCalendarWriter(extensions.NewWASMCalendarWriteAdapter(
 		func(ctx context.Context, campaignID string, input json.RawMessage) (json.RawMessage, error) {
 			return nil, errCalendarRebuilding
@@ -3452,25 +3214,18 @@ func (a *App) RegisterRoutes() {
 		return c.Redirect(http.StatusSeeOther, "/campaigns")
 	}, auth.RequireAuth(authService))
 
-	// CALV5-PLACEHOLDER: four auth-gated demo routes stood here —
-	// /demo/calendar, /demo/calendar/almanac, /demo/timeline/tuner and
-	// /demo/timeline/ledger — mock-data design showcases for calendar V2 and
-	// Timeline V2. Nothing ever shipped from the timeline pair: three months
-	// on, the production timeline was still V1.
-	//
-	// The whole internal/templates/demo package went with them. V5's design is
-	// signed as renders instead (cordinator/mockups/calendar-v5/), which is the
-	// point: a design that lives on a route has to be maintained, and these
-	// were not.
+	// CALV5-PLACEHOLDER: the calendar/timeline demo routes and the
+	// internal/templates/demo package were removed. V5's design is signed as
+	// static renders instead, not a maintained route (#741).
 
 	// --- Layout Data Injector ---
 	// Registers the callback that copies auth/campaign data from Echo's
 	// context into Go's context.Context so Templ templates can read it.
 	// This runs inside middleware.Render() before every template render.
 	middleware.LayoutInjector = func(c echo.Context, ctx context.Context) context.Context {
-		// Inject plugin-contributed body scripts (constant for process lifetime).
-		// Allows plugins to register widget scripts without hardcoding paths in
-		// the core base.templ layout (Finding 4 / M-B2.1 quick-win).
+		// Inject plugin-contributed body scripts (constant for process lifetime),
+		// so plugins can register widget scripts without hardcoding paths in the
+		// core base.templ layout.
 		ctx = layouts.SetPluginBodyScripts(ctx, pluginBodyScripts)
 
 		// User info from auth session.
@@ -3576,13 +3331,9 @@ func (a *App) RegisterRoutes() {
 					}
 				}
 
-				// Build the sidebar from the single unified items model. Sidebar
-				// config carries only Items now (C-NAV-V3 retired the legacy
-				// entity_type_order / hidden_type_ids / custom_sections /
-				// custom_links model + its fallback render path). An empty Items
-				// array is valid: injectDefaultSidebarItems synthesizes the full
-				// default sidebar, so a never-customized (or reconciler-skipped)
-				// campaign renders exactly as it did under the old legacy default.
+				// Build the sidebar from the single unified Items model. An empty
+				// Items array is valid: injectDefaultSidebarItems synthesizes the
+				// full default sidebar for a never-customized campaign.
 				sidebarCfg := cc.Campaign.ParseSidebarConfig()
 
 				// Entity types indexed by ID for quick lookup.
@@ -3615,10 +3366,8 @@ func (a *App) RegisterRoutes() {
 						if et, ok := typeMap[item.TypeID]; ok {
 							// Sub-category entity_types (ParentTypeID != nil) are
 							// template variants of their parent, not navigable
-							// collections. They must not appear in the sidebar —
-							// they surface through the +New picker on the parent
-							// instead. Skip them at build time; any persisted
-							// sub-category SidebarItem rows are silently ignored.
+							// collections; they surface via the parent's +New
+							// picker instead, so skip them here.
 							if et.ParentTypeID != nil {
 								continue
 							}
@@ -3724,17 +3473,11 @@ func (a *App) RegisterRoutes() {
 		}
 
 		// Signed media URL generators for templates. Bound to whoever is
-		// RENDERING this response (ADR-058 decision 6) — resolved from the
-		// same session lookup every other per-request layout value above
-		// already uses, ONCE per render, and closed over by both funcs so
-		// a single response's <img> tags and thumbnails all embed the same
-		// viewer regardless of how many fileIDs the templates hand in. A
-		// session cookie present means the viewer is that user; none means
-		// the viewer is anonymous (a public-campaign page viewed logged
-		// out) — LayoutInjector has no way to learn anything more specific
-		// than that, and doesn't need to: media.URLSigner.Verify derives
-		// the exact same PRESENTED identity from the exact same session
-		// lookup when these links are later fetched.
+		// RENDERING this response (ADR-058), resolved once per render and
+		// closed over by both funcs so every fileID in the response embeds
+		// the same viewer. A session cookie present means the viewer is that
+		// user; none means anonymous — media.URLSigner.Verify derives the
+		// same identity from the same session lookup when links are fetched.
 		if urlSigner != nil {
 			viewer := media.ViewerAnonymous
 			if userID := auth.GetUserID(c); userID != "" {
@@ -3756,16 +3499,11 @@ func (a *App) RegisterRoutes() {
 	wsHub := ws.NewHub()
 	go wsHub.Run()
 
-	// Wire the WS hub's presence lookup into foundry_vtt — the only
-	// remaining consumer post-NW-2.3. fvttHandler now owns both:
-	//   - GET /campaigns/:id/foundry-presence (live diagnostic JSON;
-	//     relocated from campaigns.Handler in NW-2.3)
-	//   - /foundry-vtt/presence-pill-fragment (lazy-loaded pill on the
-	//     map detail page; landed in NW-2.2 Chunk D)
-	// Both endpoints read through foundry_vtt.PresenceLookup, so a
-	// single SetPresenceLookup call covers them. The campaigns-side
-	// SetFoundryPresence wire was removed by NW-2.3; the maps-side
-	// SetFoundryPresence wire was removed earlier in D2-cleanup.
+	// Wire the WS hub's presence lookup into foundry_vtt. fvttHandler owns
+	// both GET /campaigns/:id/foundry-presence (live diagnostic JSON) and
+	// /foundry-vtt/presence-pill-fragment (lazy-loaded pill on the map detail
+	// page); both read through foundry_vtt.PresenceLookup, so a single
+	// SetPresenceLookup call covers them.
 	fvttHandler.SetPresenceLookup(wsHub)
 
 	wsAuth := ws.NewMultiAuthenticator(
@@ -3820,10 +3558,8 @@ func (a *App) RegisterRoutes() {
 	// Endpoints: /api/v1/campaigns/:id/{entity-types,entities,sync}
 
 	// --- Plugin Static Assets ---
-	// NW-2.2 Chunk F: mount each registered plugin's static assets at
-	// /static/plugins/<slug>/. Must run AFTER all plugins have called
-	// a.registerPlugin() above. Per
-	// cordinator/decisions/2026-05-25-plugin-static-assets.md.
+	// Mount each registered plugin's static assets at /static/plugins/<slug>/.
+	// Must run AFTER all plugins have called a.registerPlugin() above.
 	a.mountPluginStatic()
 }
 
@@ -3850,10 +3586,8 @@ func (a *mediaUploadAdapter) UploadRaw(ctx context.Context, campaignID, userID s
 }
 
 // aiWorkspaceAuditAdapter bridges audit.AuditService to the narrow
-// ai_workspace.AuditLogger contract. The plugin doesn't import the
-// audit package directly — same isolation pattern as
-// campaignAuditAdapter above (this adapter wraps the same underlying
-// service, just exposes a different narrow interface).
+// ai_workspace.AuditLogger contract, keeping the plugin from importing
+// the audit package directly (plugin isolation).
 type aiWorkspaceAuditAdapter struct {
 	svc audit.AuditService
 }

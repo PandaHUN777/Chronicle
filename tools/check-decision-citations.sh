@@ -1,9 +1,6 @@
 #!/usr/bin/env bash
 # check-decision-citations.sh — warn (never fail) on orphan decision docs.
 #
-# Mechanism M-O3.1 per cordinator/decisions/2026-05-21-core-tenets.md §T-O3,
-# implementing the Phase 2 ask from cordinator/reports/coordinator/2026-05-21-c-meta-audit.md.
-#
 # A decision doc is an orphan when its basename appears NOWHERE outside the
 # decision file itself across:
 #   - Chronicle source code (.go, .templ, .sh, .md, Makefile, etc.)

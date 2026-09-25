@@ -61,8 +61,7 @@ type mapService struct {
 	bindingCleaner BindingCleaner
 }
 
-// BindingCleaner sweeps a deleted instance's widget bindings (widget-binding
-// framework integrity hook, C-WIDGET-BINDING-P3a). Implemented by
+// BindingCleaner sweeps a deleted instance's widget bindings. Implemented by
 // widgetbindings.Service; injected via SetBindingCleaner. Optional — nil means
 // "no binding framework wired" (the render-time guard + Sweep are the backstop).
 type BindingCleaner interface {
@@ -147,10 +146,9 @@ func (s *mapService) UpdateMap(ctx context.Context, id string, input UpdateMapIn
 		return apperror.NewValidation("map name is required")
 	}
 
-	// Load-merge-write (sweep R4 / ADR-054 #4). `m` is the row as stored, so
-	// every merge below defaults to the stored value: only a key the caller
-	// actually sent can change anything. Before this, a rename-only PUT
-	// unlinked the map's image and wiped its description.
+	// Load-merge-write: `m` is the row as stored, so every merge below
+	// defaults to the stored value; only a key the caller actually sent
+	// can change anything.
 	m.Name = input.Name
 	m.Description = input.Description.Ptr(m.Description)
 	m.ImageID = input.ImageID.Ptr(m.ImageID)
@@ -190,10 +188,10 @@ func (s *mapService) DeleteMap(ctx context.Context, id string, expectedUpdatedAt
 	if err := s.repo.DeleteMap(ctx, id); err != nil {
 		return fmt.Errorf("delete map: %w", err)
 	}
-	// Widget-binding delete hook (C-WIDGET-BINDING-P3a): sweep this map's
-	// widget_bindings rows. Best-effort — the render-time orphan guard + Sweep
-	// backstop it. (The legacy entity.map_id is independently SET-NULLed by the
-	// fk_entities_map_id ON DELETE SET NULL constraint — that stays.)
+	// Widget-binding delete hook: sweep this map's widget_bindings rows.
+	// Best-effort — the render-time orphan guard + Sweep backstop it. The
+	// legacy entity.map_id is independently SET-NULLed by the
+	// fk_entities_map_id ON DELETE SET NULL constraint.
 	if s.bindingCleaner != nil {
 		_, _ = s.bindingCleaner.OnInstanceDeleted(ctx, m.CampaignID, WidgetTypeMap, id)
 	}
@@ -287,10 +285,10 @@ func (s *mapService) UpdateMarker(ctx context.Context, id string, input UpdateMa
 		return err
 	}
 
-	// Load-merge-write (sweep R4). `mk` is the row as stored, so every merge
-	// below defaults to the stored value and only a key the caller actually
-	// sent can change it. The validators read the MERGED value, not the raw
-	// input — an absent name is not an empty name.
+	// Load-merge-write: `mk` is the row as stored, so every merge below
+	// defaults to the stored value; only a key the caller actually sent can
+	// change it. Validators read the MERGED value, not the raw input — an
+	// absent name is not an empty name.
 	name := input.Name.Val(mk.Name)
 	if name == "" {
 		return apperror.NewValidation("marker name is required")

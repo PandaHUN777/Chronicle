@@ -144,8 +144,8 @@ Every env var Chronicle reads. **Bold = required in production.**
 | `BACKUP_REQUIRED` | `0` | When `1` or `true`, the in-process pre-migration capture is mandatory: any failure (mysqldump missing, dump zero bytes, manifest write fails) aborts startup before migrations apply. This covers BOTH gates — pending core migrations (`MigrateWithBackup`) and pending plugin migrations (`main.go`'s gate over `PendingPluginMigrations`); before the plugin gate existed, a release shipping only plugin migrations silently bypassed this variable entirely. Use in production. The default fail-open behavior (warn + proceed) preserves the legacy semantics for development setups that don't have `mariadb-client` installed. |
 | `BACKUP_SCRIPT_PATH` | `/app/scripts/backup.sh` | Used by the admin "Run backup" button. |
 | `RESTORE_SCRIPT_PATH` | `/app/scripts/restore.sh` | Used by the admin restore page. |
-| `CHRONICLE_VERSION` | (empty, except on tag builds) | Names the build explicitly. Read by `GET /api/version` (highest precedence, then the VCS revision compiled into the binary, then the main module version, then `unknown`), by the `host.build` admin diagnostic, and stamped into the pre-migration manifest's `chronicle_version=` line. CI passes it as a Docker build arg **only for `v*` tag builds**, where it is the tag name — a `main`-branch push leaves it empty on purpose, because that build's metadata version is the literal `latest`, which is a tag and not a version. Empty is the normal case and is not a gap: the binary now carries its own commit SHA (Dockerfile stage 2 installs `git` so the Go toolchain stamps `vcs.revision`), and `/api/version` falls through to it. Set it yourself only if you want a human-chosen name in that field. Historical note: before this, the variable was set by nothing anywhere, so `GET /api/version` returned the literal string `unknown` on every image ever shipped. |
-| `MYSQL_ROOT_PASSWORD` | (compose, **required**) | Compose-only; sets the bundled MariaDB's root password **on first initialisation only**. It used to default silently to the literal `rootsecret`; compose now refuses to start without it. An install that was first started before this change still has `rootsecret` as its root password unless rotated — see "Rotating the root password" below. |
+| `CHRONICLE_VERSION` | (empty, except on tag builds) | Names the build explicitly. Read by `GET /api/version` (highest precedence, then the VCS revision compiled into the binary, then the main module version, then `unknown`), by the `host.build` admin diagnostic, and stamped into the pre-migration manifest's `chronicle_version=` line. CI passes it as a Docker build arg **only for `v*` tag builds**, where it is the tag name — a `main`-branch push leaves it empty on purpose, because that build's metadata version is the literal `latest`, which is a tag and not a version. Empty is the normal case, not a gap: the binary carries its own commit SHA (Dockerfile stage 2 installs `git` so the Go toolchain stamps `vcs.revision`), and `/api/version` falls through to it. Set it yourself only if you want a human-chosen name in that field. |
+| `MYSQL_ROOT_PASSWORD` | (compose, **required**) | Compose-only; sets the bundled MariaDB's root password **on first initialisation only**. Compose refuses to start without it. An install first started before this variable was required may still have the old default `rootsecret` as its root password unless rotated — see "Rotating the root password" below. |
 | `MYSQL_PASSWORD` | (compose) | Compose-only; must match `DB_PASSWORD`. |
 
 ### Rotating the root password
@@ -223,8 +223,9 @@ curl -s localhost:8080/api/version                     # 5. confirm what is RUNN
 ```
 
 Step 5 is not ceremony. It is the only step that reports the software you are
-actually running, and it exists because on 2026-08-11 steps 1–4 completed
-successfully and the deploy still appeared to do nothing.
+actually running — steps 1–4 can all succeed while the running container
+never changes (see "Why `docker compose up -d` alone is not an upgrade"
+below).
 
 **Why `docker compose up -d` alone is not an upgrade.** It will not rebuild and
 it will not re-pull when an image with that tag already exists locally — it
@@ -234,10 +235,11 @@ published image, but keep the explicit `docker compose pull` in the sequence:
 it is the step whose output tells you whether anything new arrived.
 
 **Never build a local image onto the published tag.** The `chronicle` service
-deliberately has no `build:` section. Before that, `docker compose build`
-tagged a local build `ghcr.io/<org>/chronicle:latest`, so the published tag had
-two producers and nothing downstream could tell them apart. To run from source,
-use the override, which tags the result `chronicle:local` instead:
+deliberately has no `build:` section, so `docker compose build` cannot tag a
+local build onto the published `ghcr.io/<org>/chronicle:latest` name — a
+second producer for that tag would make it impossible to tell a local build
+apart from the published one. To run from source, use the override, which
+tags the result `chronicle:local` instead:
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.build.yml up -d --build
@@ -286,12 +288,12 @@ docker image inspect --format '{{.Id}}' ghcr.io/keyxmakerx/chronicle:latest   # 
 ```
 
 **If those two IDs differ, the tag has moved and any label you read off it is
-describing a different artifact than the one you are running.** That is exactly
-the trap that cost an hour: `org.opencontainers.image.revision` on the local
-`:latest` said `33f4cb07` (a real commit, from February), the labels were
-internally consistent and truthful, and the running container had been created
-from an entirely different image. An image label is a claim made by whoever
-last wrote that tag. It is never a claim about a process.
+describing a different artifact than the one you are running.** A local
+`:latest` image can carry perfectly consistent, truthful labels
+(`org.opencontainers.image.revision`, build date, etc.) while the running
+container was created from an entirely different image. An image label is a
+claim made by whoever last wrote that tag. It is never a claim about a
+process.
 
 In step 4 you should see, in order (the backup lines appear only when the
 release actually ships pending migrations — an upgrade with none skips the
@@ -336,8 +338,7 @@ pre-migration backup. **No new server code is ever needed for a rollback.**
 
 ### Downgrade / rollback behavior (ADR-045)
 
-As of the migration-robustness work, an **image downgrade no longer crash-loops**.
-When you pull an OLDER image whose migration set is behind the database's recorded
+An **image downgrade does not crash-loop**. When you pull an OLDER image whose migration set is behind the database's recorded
 version, the boot runner (`MigrateWithBackup`) detects "DB ahead of build", logs a
 loud warning (`database is AHEAD of this build — skipping migrations and starting
 anyway`), and **starts normally**. Migrations are additive, so the older binary runs
@@ -359,9 +360,8 @@ Two related boot behaviors:
   `schema_migrations` manually, then redeploy.
 - **Boot-failure backoff** (`BOOT_FAIL_BACKOFF`, default `45s`): on any unrecoverable
   boot error the process sleeps before `os.Exit(1)`, so a `restart: unless-stopped`
-  container retries ~1/min instead of hot-looping ~60/min (which floods logs/disk —
-  the `000030` incident produced ~6 pre-migration backups per minute this way). Set it
-  lower in dev (e.g. `BOOT_FAIL_BACKOFF=2s`).
+  container retries ~1/min instead of hot-looping ~60/min and flooding logs/disk
+  with repeated pre-migration backups. Set it lower in dev (e.g. `BOOT_FAIL_BACKOFF=2s`).
 
 ### Scenario A — server failed health checks at boot (most common)
 
@@ -375,11 +375,10 @@ docker compose logs chronicle | grep -E 'health check|migration|critical column'
 Read which check failed. If it's a migration version mismatch and you
 need to roll back the schema:
 
-As of the symmetry refactor, pre-migration captures emit the same
-manifest format as `scripts/backup.sh` (`chronicle_pre_migrate_manifest_<TS>.txt`
-plus per-artifact db/media/redis files with sha256 verification). That
-means `scripts/restore.sh --manifest <path>` can roll back from a
-pre-migration snapshot directly:
+Pre-migration captures emit the same manifest format as `scripts/backup.sh`
+(`chronicle_pre_migrate_manifest_<TS>.txt` plus per-artifact db/media/redis
+files with sha256 verification), so `scripts/restore.sh --manifest <path>`
+can roll back from a pre-migration snapshot directly:
 
 ```sh
 # Find the most recent pre-migration manifest (one per boot that ran

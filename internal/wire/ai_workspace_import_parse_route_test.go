@@ -1,16 +1,8 @@
-// ai_workspace_import_parse_route_test.go pins the owner-only
-// access control on POST /campaigns/:id/ai-workspace/import/parse
-// via AST inspection.
-//
-// Mirror of ai_workspace_prompt_route_test.go; same shape. The
-// parse endpoint accepts uploaded markdown that includes
-// potentially-DM-side content (Permitted/Everything content mode
-// upstream); the owner-gate keeps that content out of
-// Scribe/Player reach.
-//
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-26-c-ai-workspace-scoping.md
-// §5 acceptance invariants (owner-scoped).
+// ai_workspace_import_parse_route_test.go pins the owner-only access
+// control on POST /campaigns/:id/ai-workspace/import/parse via AST
+// inspection. The parse endpoint accepts uploaded markdown that may include
+// DM-side content (Permitted/Everything content mode); the owner gate keeps
+// that content out of Scribe/Player reach.
 
 package wire
 

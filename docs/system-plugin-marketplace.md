@@ -213,9 +213,7 @@ Systems can override the default tooltip with a Go `text/template` string:
 "tooltip_template": "<div class=\"tooltip\">{{.Name}} ({{.Properties.level}})</div>"
 ```
 
-### Future: Rich Stat Block Widgets
-
-For D&D Beyond-style card popups with interactive elements, systems can provide custom JS widgets mounted in the entity sidebar or as overlay cards. This is a separate addon layer that sits on top of the base system package.
+Systems needing richer, interactive stat-block popups can mount a custom JS widget in the entity sidebar or as an overlay card (see §5 Custom Widgets) rather than relying on the tooltip renderer.
 
 ## 7. VTT Sync Integration
 
@@ -345,21 +343,13 @@ For systems that need computed fields, validation rules, or dice rolling, WASM e
 | POST | `/systems/submit` | Submit repo for review |
 | GET | `/systems/my-submissions` | View own submissions |
 
-## 11. Migration Path
+## 11. System Independence
 
-### Current State (Post-Extraction)
-- All system-specific Go code removed from Chronicle core
-- D&D 5e and Draw Steel exist as standalone repos
-- Foundry module uses generic adapter exclusively
-- System detection is fully API-driven
+No system-specific Go code lives in Chronicle core. D&D 5e and Draw Steel are
+standalone repos; the Foundry module uses the generic adapter exclusively, and
+system detection is fully API-driven.
 
-### Future Enhancements
-1. **Rich stat block widgets** — D&D Beyond-style card popups as a separate addon
-2. **Monster/creature builder UI** — System-specific creation workflows
-3. **WASM rules engine** — Computed fields, validation, dice rolling
-4. **Public marketplace** — Browse and install community-created systems
-5. **System dependencies** — Addon packages that require a base system
-6. **Version compatibility** — api_version field for future schema evolution
+Open work: #740.
 
 ### Adding a New Game System
 

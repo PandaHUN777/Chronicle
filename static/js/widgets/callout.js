@@ -1,5 +1,5 @@
 /*
- * callout.js — the player call-to-action banner (C-RSVP-P10).
+ * callout.js — the player call-to-action banner.
  *
  * The banner itself is server-rendered and refreshed by an HTMX poll declared
  * on the host element (app.templ). This widget owns the two things the server
@@ -11,17 +11,16 @@
  *      will not tell us, the button stays hidden and the "Choose" link to
  *      /account is the whole offer — an honest degrade, not a broken control.
  *
- *   2. DISMISSAL. There is no user-preferences table in this product (one has
- *      been formally refused three times), so dismissal is client-side and
- *      lasts for the tab session. That is a deliberate choice and not a
- *      shortcut: an unset timezone is wrong EVERY day, so a permanent dismissal
- *      would let a player silently keep reading UTC times forever. Per tab is
- *      long enough to stop it nagging and short enough that it comes back.
+ *   2. DISMISSAL. There is no user-preferences table in this product, so
+ *      dismissal is client-side and lasts for the tab session: an unset
+ *      timezone is wrong every day, so a permanent dismissal would let a
+ *      player silently keep reading UTC times forever. Per tab is long
+ *      enough to stop it nagging and short enough that it comes back.
  *
  * ES5 style to match the rest of static/js. Registered via Chronicle.register
  * and auto-mounted by boot.js on [data-widget="callout"], which also re-mounts
- * it after every htmx settle — the mechanism that exists precisely because
- * script tags in swapped fragments are removed.
+ * it after every htmx settle since script tags in swapped fragments are
+ * removed.
  */
 (function () {
   'use strict';

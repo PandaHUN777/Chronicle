@@ -53,9 +53,9 @@ type Session struct {
 	RecapHTML     *string    `json:"recap_html,omitempty"` // Pre-rendered HTML.
 	ScheduledDate *string    `json:"scheduled_date,omitempty"` // YYYY-MM-DD format.
 	// ScheduledTime is the wall-clock start time as "HH:MM" (24-hour), zone-less
-	// like ScheduledDate (C-SCHED-P3, migration 004). Set from a confirmed
-	// proposal's winning UTC instant (converted to the confirmer's zone) or the
-	// create/edit modal. nil = no time (all pre-P3 + time-less sessions).
+	// like ScheduledDate. Set from a confirmed proposal's winning UTC instant
+	// (converted to the confirmer's zone) or the create/edit modal. nil means
+	// no time set.
 	ScheduledTime *string    `json:"scheduled_time,omitempty"`
 	CalendarYear  *int       `json:"calendar_year,omitempty"`
 	CalendarMonth *int       `json:"calendar_month,omitempty"`
@@ -140,15 +140,10 @@ type CreateSessionInput struct {
 
 // UpdateSessionInput is the validated input for updating a session.
 //
-// Every field is a patch.Field: this is a PARTIAL update, and the sweep-R4
-// contract governs it — an ABSENT key preserves the stored value, an
-// EXPLICIT null clears it, a present value replaces it. Before that, every
-// field was assigned unguarded, so "Mark Complete" (which sends
-// {name,status} only) erased the schedule, the summary, the in-world date
-// and the whole recurrence config — which also silently stopped the
-// next-occurrence generator, because it keys off the STORED IsRecurring.
-// Do not re-introduce a value-typed field here; sessions_partial_update_test.go
-// reddens if you do.
+// Every field is a patch.Field: this is a PARTIAL update — an absent key
+// preserves the stored value, an explicit null clears it, a present value
+// replaces it. Do not re-introduce a value-typed field here;
+// partial_update_test.go reddens if you do.
 type UpdateSessionInput struct {
 	Name                patch.Field[string]
 	Summary             patch.Field[string]
@@ -173,8 +168,8 @@ type SessionListData struct {
 
 // FormatScheduledDate returns a human-readable date string like "Sat, Mar 8, 2028"
 // from the YYYY-MM-DD scheduled_date field, with the wall-clock time appended
-// ("Sat, Mar 8, 2028 · 7:00 PM") when scheduled_time is set (C-SCHED-P3). Returns
-// empty string if no date is set.
+// ("Sat, Mar 8, 2028 · 7:00 PM") when scheduled_time is set. Returns empty
+// string if no date is set.
 func (s *Session) FormatScheduledDate() string {
 	if s.ScheduledDate == nil || *s.ScheduledDate == "" {
 		return ""

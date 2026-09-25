@@ -184,10 +184,7 @@ func scanExceptions(rows *sql.Rows) ([]AvailabilityException, error) {
 // NO PRODUCTION CALLER, AND THAT IS THE POINT. Writing ONE exception row for a
 // date silently deletes the rest of that date, because exception rows fully
 // REPLACE the recurring pattern for their date (effectiveBlocks,
-// availability_overlay.go). AddMyException used to call this and turned "I'm
-// ALSO free 07:00–08:00" into a member who was free for one hour at 7am and busy
-// every evening. It now composes the whole day and writes it through
-// ReplaceDayExceptions instead. Kept for completeness of the repository's CRUD
+// availability_overlay.go). Kept for completeness of the repository's CRUD
 // surface — if you reach for it, you almost certainly want ReplaceDayExceptions.
 func (r *sessionRepository) AddException(ctx context.Context, e *AvailabilityException) error {
 	const q = `INSERT INTO availability_exceptions
@@ -205,7 +202,7 @@ func (r *sessionRepository) AddException(ctx context.Context, e *AvailabilityExc
 
 // CountUserExceptions returns how many exception rows a member currently has in
 // a campaign — the input to the per-user cap that keeps a malformed or hostile
-// client from inserting an unbounded number of override rows (C-SCHED-P2 0d).
+// client from inserting an unbounded number of override rows.
 func (r *sessionRepository) CountUserExceptions(ctx context.Context, campaignID, userID string) (int, error) {
 	var n int
 	err := r.db.QueryRowContext(ctx,
@@ -219,10 +216,9 @@ func (r *sessionRepository) CountUserExceptions(ctx context.Context, campaignID,
 
 // ReplaceDayExceptions atomically replaces ALL of a member's exception rows for
 // one date (delete-all-for-date then insert). This is the storage side of the
-// "compose the day" UI (C-SCHED-P2 0c): the editor pre-fills from the recurring
-// pattern and re-sends the whole day, so replace-day semantics are preserved
-// while a one-hour busy mark no longer erases the rest of the day. An empty
-// blocks slice clears the day's overrides (reverting it to the recurring pattern).
+// "compose the day" UI: the editor pre-fills from the recurring pattern and
+// re-sends the whole day, so a one-hour busy mark no longer erases the rest
+// of the day. An empty blocks slice reverts the day to the recurring pattern.
 func (r *sessionRepository) ReplaceDayExceptions(ctx context.Context, campaignID, userID, onDate string, excs []AvailabilityException) error {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {

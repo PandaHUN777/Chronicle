@@ -1,14 +1,11 @@
 // availability_harness.mjs — dependency-free mini-DOM harness for
 // static/js/availability.js (the availability scheduler client).
 //
-// availability.js is a browser IIFE that builds a real element tree (createElement
-// + appendChild), toggles classes, runs querySelector with attribute/class/
-// descendant selectors, and drives a month<->week morph on setTimeout. To exercise
-// it headless under `node --test` (no jsdom — the CI JS suite is deps-free) we
-// implement just enough of the DOM: an Element with classList/attrs/style/children,
-// a small CSS-selector engine (tag / #id / .class / [attr] / [attr="v"] / descendant
-// combinator), and a document/window wired into a vm sandbox. Real timers are passed
-// through so the 340ms morph cleanup fires against a normal clock (tests await it).
+// The CI JS suite has no deps (no jsdom), so this implements just enough DOM
+// to run availability.js headless: an Element with classList/attrs/style/
+// children, a small CSS-selector engine (tag / #id / .class / [attr] /
+// [attr="v"] / descendant combinator), and a document/window in a vm sandbox.
+// Real timers pass through so the 340ms morph cleanup fires normally.
 
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -143,11 +140,9 @@ class Element {
 // opts.canDetail (default true) -> DM/owner detail view.
 // opts.overlay(weekISO) -> custom overlay payload factory.
 // opts.exceptions -> seed rows [{id, onDate, startMinute, endMinute, state}] for
-//   the stateful exceptions mock (C-SCHED-OUT-THIS-WEEK): GET reads the current
-//   store, PUT replaces one date's rows (replace-day semantics, mirrors the real
-//   ReplaceDayExceptions endpoint), DELETE removes one row by id (404 if absent —
-//   the real endpoint's "already gone" case). Defaults to an empty store, same
-//   externally-observable GET behavior as before this mock existed.
+//   the stateful exceptions mock: GET reads the current store, PUT replaces one
+//   date's rows (mirrors the real ReplaceDayExceptions endpoint), DELETE removes
+//   one row by id (404 if absent, matching the real endpoint).
 export function boot(opts = {}) {
   const doc = new Element('#document');
   const head = new Element('head');
@@ -160,13 +155,12 @@ export function boot(opts = {}) {
   root.setAttribute('data-user-id', 'u1');
   root.setAttribute('data-can-detail', String(opts.canDetail !== false));
   root.setAttribute('data-tz', 'America/New_York');
-  // data-common-tz mirrors the server-embedded canonical list (C-TZ-
-  // CONSOLIDATION, internal/timeutil.CommonZonesJSON). This fixture is
-  // deliberately a small stand-in, NOT a copy of the real curated list —
+  // data-common-tz mirrors the server-embedded list (internal/timeutil.CommonZonesJSON);
+  // this fixture is a small stand-in, not a copy of the real curated list.
   // opts.commonTZ overrides it; opts.commonTZ === null omits the attribute
-  // entirely (exercising availability.js's no-attribute fallback);
-  // opts.commonTZRaw sets the attribute to a literal string, bypassing
-  // JSON.stringify (exercising the malformed-JSON fallback).
+  // entirely (exercises the no-attribute fallback); opts.commonTZRaw sets the
+  // attribute to a literal string, bypassing JSON.stringify (exercises the
+  // malformed-JSON fallback).
   if (opts.commonTZRaw !== undefined) {
     root.setAttribute('data-common-tz', opts.commonTZRaw);
   } else if (opts.commonTZ !== null) {
@@ -209,8 +203,8 @@ export function boot(opts = {}) {
           return resp(found, found ? 200 : 404, found ? { status: 'ok' } : { error: 'not found' });
         }
         if (method === 'PUT') {
-          // opts.failPutAfter simulates the real per-user cap (C-SCHED-P2 0d)
-          // rejecting a write partway through a batch of sequential PUTs.
+          // opts.failPutAfter simulates the real per-user cap rejecting a
+          // write partway through a batch of sequential PUTs.
           if (putCount >= failPutAfter) {
             return resp(false, 400, { error: 'too many availability exceptions; delete some before adding more' });
           }

@@ -262,13 +262,12 @@ test('createGroupFolder positions the new folder at the target sibling INDEX, no
 // --- Empty-folder ("New empty folder") path — the reported "nothing happens" bug ---
 
 test('createGroupFolder (empty folder) forwards the tree container type into the node POST', async () => {
-  // This pins the CLIENT half of the contract: createGroupFolder reads the type
-  // from the tree container's data-entity-type-id and forwards it verbatim into
-  // POST /sidebar-nodes (it must not hardcode or drop it). The SERVER half — that
-  // the container advertises the drilled CATEGORY type, not a rolled-up sub-type —
-  // is what actually vanished the folder on refresh and is pinned by the Go
-  // TestSidebarEntityList_AdvertisesCategoryTypeNotSubType. Together they keep node
-  // create-scope and reload-scope on one type.
+  // Pins the client half of the contract: createGroupFolder reads the type
+  // from the tree container's data-entity-type-id and forwards it verbatim
+  // into POST /sidebar-nodes (must not hardcode or drop it). The server
+  // half — that the container advertises the drilled category type, not a
+  // rolled-up sub-type — is pinned by the Go
+  // TestSidebarEntityList_AdvertisesCategoryTypeNotSubType.
   // treeTypeId 7 = the drilled category's own type.
   const { mod, fetchCalls } = load({ treeTypeId: 7 });
   const target = makeGroupTarget(1, 3, { 'data-entity-id': 'target-1' });

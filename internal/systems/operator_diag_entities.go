@@ -519,17 +519,6 @@ func campaignSlot(name, arg string) (slot, rest string, whole, scoped bool) {
 			return strings.TrimSpace(parts[0]), parts[1], false, true
 		}
 		return strings.TrimSpace(arg), "", false, true // malformed: treat whole as the slot
-	// calendar.render / calendar.config carry an OPTIONAL tail (a user id, a
-	// calendar id). A bare campaign id is therefore a COMPLETE argument for
-	// them, not a malformed one — so with no colon the whole arg is the slot
-	// and substitution produces `c1` rather than the `c1:` a shared malformed
-	// branch would leave behind.
-	case "calendar.render", "calendar.config":
-		parts := strings.SplitN(arg, ":", 2)
-		if len(parts) == 2 {
-			return strings.TrimSpace(parts[0]), parts[1], false, true
-		}
-		return strings.TrimSpace(arg), "", true, true
 	}
 	return "", "", false, false
 }

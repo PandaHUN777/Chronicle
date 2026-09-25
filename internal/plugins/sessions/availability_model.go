@@ -25,8 +25,7 @@ type AvailabilityBlock struct {
 	State       string // available | preferred
 	TZ          string // IANA zone the wall-clock is in
 	// WeekCadence is CadenceEveryWeek / CadenceWeekA / CadenceWeekB
-	// (availability_cadence.go). Zero means every week, which is what every
-	// block written before C-RSVP-P9 meant and still means.
+	// (availability_cadence.go). Zero means every week.
 	WeekCadence int
 	UpdatedAt   time.Time
 }
@@ -129,11 +128,11 @@ type AddExceptionRequest struct {
 }
 
 // ReplaceDayExceptionsRequest replaces ALL of a member's overrides for one date
-// in a single atomic call — the storage side of the "compose the day" editor
-// (C-SCHED-P2 0c). The client pre-fills the editor with the effective day
-// (recurring pattern) and sends the whole composed set back, so marking one
-// hour busy re-sends the rest rather than erasing it. An empty Blocks reverts
-// the day to the recurring pattern.
+// in a single atomic call — the storage side of the "compose the day" editor.
+// The client pre-fills the editor with the effective day (recurring pattern)
+// and sends the whole composed set back, so marking one hour busy re-sends
+// the rest rather than erasing it. An empty Blocks reverts the day to the
+// recurring pattern.
 type ReplaceDayExceptionsRequest struct {
 	OnDate string                    `json:"onDate"` // YYYY-MM-DD
 	TZ     string                    `json:"tz"`
@@ -141,7 +140,7 @@ type ReplaceDayExceptionsRequest struct {
 }
 
 // AvailabilityWindowDTO is one TEMPORARY window a member offers for a specific
-// real-world date — "I could actually do Tuesday 6–10pm" (C-CAL-RSVP-P2).
+// real-world date — "I could actually do Tuesday 6–10pm".
 //
 // Distinct from ExceptionBlockDTO, which is a composed piece of a whole-day
 // replacement: a window is an ADDITIVE offer, and the service composes the rest
@@ -196,14 +195,11 @@ type OverlayHour struct {
 // OverlayMember is one member's roster entry: a stable color for their lane
 // plus, for the DM, their projected per-day availability lanes.
 //
-// ROLE IS THE TRUTH, NOT A GUESS (C-CALV4-RSVP-P8 §4 / WG-4, ADR-048 §17). This
-// field used to be produced by a local roleLabel(isOwner) that returned "DM" or
-// "player" from Role >= RoleOwner alone, ignoring IsDmGranted — so a **co-DM
-// rendered as "player" while receiving full owner-tier detail**, on the one
-// surface whose entire subject is who-may-see-what. Role now carries
-// campaigns.Role.DisplayName() (Owner / Scribe / Player), resolved by the
-// handler from the campaign roster, and IsCoDM carries the grant separately so
-// a consumer can mark it without the role string having to encode two facts.
+// Role carries campaigns.Role.DisplayName() (Owner / Scribe / Player),
+// resolved by the handler from the campaign roster, never derived here from
+// IsOwner alone — that would mislabel a co-DM as "player" on the one surface
+// whose subject is who-may-see-what. IsCoDM carries the DM grant separately
+// so a consumer can mark it without the role string encoding two facts.
 type OverlayMember struct {
 	UserID string        `json:"userId"`
 	Name   string        `json:"name"`
@@ -215,25 +211,19 @@ type OverlayMember struct {
 	// so it rides beside Role rather than replacing it.
 	IsCoDM bool `json:"isCoDm,omitempty"`
 	// TZ is the member's stored IANA zone, EMPTY when they have not set one.
+	// Empty is a first-class state and must stay one: users.timezone is
+	// NULLABLE, and a clock rendered for a zone-less member as a UTC guess
+	// would be a guess presented as fact. Consumers print a "zone not set"
+	// repair and no clock.
 	//
-	// Empty is a first-class state and must stay one: users.timezone is NULLABLE
-	// and every viewer-zone resolver in the product silently falls back to
-	// "UTC", so a clock rendered for a zone-less member is a guess presented as
-	// a fact. Consumers print the "zone not set" repair and NO clock — never
-	// "--:--", never a dash, never a UTC guess (§5, ADR-048 §18).
-	//
-	// It is a DTO field and deliberately NOT a campaign_members column: zone is
-	// a user-account fact, campaign-independent, and duplicating it per
+	// It is a DTO field and deliberately NOT a campaign_members column: zone
+	// is a user-account fact, campaign-independent, and duplicating it per
 	// membership would create a second copy that can go stale.
 	TZ    string        `json:"tz,omitempty"`
 	Lanes []LaneSegment `json:"lanes,omitempty"`
-	// HasAnswered separates "answered: never free" from "has not answered".
-	//
-	// Empty Lanes used to mean both at once, and the heatmap presented the pair
-	// identically — as unavailability. So a week that was actually unanswered
-	// read as a week nobody could make, and the Director planned around a fact
-	// nobody had stated. This is the field that stops the aggregate from
-	// speaking for people who have not spoken.
+	// HasAnswered separates "answered: never free" from "has not answered" —
+	// both of which render as empty Lanes and must not be presented as the
+	// same fact.
 	HasAnswered bool `json:"hasAnswered"`
 }
 
@@ -252,9 +242,9 @@ type LaneSegment struct {
 //
 // RoleLabel and IsCoDM are resolved by the HANDLER, from campaigns.Role
 // .DisplayName() and the campaign's DmGrantIDs setting, rather than derived
-// here — that is what keeps this file campaigns-free while still letting the
-// overlay print the truth (WG-4). IsOwner survives because it is the ORDERING
-// key (owners first), which is a different question from what a row is labelled.
+// here — that keeps this file campaigns-free while still letting the overlay
+// print the truth. IsOwner survives as the ORDERING key (owners first), a
+// different question from what a row is labelled.
 type overlayMemberInput struct {
 	UserID string
 	Name   string

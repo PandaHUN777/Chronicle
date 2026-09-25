@@ -1,15 +1,10 @@
 package middleware
 
-// recovery_record_test.go — panics reach the in-memory error ring.
-//
-// This test exists because of an asymmetry that is easy to miss: Recovery
-// writes its own 500 with c.String and returns nil, so Echo never sees an error
-// and app.errorHandler is NEVER CALLED for a recovered panic. Hooking only the
-// error handler would therefore have left the single most valuable error class
-// invisible in host.errors while the diagnostic looked like it was working —
-// exactly the "absence read as evidence" failure the host.* diagnostics exist
-// to prevent. If someone later removes the RecordPanic call as redundant, this
-// fails.
+// recovery_record_test.go pins that panics reach the in-memory error ring
+// (host.errors) via RecordPanic. Recovery writes its own 500 with c.String
+// and returns nil, so Echo never sees an error and app.errorHandler is never
+// called for a recovered panic — this fails if RecordPanic is later removed
+// as apparently redundant.
 
 import (
 	"net/http"

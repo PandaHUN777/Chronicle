@@ -1,13 +1,8 @@
 package layouts
 
-// display_name_test.go — C-CUSTOMIZE-RESCUE B1 pin. The owner-set custom brand
-// name must override the campaign name in the TOPBAR, not only the sidebar.
-// Before this fix the sidebar honored the brand name (via #464) but the two
-// topbar sites read GetCampaignName directly, so a custom brand appeared in the
-// sidebar and silently reverted to the campaign name in the header — the
-// operator-reported "header customization is broken" (audit §8.1). These tests
-// pin GetDisplayName + the two topbar render sites so the two chrome surfaces
-// cannot drift apart again.
+// display_name_test.go pins that the owner-set custom brand name overrides the
+// campaign name in the topbar, not only the sidebar: GetDisplayName plus the
+// two topbar render sites, so the two chrome surfaces cannot drift apart.
 
 import (
 	"bytes"

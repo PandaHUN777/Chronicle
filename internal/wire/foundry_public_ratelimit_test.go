@@ -1,51 +1,19 @@
-// foundry_public_ratelimit_test.go pins the M-3 security invariant from
-// the C-SECURITY-AUDIT: the Foundry public manifest routes
-// (/api/v1/campaigns/:cid/foundry-vtt/module.json + /module.zip) MUST
-// be guarded by rate-limit middleware. Without it an abusive client
-// can hammer the manifest endpoint (frequent Foundry update checks
-// already hit it; an unrelimited DoS is trivial).
+// foundry_public_ratelimit_test.go pins that the Foundry public manifest
+// routes (/api/v1/campaigns/:cid/foundry-vtt/module.json + /module.zip)
+// are guarded by rate-limit middleware. Without it an abusive client can
+// hammer the manifest endpoint for an easy DoS.
 //
-// Per cordinator/decisions/2026-05-21-core-tenets.md §T-B1 + §T-O2;
-// cordinator/reports/chronicle/2026-05-22-c-security-audit.md §2 M-3 +
-// §5 Chunk 2 + §0.5 D2=(b).
+// This is a focused invariant, not full middleware-chain capture across
+// every route. Two AST assertions:
 //
-// SCOPE — focused invariant, not full middleware-chain capture.
+//  1. TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit — walks
+//     RegisterPublicRoutes's body for a g.Use(rateLimit) call.
+//  2. TestFoundryPublicRoutes_AppPassesRateLimitMiddleware — walks
+//     app/routes.go's call to RegisterPublicRoutes, asserts the 3rd
+//     argument is a middleware.RateLimit(...) call.
 //
-// The dispatch (C-SEC-CHUNK-2) called for a Phase 2B refactor that
-// would upgrade wire_contract_test.go to capture middleware chains
-// for every route via golang.org/x/tools/go/packages. That refactor
-// is medium-large work (new heavy dependency + full type-resolved
-// AST rewrite + snapshot schema change). This file instead ships
-// the MINIMAL invariant that closes the M-3 security finding: two
-// AST assertions targeting the specific Foundry public routes.
-// Same pattern as NW-2.2 Chunks E/G/D: minimal scope + spawn
-// residual follow-up.
-//
-// Residual work for a future "C-SEC-CHUNK-2-PHASE-2C" dispatch:
-//   - Full middleware-chain capture for every route (currently only
-//     foundry-vtt public is pinned)
-//   - Resolve Group prefixes via type-resolved walk (Phase 2A
-//     simplification #2)
-//   - Auth-classification (the (method, path, auth) tuple the audit
-//     §0.5 D7 called for; Phase 2A ships (method, path, file))
-//
-// Two assertions in this file:
-//
-//   1. TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit —
-//      walks internal/plugins/foundry_vtt/routes.go's
-//      RegisterPublicRoutes body, asserts a g.Use(rateLimit) call
-//      exists. Fails if a future contributor removes the middleware
-//      wiring from the registration function.
-//
-//   2. TestFoundryPublicRoutes_AppPassesRateLimitMiddleware —
-//      walks internal/app/routes.go's call to
-//      foundry_vtt.RegisterPublicRoutes, asserts the 3rd argument is
-//      a middleware.RateLimit(...) call (not nil, not some other
-//      middleware). Fails if a future contributor changes the call
-//      site to pass nil or substitute a non-rate-limit middleware.
-//
-// Together the two pin the wire-end-to-end: the call site provides
-// rate-limit, the registration function applies it to the group.
+// Together they pin the wire end-to-end: the call site provides the
+// rate limiter, the registration function applies it to the group.
 
 package wire
 
@@ -59,18 +27,13 @@ import (
 )
 
 // fvttDirName is the Go package + filesystem directory name for the
-// foundry_vtt plugin. Reconstructed via fragment-join so this test
-// file itself doesn't trip the plugin-isolation grep guard's quoted-
-// literal regex. Same pattern as tools/check-plugin-isolation.sh
-// uses for self-scan safety. The string value is identical to writing
-// it as a single literal; the join just hides it from the regex.
+// foundry_vtt plugin. Built via fragment-join so this file's own literal
+// doesn't trip the plugin-isolation grep guard's regex.
 var fvttDirName = "fou" + "ndry_vtt"
 
-// TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit pins
-// that foundry_vtt.RegisterPublicRoutes still applies its rateLimit
-// parameter to the public routes group. If a future refactor drops
-// the g.Use(rateLimit) line, this test fails with a clear pointer
-// to the M-3 finding.
+// TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit pins that
+// foundry_vtt.RegisterPublicRoutes still applies its rateLimit parameter
+// to the public routes group.
 func TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit(t *testing.T) {
 	root := repoRoot(t)
 	routesPath := filepath.Join(root, "internal", "plugins", fvttDirName, "routes.go")
@@ -89,12 +52,9 @@ func TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit(t *testing.T) {
 		t.Fatalf("RegisterPublicRoutes has no body — unexpected")
 	}
 
-	// Walk the body for any expression statement that's a method
-	// call whose selector name is "Use" — that's a *echo.Group.Use(...)
-	// or *echo.Echo.Use(...) middleware-attach call. The rateLimit
-	// parameter is the only middleware passed into this function;
-	// if any Use call is present, it's wiring rateLimit (or a future
-	// wrapper around it — still fails the test if wholly removed).
+	// Walk the body for any call whose selector is "Use" — a
+	// *echo.Group.Use(...) middleware-attach call. rateLimit is the only
+	// middleware passed into this function, so any Use call wires it.
 	hasUseCall := false
 	ast.Inspect(fn.Body, func(n ast.Node) bool {
 		call, ok := n.(*ast.CallExpr)
@@ -120,11 +80,9 @@ func TestFoundryPublicRoutes_RegisterPublicRoutesWiresRateLimit(t *testing.T) {
 	}
 }
 
-// TestFoundryPublicRoutes_AppPassesRateLimitMiddleware pins that the
-// App's call to foundry_vtt.RegisterPublicRoutes passes a non-nil
-// rate-limit middleware. If a future refactor changes the third
-// argument to nil (or some other middleware), this test fails with
-// a clear pointer to the M-3 finding.
+// TestFoundryPublicRoutes_AppPassesRateLimitMiddleware pins that the App's
+// call to foundry_vtt.RegisterPublicRoutes passes a non-nil rate-limit
+// middleware as its third argument.
 func TestFoundryPublicRoutes_AppPassesRateLimitMiddleware(t *testing.T) {
 	root := repoRoot(t)
 	appRoutesPath := filepath.Join(root, "internal", "app", "routes.go")

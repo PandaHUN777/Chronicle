@@ -6,19 +6,13 @@ import (
 	"github.com/keyxmakerx/chronicle/internal/timeutil"
 )
 
-// Week cadence for recurring availability (C-RSVP-P9).
+// Week cadence for recurring availability.
 //
-// Until now a stored block was "this weekday, every week, forever" and nothing
-// else was expressible. Real groups do not all work that way: alternating-week
-// games are common, and the only way to express one was to hand-punch a
-// per-date exception every fortnight — a chore nobody sustains, which meant the
-// heatmap slowly drifted away from the truth.
-//
-// A block therefore carries a CADENCE: every week, or one of two alternating
-// tracks. The tracks are deliberately NOT called "odd/even" anywhere a person
-// can see, because odd-versus-even is only meaningful once you know what is
-// being counted; the UI names them by an actual date ("week of 16 Aug") that it
-// derives from these functions.
+// A block carries a CADENCE: every week, or one of two alternating tracks,
+// so a group that plays every other week does not need a hand-punched
+// per-date exception every fortnight. The tracks are deliberately NOT called
+// "odd/even" anywhere a person can see; the UI names them by an actual date
+// ("week of 16 Aug") derived from these functions.
 
 // Week cadence values, stored in member_availability.week_parity.
 //
@@ -31,15 +25,11 @@ const (
 	CadenceWeekB     = 2
 )
 
-// cadenceEpoch is the Sunday alternating weeks are counted from.
-//
-// 1970-01-04 is a Sunday, which matches day_of_week's 0=Sunday convention, so a
-// week here is the same week the rest of the availability code already means.
-// The epoch is fixed and global ON PURPOSE: if each campaign (or each member)
-// counted from its own start, two members in the same campaign could disagree
-// about which track a given real week is, and the overlay would silently
-// combine incompatible answers. One epoch for everyone makes "week A" a fact
-// about the calendar rather than about the person answering.
+// cadenceEpoch is the Sunday alternating weeks are counted from: 1970-01-04,
+// a Sunday, matching day_of_week's 0=Sunday convention. It is fixed and
+// global on purpose — if each campaign or member counted from its own start,
+// two members could disagree about which track a given real week is, and the
+// overlay would silently combine incompatible answers.
 var cadenceEpoch = time.Date(1970, time.January, 4, 0, 0, 0, 0, time.UTC)
 
 // ValidWeekCadence reports whether v is a cadence the store accepts.

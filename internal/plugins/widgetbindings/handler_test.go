@@ -1,11 +1,12 @@
-// handler_test.go — C-WIDGET-BINDING-P4a. The binding HTTP surface:
-// picker render (resolved source + instance cards + current highlight),
-// bind / create+bind / unbind mutations (campaign from the ROUTE not the body,
-// reload signalled), and the registry/host-type validation guard.
+// Pins the binding HTTP surface: picker render (resolved source + instance
+// cards + current highlight), bind / create+bind / unbind mutations
+// (campaign from the route not the body, reload signalled), and the
+// registry/host-type validation guard.
 //
 // Role gating (Scribe+) is middleware-enforced at the route layer
-// (campaigns.RequireRole in routes.go) and exercised by the campaigns package;
-// these tests cover the handler logic + the app-code namespace validation.
+// (campaigns.RequireRole in routes.go) and exercised by the campaigns
+// package; these tests cover the handler logic + the app-code namespace
+// validation.
 package widgetbindings
 
 import (
@@ -351,9 +352,9 @@ func TestMutations_RejectUnknownTypes(t *testing.T) {
 	}
 }
 
-// BlockHost must carry the stable swap-target id AND generate a real box — NOT
-// display:contents, which made the entity-page column's space-y between-block
-// spacing a no-op (C-WIDGET-BINDING-QA1 Bug 3).
+// BlockHost must carry the stable swap-target id and generate a real box,
+// not display:contents, which would make the entity-page column's space-y
+// between-block spacing a no-op.
 func TestBlockHost_GeneratesBoxForSpacing(t *testing.T) {
 	inner := templ.ComponentFunc(func(_ context.Context, w io.Writer) error {
 		_, err := io.WriteString(w, `<div class="card">x</div>`)

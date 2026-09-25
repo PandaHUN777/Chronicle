@@ -1,31 +1,11 @@
-// C-WIRE-INTEGRITY: tests that pin two surfaces the
-// 2026-05-17 error-catalog wire-contract decision names but
-// the existing drift guard does not enforce.
-//
-//  1. Response shape: handler.go:respondError must emit exactly
-//     the JSON keys declared by ResponseShape in errors_catalog.go.
-//     A renamed, dropped, or added field would silently break
-//     the Chronicle ↔ Foundry contract; today's drift tests
-//     would not catch it.
-//
-//  2. Category enum reconciliation: the category enum is
-//     declared at four sites — the ErrCategory* constants in
-//     errors.go, the categoryGoToString map, the
-//     categoryHTTPStatus map, and the Categories slice (all in
-//     errors_catalog.go). A new category added to one site but
-//     not the others would produce an internally-inconsistent
-//     error-catalog.json that the existing drift guard cannot
-//     detect.
-//
-// Both surfaces matter for FM-DRIFT-GUARD: Foundry-side CI will
-// trust error-catalog.json as the wire contract; this file
-// makes that trust earned mechanically on the Chronicle side.
-//
-// Scope per C-WIRE-INTEGRITY: tests only. The AST helper for
-// ErrCategory* constants lives in this file rather than in
-// errors_catalog.go to keep the runtime surface unchanged. If a
-// future contract evolution wants the helper in production code,
-// it can be promoted then.
+// Pins two wire-contract surfaces the existing drift guard doesn't
+// enforce: (1) respondError must emit
+// exactly the JSON keys ResponseShape declares, for every Err*
+// constructor; (2) the category enum, declared at four sites
+// (ErrCategory* constants, categoryGoToString, categoryHTTPStatus,
+// Categories, all in errors_catalog.go), must stay reconciled across
+// all four. Foundry-side CI trusts error-catalog.json as the wire
+// contract, so drift here breaks that contract silently otherwise.
 package foundry_vtt
 
 import (
@@ -75,17 +55,10 @@ func allConstructorSamples() []constructorSample {
 	}
 }
 
-// TestWireResponseShape_MatchesResponseShapeDeclaration asserts
-// that handler.go:respondError emits a JSON body with exactly
-// the key set declared by ResponseShape (errors_catalog.go) for
-// every constructor in errors.go. All fields must also be JSON
-// strings — ResponseShape's placeholder values (`<code>`,
-// `<4-clause>`, `<category>`) declare string semantics.
-//
-// A silent refactor of respondError that renames `category` to
-// `chronicleCategory`, drops a field, or adds a discriminator
-// (e.g. `requestID`) fails this test with the offending
-// constructor's name.
+// TestWireResponseShape_MatchesResponseShapeDeclaration asserts that
+// handler.go:respondError emits a JSON body with exactly the key set
+// declared by ResponseShape (errors_catalog.go), all as JSON strings,
+// for every constructor in errors.go.
 func TestWireResponseShape_MatchesResponseShapeDeclaration(t *testing.T) {
 	expectedKeys := sortedKeys(ResponseShape)
 
@@ -172,14 +145,10 @@ func TestWireResponseShape_AllConstructorsCovered(t *testing.T) {
 
 // --- Item 2: category enum reconciliation ---
 
-// parseErrCategoryConstants walks errors.go via go/ast and
-// returns every package-level constant of declared type
-// ErrCategory as a map of Go identifier → wire string.
-//
-// Mirrors ParseConstructors's AST approach in errors_catalog.go
-// but limited to the const declarations rather than the func
-// declarations. Lives here (not in errors_catalog.go) to keep
-// C-WIRE-INTEGRITY test-only.
+// parseErrCategoryConstants walks errors.go via go/ast and returns
+// every package-level constant of declared type ErrCategory as a map
+// of Go identifier → wire string. Mirrors ParseConstructors's AST
+// approach but limited to const declarations, and kept test-only.
 func parseErrCategoryConstants(t *testing.T) map[string]string {
 	t.Helper()
 	src := loadErrorsSource(t)
@@ -230,11 +199,8 @@ func parseErrCategoryConstants(t *testing.T) map[string]string {
 
 // TestCategoryEnum_ConstantsAlignWithStringMap asserts every
 // ErrCategory* constant in errors.go has a matching entry in
-// categoryGoToString (errors_catalog.go) with the same wire
-// string, and vice versa. A new constant without a map entry
-// would crash ParseConstructors at PR time with "unknown
-// category"; this test surfaces the gap earlier with an
-// actionable message naming both sites.
+// categoryGoToString (errors_catalog.go) with the same wire string,
+// and vice versa.
 func TestCategoryEnum_ConstantsAlignWithStringMap(t *testing.T) {
 	constants := parseErrCategoryConstants(t)
 
@@ -273,12 +239,9 @@ func TestCategoryEnum_ConstantsAlignWithStringMap(t *testing.T) {
 
 // TestCategoryEnum_StringMapAlignsWithCategoriesSlice asserts the
 // Categories slice — embedded verbatim into error-catalog.json's
-// top-level "categories" field by BuildJSONArtifact — matches
-// the set of wire strings in categoryGoToString. A category in
-// the map but missing from the slice produces a JSON artifact
-// where codes[].category may reference a value absent from the
-// top-level enum: internally inconsistent, and the existing
-// drift guard does not catch it.
+// top-level "categories" field — matches the set of wire strings in
+// categoryGoToString, so codes[].category never references a value
+// absent from the top-level enum.
 func TestCategoryEnum_StringMapAlignsWithCategoriesSlice(t *testing.T) {
 	inMap := map[string]bool{}
 	for _, v := range categoryGoToString {
@@ -313,11 +276,9 @@ func TestCategoryEnum_StringMapAlignsWithCategoriesSlice(t *testing.T) {
 
 // TestCategoryEnum_HTTPStatusMapCoversAllCategories asserts every
 // category in Categories has a defined HTTP status in
-// categoryHTTPStatus, and that every status in categoryHTTPStatus
-// refers to a known category. Missing entries silently produce
-// httpStatus: 0 in the JSON artifact (map zero-value) and
-// respondError defaults to 500 — both failure modes are quiet
-// without a focused test.
+// categoryHTTPStatus and vice versa. A missing entry silently produces
+// httpStatus: 0 in the JSON artifact and respondError falling back to
+// 500.
 func TestCategoryEnum_HTTPStatusMapCoversAllCategories(t *testing.T) {
 	inHTTP := map[string]int{}
 	for k, v := range categoryHTTPStatus {

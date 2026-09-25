@@ -20,31 +20,21 @@ type EntityLister interface {
 	GetEntityTypes(ctx context.Context, campaignID string) ([]entities.EntityType, error)
 }
 
-// NoteLister mirrors notes.NoteService for the listing path. The
-// owner-side filter is already enforced inside
-// notes.Service.ListByUserAndCampaign — own + shared + explicit
-// share-with-owner — so the aiexport renderer doesn't reimplement
-// the filter. PrivacyModePermitted / Everything use this same list;
-// Safe additionally drops rows where IsShared is false AND the owner
-// is not the author AND SharedWith doesn't include the owner — but
-// the service's filter is already the Safe semantics for non-owner
-// callers. Owner sees their own + shared; that's the v1 default.
+// NoteLister mirrors notes.NoteService for the listing path. The owner-side
+// filter (own + shared + explicit share-with-owner) is already enforced
+// inside notes.Service.ListByUserAndCampaign, so the aiexport renderer does
+// not reimplement it.
 type NoteLister interface {
 	ListByUserAndCampaign(ctx context.Context, userID, campaignID string) ([]notes.Note, error)
 }
 
-// CALV5-PLACEHOLDER: CalendarLister stood here — GetCalendar +
-// ListAllEventsForCalendar, returning calendar.Calendar / calendar.Event so
-// the renderer could label events with their in-world month and era names.
-// The calendar plugin is being rebuilt (V5) and its tables are dropped, so
-// there is nothing to list. V5 restores this interface and re-wires
-// Service.Calendar; the CategoryCalendarEvents case in service.go says so in
-// the export itself rather than emitting an empty section.
+// CALV5-PLACEHOLDER: V5 must restore CalendarLister (GetCalendar +
+// ListAllEventsForCalendar) and re-wire Service.Calendar so the renderer can
+// label events with in-world month/era names again.
 
 // SessionLister loads sessions + their nested joins. Attendees +
-// SessionEntity slices are fetched per-session; v1 accepts the N+1
-// pattern because session counts are modest (10-50 per campaign per
-// the scoping report's volume estimates).
+// SessionEntity slices are fetched per-session; the N+1 pattern is accepted
+// because session counts are modest (10-50 per campaign).
 type SessionLister interface {
 	ListSessions(ctx context.Context, campaignID string) ([]sessions.Session, error)
 	ListAttendees(ctx context.Context, sessionID string) ([]sessions.Attendee, error)
@@ -55,27 +45,24 @@ type SessionLister interface {
 // returns timeline.EventLink — the join+overlay row that handles both
 // calendar-linked events and standalone timeline events uniformly.
 type TimelineLister interface {
-	// Both take a permissions.Viewer: "no user" and "trusted system caller"
-	// stopped sharing the empty-string user id (C-AUTHZ-EMPTY-USERID, ADR-049).
-	// The export builds a RequestViewer from the operator's real id — it is not
-	// a system caller and must not become one.
+	// Both take a permissions.Viewer (see ADR-049: "no user" and "trusted
+	// system caller" are distinct, not both the empty user id). The export
+	// builds a RequestViewer from the operator's real id — never a system
+	// caller.
 	ListTimelines(ctx context.Context, campaignID string, v permissions.Viewer) ([]timeline.Timeline, error)
 	ListTimelineEvents(ctx context.Context, timelineID string, v permissions.Viewer) ([]timeline.EventLink, error)
 }
 
-// RelationLister exposes a single entity's relations. Bidirectional
-// rendering (per operator decision 2026-05-26 — both endpoints get
-// the relation listed) means we query per-entity rather than per-pair;
-// the duplication is documented and accepted.
+// RelationLister exposes a single entity's relations. Rendering is
+// bidirectional (both endpoints get the relation listed), so it queries
+// per-entity rather than per-pair; the duplication is accepted.
 type RelationLister interface {
 	ListByEntity(ctx context.Context, campaignID, entityID string) ([]relations.Relation, error)
 }
 
-// TagLister batch-fetches tags for the entity list. Entity rows
-// don't carry Tags via the repository (`entity.Tags` is "populated
-// at the handler level via batch fetch" per
-// internal/plugins/entities/model.go:286). aiexport's orchestrator
-// calls this once per campaign-export with the full entity ID list.
+// TagLister batch-fetches tags for the entity list, since the entities
+// repository does not populate entity.Tags. Called once per campaign-export
+// with the full entity ID list.
 type TagLister interface {
 	GetEntityTagsBatch(ctx context.Context, entityIDs []string, includeDmOnly bool) (map[string][]tags.Tag, error)
 }

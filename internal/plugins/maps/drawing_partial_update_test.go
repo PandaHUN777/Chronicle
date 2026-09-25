@@ -1,18 +1,10 @@
-// drawing_partial_update_test.go — sweep R4 / ADR-054 #6, the token, drawing
-// and layer half of the absent-means-preserve contract.
-//
-// UpdateTokenInput, UpdateDrawingInput and UpdateLayerInput shared one
-// defect: every field but Name (or, for drawings, Points/StrokeColor/
-// StrokeWidth/Visibility) was assigned to the stored row UNGUARDED —
-// including fields that were ALREADY a Go pointer (Bar1Value, AuraRadius,
-// FillColor, …). A plain *T bound from JSON cannot tell "the caller omitted
-// this key" from "the caller sent null", so the pointer type alone never
-// protected anything. A drag PUT carrying only {x, y} zeroed IsHidden,
-// IsLocked, both HP bars and every aura/light/vision field on every single
-// move — a GM's hidden ambush monster went visible to every player the
-// instant someone nudged it half a pixel. Reordering the layer stack (a
-// SortOrder-only PUT) silently turned every other layer's visibility and
-// lock state off the same way.
+// drawing_partial_update_test.go pins the token, drawing and layer half of
+// the absent-means-preserve contract (.ai/conventions.md): every field of
+// UpdateTokenInput, UpdateDrawingInput and UpdateLayerInput must use
+// patch.Field[T] rather than a plain *T, since a plain pointer bound from
+// JSON can't distinguish "key omitted" from "key sent null". A drag PUT
+// carrying only {x, y} must not zero IsHidden/IsLocked/HP bars/aura-light-
+// vision, and a SortOrder-only layer PUT must not reset visibility/lock.
 package maps
 
 import (

@@ -1,12 +1,8 @@
 package campaigns
 
-// topbar_image_test.go — C-CUSTOMIZE-RESCUE B2/B4 pins for the topbar Image
-// mode. Before this fix the "Image" mode button and its upload panel did not
-// exist in the templ at all — appearance_editor.js injected them into the DOM
-// at runtime and saved via a full-page reload (audit §8.2 "weird block thing";
-// core-tenets §T-B3). These tests pin that the Image control is now first-class
-// server-rendered markup, that TopbarImageSection renders both states with the
-// correct HTMX swap wiring, and that a saved image reads back into the form.
+// topbar_image_test.go pins that the topbar Image control is first-class
+// server-rendered markup: TopbarImageSection renders both states with the
+// correct HTMX swap wiring, and a saved image reads back into the form.
 
 import (
 	"context"
@@ -63,13 +59,9 @@ func TestTopbarImageSection_States(t *testing.T) {
 	})
 
 	t.Run("image set → thumbnail + hx-delete remove", func(t *testing.T) {
-		// The fixture is the shape the upload path ACTUALLY stores:
-		// MediaUploader.UploadBackdrop returns MediaFile.Filename, which is
+		// The fixture matches what the upload path actually stores:
+		// MediaUploader.UploadBackdrop returns MediaFile.Filename as
 		// filepath.Join("2006/01", uuid+ext) — a value containing slashes.
-		// The old fixture here was "bg.png", which has none, so this test
-		// passed for months against data shaped unlike anything production
-		// produces, while the real thing 404'd. A test that runs on
-		// unrealistic fixtures is not coverage.
 		const stored = "2026/09/b7c17bb1-6563-462c-8b49-5b2e8bd57108.png"
 		var sb strings.Builder
 		if err := TopbarImageSection("camp-1", stored, "tok").Render(context.Background(), &sb); err != nil {

@@ -1,14 +1,14 @@
 /*
- * notification_bell.js — topbar notification bell (C-SCHED-P2).
+ * notification_bell.js — topbar notification bell.
  *
  * The bell button + unread badge are server-rendered in the app topbar; the
  * badge count is refreshed by an HTMX poll (hx-get /notifications/badge). This
  * widget owns the interactive dropdown: open/close, fetching the list, marking
  * items read, and mark-all. Live "pops" reuse the existing Chronicle.notify
- * toast. Scheduler-scoped in this slice — proposals are the only source.
+ * toast.
  *
- * ES5 style to match the rest of static/js. Registered via Chronicle.register
- * and auto-mounted by boot.js on [data-widget="notification-bell"].
+ * Registered via Chronicle.register and auto-mounted by boot.js on
+ * [data-widget="notification-bell"].
  */
 (function () {
   'use strict';

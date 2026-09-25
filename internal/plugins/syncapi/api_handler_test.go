@@ -18,12 +18,9 @@ import (
 // --- minimal service stubs for CreateEntity handler tests ---
 //
 // CreateEntity exercises only a small slice of the EntityService /
-// CampaignService surfaces. Rather than hand-fill all ~90 EntityService
-// methods (cf. stubCalendarSvc), we embed the interface so unimplemented
-// methods are present-but-panic, and override only what the code under
-// test calls. The P1 zero-type path calls NOTHING on either service, so
-// it can't accidentally rely on a stubbed default. (Matches the
-// egress_sanitize_test.go rationale for not wiring the full interface.)
+// CampaignService surfaces, so these stubs embed the interface (unimplemented
+// methods are present-but-panic) and override only what the code under test
+// calls — same rationale as egress_sanitize_test.go.
 
 // stubEntityServiceForCreate embeds entities.EntityService; only Create
 // and GetEntityTypes are reachable from CreateEntity. createFn captures
@@ -47,13 +44,11 @@ func (s *stubEntityServiceForCreate) GetEntityTypes(_ context.Context, _ string)
 	return nil, errors.New("GetEntityTypes must not be called: zero entity_type_id must 400, not default to types[0]")
 }
 
-// stubCampaignServiceForCreate embeds campaigns.CampaignService. Only
-// GetMember is reachable from CreateEntity (and only when owner_user_id
-// is supplied, which these tests don't do) — plus GetByID, which the
-// create path reads to resolve the campaign's DefaultVisibility setting
-// whenever the body omits is_private. This campaign has no default set,
-// so these tests keep their original public-entity expectations. See
-// create_default_visibility_test.go for the resolution itself.
+// stubCampaignServiceForCreate embeds campaigns.CampaignService. GetByID is
+// reachable from CreateEntity to resolve DefaultVisibility when is_private
+// is omitted (see create_default_visibility_test.go); this campaign has no
+// default set, so these tests keep public-entity expectations. GetMember is
+// reachable only when owner_user_id is supplied, which these tests don't do.
 type stubCampaignServiceForCreate struct {
 	campaigns.CampaignService
 }
@@ -143,12 +138,9 @@ func TestCreateEntity_AcceptsValidType(t *testing.T) {
 	}
 }
 
-// TestSync_BatchCreatePassesType confirms the internal batch-sync create
-// path is unaffected by the P1 fix: it builds CreateEntityInput directly
-// from change.EntityTypeID (no zero-coercion was ever applied there), so a
-// real type still reaches the service and the result is "ok". The fix
-// lives in the handler's CreateEntity, not in the shared service Create,
-// so the batch path was never coupled to the removed default.
+// TestSync_BatchCreatePassesType confirms the batch-sync create path builds
+// CreateEntityInput directly from change.EntityTypeID with no zero-coercion,
+// so a real type reaches the service.
 func TestSync_BatchCreatePassesType(t *testing.T) {
 	var gotType int
 	called := false
@@ -185,13 +177,9 @@ func TestSync_BatchCreatePassesType(t *testing.T) {
 	}
 }
 
-// resolveRole on a CreateEntity/Sync call path: with a synthetic
-// session key whose CampaignID matches, resolveRole still calls
-// GetMember; the embedded CampaignService would panic. CreateEntity's
-// zero-type branch returns BEFORE resolveRole runs, and the valid-type
-// branch here doesn't supply owner_user_id, so GetMember is never hit on
-// the create handler. Sync, however, calls resolveRole up front — so we
-// give the stub a GetMember.
+// GetMember backs resolveRole, which Sync calls up front (unlike
+// CreateEntity's valid-type path here, which never hits it) — without this
+// the embedded CampaignService would panic.
 func (s *stubCampaignServiceForCreate) GetMember(_ context.Context, campaignID, userID string) (*campaigns.CampaignMember, error) {
 	return &campaigns.CampaignMember{CampaignID: campaignID, UserID: userID, Role: campaigns.RoleOwner}, nil
 }

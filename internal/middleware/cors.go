@@ -27,14 +27,9 @@ type CORSConfig struct {
 }
 
 // CORS returns middleware that handles Cross-Origin Resource Sharing headers.
-//
-// This is primarily needed for the REST API (/api/v1/*) when external clients
-// like the Foundry VTT module make requests from a different origin. The main
-// web UI is same-origin and doesn't need CORS.
-//
-// For the web UI behind Cosmos reverse proxy, CORS is not strictly needed since
-// all requests are same-origin. But the API must support cross-origin access for
-// external integrations.
+// Primarily needed for the REST API (/api/v1/*) when external clients like
+// the Foundry VTT module make requests from a different origin; the web UI
+// is same-origin and doesn't need it.
 func CORS(cfg CORSConfig) echo.MiddlewareFunc {
 	// Build a set for fast origin lookup of static origins.
 	allowAll := false

@@ -1,32 +1,20 @@
-// adr058_merge_and_refs_test.go pins ADR-058 decisions 4 and 5 — the last
-// slice of the ADR (.ai/decisions.md), built on the access rule decisions
-// 1-3 established (entity_visibility_access_test.go, shipped 48acf5f1) and
-// the viewer-binding/public-campaign work in decisions 6-7 (922fd3b1).
+// adr058_merge_and_refs_test.go pins ADR-058 decisions 4 and 5.
 //
 // Decision 5 (the merge): mediaService.Upload's per-campaign content-hash
-// dedup (service.go's FindByContentHash short-circuit) used to merge ANY
-// byte-identical upload into the existing row unconditionally. That is safe
-// only when the uploader can already see every page the matched file is on
-// — otherwise attaching their "new" file to a visible page would silently
-// publish a hidden page's artwork, exactly the leak ADR-058 exists to close.
-// canMergeWithExisting (service.go) answers that question by reusing
-// FindReferences + the SAME FilterViewableEntityIDs seam decision 1 wired
-// into checkMediaAccess — never a second copy of the visibility predicate.
+// dedup must merge a byte-identical upload into an existing row only when
+// the uploader can already see every page the matched file is on —
+// otherwise attaching their "new" file to a visible page would silently
+// publish a hidden page's artwork. canMergeWithExisting (service.go)
+// answers that by reusing FindReferences + the same FilterViewableEntityIDs
+// seam decision 1 wired into checkMediaAccess.
 //
-// Decision 4 (where is this used): CampaignMediaRefs used to be reachable
-// only through an Owner-only ROUTE gate with no filtering at all. It is now
-// gated INSIDE the handler on the promoted VisibilityRole() (>= RoleScribe,
-// the same threshold and the same promotion formula the entities plugin's
-// visibility glance uses), and the returned list is filtered to entities
-// the viewer may actually see.
+// Decision 4 (where is this used): CampaignMediaRefs is gated inside the
+// handler on the promoted VisibilityRole() (>= RoleScribe), and the
+// returned list is filtered to entities the viewer may actually see.
 //
-// TEST HONESTY: every test here drives the REAL mediaService.Upload,
-// mediaService.canMergeWithExisting (indirectly, through Upload), and the
-// REAL Handler.CampaignMediaRefs / Handler.filterViewableRefs — never a
-// reimplementation of either. Fakes (mockMediaRepo, stubMemberChecker,
-// fakeAccessMediaService, fakeEntityVisibilityFilter, fakeVisibilityAtOwnerOnly)
-// are the SAME doubles entity_visibility_access_test.go and service_test.go
-// already use, not new copies.
+// Every test drives the real mediaService.Upload, canMergeWithExisting (via
+// Upload), and Handler.CampaignMediaRefs / filterViewableRefs, using the
+// same fakes entity_visibility_access_test.go and service_test.go use.
 package media
 
 import (
@@ -216,11 +204,9 @@ func TestUpload_MergeCheckErrors_RefusesLikeANo(t *testing.T) {
 	}
 }
 
-// TestUpload_MergeSkipped_NoReferences confirms decision 3's "files no page
-// references keep today's behaviour" carries through to the merge rule: a
-// match with nothing referencing it (an avatar, a backdrop, an attachment
-// never linked to a page) is vacuously safe to merge, and the visibility
-// filter is never even consulted.
+// TestUpload_MergeSkipped_NoReferences pins that decision 3 carries through
+// to the merge rule: a match with nothing referencing it is vacuously safe
+// to merge, and the visibility filter is never consulted.
 func TestUpload_MergeSkipped_NoReferences(t *testing.T) {
 	const existingID = "existing-unreferenced"
 	createCalled := false
@@ -263,10 +249,8 @@ func TestUpload_MergeSkipped_NoReferences(t *testing.T) {
 
 // newUploadTestContextWithFile is upload_authz_test.go's
 // newUploadTestContext, parameterized on the file bytes — needed here
-// because those tests only ever exercise a fakeUploadService that ignores
-// content entirely, while these tests need the REAL mediaService.Upload to
-// run its full magic-byte/sanitize/dedup pipeline, which requires genuine
-// image bytes.
+// because these tests run the real mediaService.Upload's full
+// magic-byte/sanitize/dedup pipeline, which requires genuine image bytes.
 func newUploadTestContextWithFile(t *testing.T, userID, campaignID string, fileBytes []byte) (echo.Context, *httptest.ResponseRecorder) {
 	t.Helper()
 	var body bytes.Buffer
@@ -297,14 +281,12 @@ func newUploadTestContextWithFile(t *testing.T, userID, campaignID string, fileB
 	return c, rec
 }
 
-// TestUpload_MergeRefused_ResponseIndistinguishableFromOrdinaryUpload is the
-// trap named in the task: telling an uploader "this matched a file you
-// can't see" would let them fingerprint a hidden page's artwork with their
-// own candidate images. This test drives the REAL Handler.Upload end to end
-// for two scenarios — a genuinely fresh upload, and one whose merge was
-// refused — and asserts the JSON response shapes are identical: same status
-// code, same set of top-level keys, and specifically neither response ever
-// carries "deduplicated" or "used_by".
+// TestUpload_MergeRefused_ResponseIndistinguishableFromOrdinaryUpload pins
+// that telling an uploader "this matched a file you can't see" would let
+// them fingerprint a hidden page's artwork. Drives the real Handler.Upload
+// for a fresh upload and a refused-merge upload, and asserts the JSON
+// response shapes are identical: same status, same top-level keys, and
+// neither ever carries "deduplicated" or "used_by".
 func TestUpload_MergeRefused_ResponseIndistinguishableFromOrdinaryUpload(t *testing.T) {
 	pngBytes := testPNGBytes(t)
 	checker := &stubMemberChecker{roles: map[string]map[string]int{"camp-1": {"uploader-1": int(campaigns.RoleScribe)}}}
@@ -379,10 +361,8 @@ func sortedKeys(m map[string]any) []string {
 // --- Decision 4: "where is this used" joins the DM-team permissions story ---
 
 // newCampaignRefsTestContext builds an Echo GET context for
-// /campaigns/:id/media/:mid/refs carrying cc as the campaign context — the
-// same raw "campaign_context" key campaigns/middleware.go sets (and other
-// plugins' tests, e.g. npcs/reveal_idor_test.go, already poke directly since
-// the const itself is unexported outside the campaigns package).
+// /campaigns/:id/media/:mid/refs carrying cc as the campaign context, using
+// the same "campaign_context" key campaigns/middleware.go sets.
 func newCampaignRefsTestContext(cc *campaigns.CampaignContext, userID string) (echo.Context, *httptest.ResponseRecorder) {
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/campaigns/"+cc.Campaign.ID+"/media/file-1/refs", nil)
@@ -397,11 +377,9 @@ func newCampaignRefsTestContext(cc *campaigns.CampaignContext, userID string) (e
 	return c, rec
 }
 
-// TestCampaignMediaRefs_PlayerGetsNothing is the red-first case for decision
-// 4: a Player must never receive the usage list AT ALL, not merely a
-// filtered/empty one — proven by asserting FindReferences is never even
-// called, matching the "absent entirely" requirement (a filtered-to-empty
-// response would still prove the list feature exists and responds).
+// TestCampaignMediaRefs_PlayerGetsNothing pins decision 4: a Player must
+// never receive the usage list at all, not merely a filtered/empty one —
+// proven by asserting FindReferences is never called.
 func TestCampaignMediaRefs_PlayerGetsNothing(t *testing.T) {
 	findRefsCalled := false
 	svc := &fakeAccessMediaService{
@@ -429,11 +407,9 @@ func TestCampaignMediaRefs_PlayerGetsNothing(t *testing.T) {
 }
 
 // TestCampaignMediaRefs_ScribeOmitsPagesScribeCannotSee is decision 4's
-// filtering half: a Scribe (real DM-team member, past the VisibilityRole
-// gate) must still not see the name of a page THEY specifically cannot see
-// — a Scribe is not automatically the DM, and a custom-restricted page can
-// name specific users. Proves the fragment renders the visible page's name
-// and omits the hidden one's.
+// filtering half: a Scribe past the VisibilityRole gate must still not see
+// the name of a page they specifically cannot see (a Scribe is not
+// automatically the DM).
 func TestCampaignMediaRefs_ScribeOmitsPagesScribeCannotSee(t *testing.T) {
 	svc := &fakeAccessMediaService{
 		findReferencesFn: func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {
@@ -464,13 +440,9 @@ func TestCampaignMediaRefs_ScribeOmitsPagesScribeCannotSee(t *testing.T) {
 	}
 }
 
-// TestCampaignMediaRefs_CoDM_Promoted_SeesFullList proves the gate really is
-// "VisibilityRole() >= RoleScribe" and not a route-level RequireRole(RoleScribe)
-// reimplemented inside the handler: a co-DM (raw role Player + a DM grant)
-// must see the full list, exactly what a route-level RequireRole(RoleScribe)
-// — which reads the RAW MemberRole — would have rejected before ever
-// reaching this handler. This is the reason the gate moved inside the
-// handler instead of staying a route-level role check.
+// TestCampaignMediaRefs_CoDM_Promoted_SeesFullList proves the gate is
+// "VisibilityRole() >= RoleScribe", not a raw-MemberRole check: a co-DM
+// (raw role Player + a DM grant) must see the full list.
 func TestCampaignMediaRefs_CoDM_Promoted_SeesFullList(t *testing.T) {
 	svc := &fakeAccessMediaService{
 		findReferencesFn: func(ctx context.Context, campaignID, mediaID string) ([]MediaRef, error) {

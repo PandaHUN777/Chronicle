@@ -68,20 +68,20 @@ templ EntityCreateFormComponent(cc *campaigns.CampaignContext, entityTypes []Ent
 			}
 
 			if len(variants) > 1 {
-				// Variant picker: preselect is a parent with sub-category
-				// children. Category is fixed; the user chooses which layout
-				// variant the new entity is created with. The selected radio
-				// carries the actual entity_type_id; variants[0] is the parent
-				// (default) and the rest are its children.
+				// Variant picker: preselect is a parent with
+				// sub-category children. Category is fixed; the user
+				// chooses which layout variant the new entity is
+				// created with. The selected radio carries the actual
+				// entity_type_id; variants[0] is the parent (default)
+				// and the rest are its children.
 				//
-				// Visual: the native radio is sr-only and used as a `peer` so
-				// the wrapping span gets the canonical Chronicle pill-select
-				// treatment (accent border + tinted background on
-				// peer-checked, accent ring on peer-focus-visible). Same
-				// pattern used in campaigns/form.templ and
-				// entity_type_config.templ — accent variables flow from the
-				// theme so a campaign-level accent override automatically
-				// retints this picker.
+				// The native radio is sr-only and used as a `peer` so
+				// the wrapping span gets the Chronicle pill-select
+				// treatment: accent border and tinted background on
+				// peer-checked, and an accent ring on
+				// peer-focus-visible. This is the same pattern used
+				// elsewhere in campaigns/form.templ and
+				// entity_type_config.templ.
 				<div>
 					<label class="block text-sm font-medium text-fg-body mb-1">Category</label>
 					<div class="text-sm text-fg-body py-2 px-3 rounded-md bg-surface-alt border border-edge">
@@ -176,12 +176,11 @@ templ EntityCreateFormComponent(cc *campaigns.CampaignContext, entityTypes []Ent
 
 			@parentSelector(cc.Campaign.ID, parentEntity)
 
-			// Permissions trigger + slide-in card (C-PERMISSIONS-INLINE-COMPONENT).
-			// The widget runs in draft mode here (no endpoint): the mode
-			// selection is written to the hidden `is_private` input below,
-			// which the Create handler reads. Custom mode is shown but
-			// disabled — granular grants are configured after the entity
-			// exists (PUT /entities/:eid/permissions needs an entity ID).
+			// Permissions trigger + slide-in card. The widget runs in draft
+			// mode here (no endpoint): the mode selection is written to the
+			// hidden `is_private` input below, which the Create handler
+			// reads. Custom mode is shown but disabled — granular grants
+			// need an entity ID (PUT /entities/:eid/permissions).
 			<input type="hidden" name="is_private" value="false" id="is_private_draft"/>
 			<div
 				data-widget="permissions"
@@ -274,19 +273,16 @@ templ EntityEditFormComponent(cc *campaigns.CampaignContext, entity *Entity, ent
 				<p class="mt-1 text-xs text-fg-secondary">Plain text fallback. Use the rich text editor on the page view for full formatting.</p>
 			</div>
 
-			// Read-only Category › Sub-category lineage (C-ENTITY-PERMISSIONS-UX
-			// Part 3). Shows the type's place in the hierarchy; view-only.
+			// Read-only Category › Sub-category lineage. Shows the type's
+			// place in the hierarchy; view-only.
 			@entityTypeLineage(entityType)
 
-			// Per-entity permissions editor (C-PERMISSIONS-INLINE-COMPONENT +
-			// C-ENTITY-PERMISSIONS-UX Part 2). data-layout="inline" renders the
-			// widget as a compact summary row that expands IN PLACE (animated,
-			// reduced-motion safe) instead of the right-edge slide-in — opt-in,
-			// so other callers (the create-form draft mount) are unaffected. The
-			// hidden is_private input that used to ride on this form was removed
-			// because UpdateEntityInput.IsPrivate is now nil-preserving; the
-			// widget writes is_private (and visibility + grants) directly via
-			// PUT /permissions (the C-PERMISSIONS-SAVE-FIX path, unchanged).
+			// Per-entity permissions editor. data-layout="inline" renders it
+			// as a compact summary row that expands in place, opt-in so other
+			// callers (the create-form draft mount) are unaffected. No hidden
+			// is_private input here — UpdateEntityInput.IsPrivate is
+			// nil-preserving; the widget writes is_private (and visibility +
+			// grants) directly via PUT /permissions.
 			<div
 				data-widget="permissions"
 				data-layout="inline"

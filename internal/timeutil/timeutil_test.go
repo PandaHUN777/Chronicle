@@ -41,11 +41,10 @@ func TestIsValidLocation(t *testing.T) {
 	}
 }
 
-// TestWallClockInstant_DSTCorrect is the load-bearing DST test: the SAME
-// wall-clock ("18:00 local") resolves to DIFFERENT absolute instants inside
-// vs outside daylight-saving time. If a recurring block were stored as a UTC
-// instant/offset instead of a zone-local wall-clock, this invariant would
-// break and the displayed hour would drift twice a year.
+// TestWallClockInstant_DSTCorrect pins that the same wall-clock ("18:00
+// local") resolves to different absolute instants inside vs outside
+// daylight-saving time, which is why a recurring block must be stored as a
+// zone-local wall-clock rather than a UTC instant/offset.
 func TestWallClockInstant_DSTCorrect(t *testing.T) {
 	ny := mustLoad(t, "America/New_York")
 

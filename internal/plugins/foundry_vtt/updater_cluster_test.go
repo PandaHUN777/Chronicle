@@ -1,21 +1,16 @@
-// Contract tests for C-UPDATER-CLUSTER fixes:
+// Contract tests for the updater cluster:
 //
-//   - Bug #20: showAffectedCampaignsOnClick now does a two-stage
-//     expand cascade (find foundry-module Versions trigger via
-//     data-fvtt-versions-trigger → wait for htmx:afterSwap → click
-//     the per-version Campaigns trigger). The old direct-DOM-lookup
-//     surfaced a confusing error because the per-version trigger is
+//   - showAffectedCampaignsOnClick does a two-stage expand cascade
+//     (find the foundry-module Versions trigger via
+//     data-fvtt-versions-trigger, wait for htmx:afterSwap, click the
+//     per-version Campaigns trigger), since the per-version trigger is
 //     lazy-loaded by HTMX and doesn't exist on initial page render.
 //
-//   - Bug #22: regression test pinning the auto-pin banner's
-//     version-display path. Operator reported the display is now
-//     fixed; this test catches future regressions.
+//   - The auto-pin banner's version-display path.
 //
-// SO #3 contract: every onclick IIFE must (a) start with
-// `(function(`, (b) contain no literal `"` character, (c) not
-// reference `__templ_`. Validated by onclick_handlers_test.go
-// against every helper; the new IIFE is included in that sweep
-// because it's still returned by showAffectedCampaignsOnClick.
+// Every onclick IIFE must (a) start with `(function(`, (b) contain no
+// literal `"` character, (c) not reference `__templ_`. Validated by
+// onclick_handlers_test.go against every helper.
 
 package foundry_vtt
 
@@ -26,11 +21,10 @@ import (
 	"testing"
 )
 
-// TestShowAffectedCampaignsOnClick_TwoStageExpand pins the new
-// two-stage behavior: the IIFE must locate the foundry-module
-// Versions trigger via the data-attribute selector and wire an
-// htmx:afterSwap listener before clicking through. Without these,
-// the click surfaces the same broken state bug #20 introduced.
+// TestShowAffectedCampaignsOnClick_TwoStageExpand pins the two-stage
+// behavior: the IIFE must locate the foundry-module Versions trigger
+// via the data-attribute selector and wire an htmx:afterSwap listener
+// before clicking through.
 func TestShowAffectedCampaignsOnClick_TwoStageExpand(t *testing.T) {
 	got := showAffectedCampaignsOnClick("v0.1.10").Call
 
@@ -58,19 +52,16 @@ func TestShowAffectedCampaignsOnClick_TwoStageExpand(t *testing.T) {
 	if !strings.Contains(got, ".click()") {
 		t.Errorf("IIFE missing programmatic click: %s", got)
 	}
-	// Pre-fix error string MUST be gone — the new flow can't reach
-	// that state, and leaving the legacy text in the bundle is the
-	// kind of stale UX that erodes operator trust.
+	// The two-stage flow can't reach this state; the legacy fallback
+	// message must not remain in the bundle.
 	if strings.Contains(got, "expand the foundry-module package manually") {
 		t.Errorf("IIFE still emits the pre-fix manual-fallback error message; remove it: %s", got)
 	}
 }
 
-// TestShowAffectedCampaignsOnClick_NoDoubleQuotes — SO #3 contract
-// reiteration scoped to the rewritten helper. The full SO #3 sweep
-// runs in onclick_handlers_test.go; this is a fast-fail check for
-// the specific helper this PR touches so a regression bisects to
-// this test immediately.
+// TestShowAffectedCampaignsOnClick_NoDoubleQuotes is a fast-fail
+// check of the onclick-IIFE contract scoped to this helper; the full
+// sweep runs in onclick_handlers_test.go.
 func TestShowAffectedCampaignsOnClick_NoDoubleQuotes(t *testing.T) {
 	got := showAffectedCampaignsOnClick("v0.1.10").Call
 	if strings.Contains(got, `"`) {
@@ -84,12 +75,9 @@ func TestShowAffectedCampaignsOnClick_NoDoubleQuotes(t *testing.T) {
 	}
 }
 
-// TestAutoPinBanner_VersionDisplay_BugFFFRegression pins bug #22's
-// fix in place: the banner's headline + body must display the
-// previous + new versions verbatim. Pre-#22 the banner had a
-// version-display issue (operator reported it's now fixed). This
-// regression test catches any future updater work that silently
-// drops the version strings.
+// TestAutoPinBanner_VersionDisplay_BugFFFRegression pins that the
+// banner's headline and body display the previous and new versions
+// verbatim.
 func TestAutoPinBanner_VersionDisplay_BugFFFRegression(t *testing.T) {
 	summary := AutoPinSummary{
 		PreviousVersion: "v0.1.14",

@@ -44,7 +44,7 @@ three tiers.
 │  ┌──────────────────────────────────────────────────────┐    │
 │  │  WIDGETS -- Reusable UI Building Blocks                │    │
 │  │  editor/  title/  tags/  attributes/  mentions/        │    │
-│  │  notes/  relations/  posts/                            │    │
+│  │  notes/  relations/  posts/  entity_notes/              │    │
 │  └──────────────────────────────────────────────────────┘    │
 │                                                               │
 │  ┌──────────────────────────────────────────────────────┐    │
@@ -61,6 +61,13 @@ three tiers.
 | **Plugin** | Self-contained feature app with handler/service/repo/templates | Yes | Yes | Core: no. Optional: per-campaign |
 | **System** | Game system content pack. Reference data, tooltips, dedicated pages | Yes (data serving) | Yes (tooltips, pages) | Per-campaign |
 | **Widget** | Reusable UI block. Mounts to DOM element, fetches own data | Minimal (API endpoints) | Primarily | Always available |
+
+`calendar` is the one exception to the plugin shape above: its UI, routes and
+handler were deleted for a ground-up rebuild (V5, #741). Only its domain layer
+(`model.go`, `calendar.go`, import/export, presets) and migrations remain.
+`syncapi`'s calendar routes stay registered and answer `503
+calendar_rebuilding` (see `.ai/plugin-development.md`); re-wiring points in
+other plugins are tagged `CALV5-PLACEHOLDER:`.
 
 ### How They Interact on a Page
 
@@ -125,15 +132,12 @@ chronicle/
 │   │   │   └── templates/
 │   │   ├── campaigns/                #   Campaign/world management
 │   │   ├── entities/                 #   Entity CRUD & configurable types
-│   │   ├── calendar/                 #   Custom fantasy calendars + events
-│   │   │   ├── .ai.md
+│   │   ├── calendar/                 #   Domain layer + migrations only (mid-rebuild, see below)
 │   │   │   ├── model.go             #   Calendar, Month, Weekday, Moon, Season, Event
-│   │   │   ├── repository.go
-│   │   │   ├── service.go
-│   │   │   ├── handler.go
-│   │   │   ├── routes.go
-│   │   │   ├── calendar.templ
-│   │   │   └── calendar_settings.templ
+│   │   │   ├── calendar.go          #   Calendar math (dates, recurrence)
+│   │   │   ├── import.go / export.go
+│   │   │   ├── presets/             #   Built-in calendar presets (JSON)
+│   │   │   └── migrations/
 │   │   └── maps/                     #   Interactive Leaflet.js maps + markers
 │   │       ├── .ai.md
 │   │       ├── model.go             #   Map, Marker + DTOs
@@ -187,25 +191,24 @@ chronicle/
 ├── static/
 │   ├── css/
 │   │   └── input.css                 # Tailwind input
-│   ├── js/
-│   │   ├── boot.js                   # Widget auto-mounter
-│   │   ├── keyboard_shortcuts.js     # Global shortcuts (Ctrl+N/E/S)
-│   │   ├── search_modal.js           # Quick search (Ctrl+K)
-│   │   ├── sidebar_drill.js          # Sidebar drill-down overlay
-│   │   └── widgets/
-│   │       ├── editor.js             # TipTap wrapper
-│   │       ├── editor_secret.js      # Inline secrets mark extension
-│   │       ├── attributes.js         # Dynamic field editor
-│   │       ├── tags.js               # Tag picker
-│   │       ├── mentions.js           # @mention search
-│   │       ├── dashboard_editor.js   # Campaign/category dashboard builder
-│   │       ├── sidebar_nav_editor.js # Custom sidebar links CRUD
-│   │       └── notes.js              # Floating notes panel
+│   ├── js/                           # Global scripts (boot.js is the widget auto-mounter;
+│   │   │                             #   keyboard_shortcuts.js, search_modal.js, sidebar_drill.js,
+│   │   │                             #   theme.js, command_palette.js, and more)
+│   │   └── widgets/                  # One file per widget (editor.js, attributes.js, tags.js,
+│   │                                 #   mentions.js, notes.js, map_widget.js, relations.js, etc.)
 │   ├── vendor/                       # Vendored CDN libs
 │   ├── fonts/
 │   └── img/
 │
-├── .ai/                              # AI documentation
+├── docs/                              # Operator + API docs (deployment, restore drills, docs/api/openapi.yaml)
+├── extensions/                        # Example/reference extensions (dice-roller, wasm examples, harptos-calendar)
+├── scripts/                           # Shell scripts (backup.sh, restore.sh)
+├── sdk/                               # Go SDK for extension authors
+├── test/                              # JS test suites
+├── testdata/                          # Fixtures (e.g. restore-drill)
+├── tools/                             # CI guard scripts (see .ai/conventions.md)
+├── .ai/                               # AI documentation
+├── .claude/                           # Claude Code agent configs
 ├── CLAUDE.md
 ├── .gitignore
 ├── Makefile

@@ -1,14 +1,9 @@
 // members_api_shape_test.go pins the wire shape of
 // GET /campaigns/:id/notes/members — the payload the notes widget's
-// share-with-players picker consumes.
-//
-// The regression this guards: notes.js read `m.id` / `m.name` from a body
-// that has only carried `user_id` / `username` / `role`, so every checkbox
-// rendered blank with value="" and the note was persisted with a sharedWith
-// array of empty user IDs. The JS side of the same contract is pinned by
-// test/js/notes_share_picker.test.mjs, which reads the memberRef tags out of
-// handler.go and asserts the widget reads exactly those keys — so a rename
-// here goes red there too instead of silently blanking the picker again.
+// share-with-players picker consumes. The JS side of the same contract is
+// pinned by test/js/notes_share_picker.test.mjs, which reads the memberRef
+// tags out of handler.go and asserts the widget reads exactly those keys, so
+// a rename here goes red there too.
 package notes
 
 import (

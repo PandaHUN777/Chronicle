@@ -1,8 +1,7 @@
-// layout_editor_save.test.mjs — regression for the dead Save button
-// (C-CAL layout-save fix). The shared layout editor (campaign dashboard,
-// category dashboard, entity page template) silently no-op'd Save when its
-// layout was null (fresh/empty surface) — the button fired NO write request.
-// This locks that a Save click ALWAYS issues a PUT to the editor's endpoint.
+// layout_editor_save.test.mjs — pins that the shared layout editor (campaign
+// dashboard, category dashboard, entity page template) always issues a PUT to
+// its endpoint on Save, including when its layout is null (a fresh/empty
+// surface), which previously no-op'd silently.
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';

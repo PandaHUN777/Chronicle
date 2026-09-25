@@ -1,17 +1,13 @@
 // helpers.go — packages plugin helpers exposed to packages.templ.
 //
-// Per cordinator/decisions/2026-05-23-packages-treatment.md (NW-2.2
-// Chunk G), the per-row admin UI for a package type is rendered via
-// an HTMX lazy-load fragment owned by the type's plugin. This file
-// holds the type→URL dispatch.
+// The per-row admin UI for a package type is rendered via an HTMX lazy-load
+// fragment owned by the type's plugin; this file holds the type→URL
+// dispatch. The owning-plugin slug appears as a URL-path literal, which the
+// plugin-isolation grep guard's regex (looking for a closing quote right
+// after the slug) does not flag, since it's a URL path, not an import.
 //
-// The owning-plugin slug appears as a URL-path literal in
-// actionsFragmentURLFor — same kind of URL-path reference that
-// already exists at packages.templ:49 (the autopin-banner hx-get).
-// The plugin-isolation grep guard's regex requires a closing quote
-// immediately after the slug to flag a violation, which URL paths
-// don't trip. A future "per-type UI registry" interface would
-// decouple this entirely; deferred to a follow-up.
+// TODO(#721): give package types their own UI hooks instead of this
+// hard-coded URL dispatch.
 
 package packages
 
@@ -20,12 +16,9 @@ package packages
 // type-specific fragment. packages.templ calls this when rendering
 // each row's button group to know whether to insert an hx-get slot.
 //
-// Today only foundry-module packages have a type-specific fragment;
-// system packages render no extra actions beyond the generic
-// Check/Versions/Usage/Delete buttons (Versions + Usage stay generic
-// because the version-list rendering itself is generic — see Chunk G
-// decision doc's "deferred to G2" section for the per-version foundry
-// UI residual).
+// Only foundry-module packages have a type-specific fragment; system
+// packages render no extra actions beyond the generic
+// Check/Versions/Usage/Delete buttons.
 func actionsFragmentURLFor(pkg Package) string {
 	switch pkg.Type {
 	case PackageTypeFoundryModule:

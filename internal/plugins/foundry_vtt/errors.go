@@ -1,17 +1,13 @@
 // Package foundry_vtt is the Foundry-VTT-specific sub-plugin that
 // extends the generic packages plugin via the PostInstallHook
-// extension point (added in C-FMC-5a). It owns every Foundry-specific
-// behavior Chronicle exposes: per-campaign signed manifest URLs,
-// per-campaign pinning, the chronicle-package.json descriptor reader,
-// and the post-install module.json version rewrite.
-//
-// The packages plugin remains generic — it has zero Foundry-specific
-// knowledge. foundry_vtt is the only place "manifest", "download",
+// extension point. It owns every Foundry-specific behavior Chronicle
+// exposes: per-campaign signed manifest URLs, per-campaign pinning,
+// the chronicle-package.json descriptor reader, and the post-install
+// module.json version rewrite. The packages plugin itself stays
+// generic — foundry_vtt is the only place "manifest", "download",
 // "module.json", and "chronicle-package.json" appear.
 //
-// See .ai.md in this directory for the full architecture, including
-// the decision log explaining why a sub-plugin (not a packages
-// extension) and why descriptor-driven (not hardcoded).
+// See .ai.md in this directory for the full architecture.
 package foundry_vtt
 
 import (
@@ -23,13 +19,10 @@ import (
 // ErrCategory classifies a foundry_vtt failure so the handler can pick
 // the right HTTP status code and the public manifest endpoint can
 // emit a Foundry-side-parseable JSON body. The Foundry module's
-// update-check UI (FM-CSU-DIAG) consumes the category field to pick
-// a visual cue (red/yellow/blue) without parsing the message.
-//
-// Categories are deliberately coarse — operators don't need to
-// distinguish 20 failure modes, they need to know whether to fix
-// config, fix auth, install a missing version, or escalate to the
-// platform team.
+// update-check UI keys off the category to pick a visual cue without
+// parsing the message. Categories stay coarse: an operator needs to
+// know whether to fix config, fix auth, install a missing version, or
+// escalate — not distinguish twenty failure modes.
 type ErrCategory string
 
 const (
@@ -72,10 +65,9 @@ const (
 // See examples in the .ai.md "Error message contract" section.
 type Error struct {
 	Category ErrCategory
-	// Code is a machine-readable identifier for the failure shape.
-	// Stable across versions (Foundry's FM-CSU-DIAG keys off this).
-	// Example: "invalid_token", "no_package_registered",
-	// "pinned_version_not_installed".
+	// Code is a machine-readable identifier for the failure shape,
+	// stable across versions since the Foundry module keys off it.
+	// Example: "invalid_token", "no_package_registered".
 	Code string
 	// Message is the human-readable explanation. Must follow the
 	// four-clause format above. Renders directly in Foundry's
@@ -217,7 +209,7 @@ func ErrTokenNotInitialized() *Error {
 
 // ErrDescriptorInvalid — chronicle-package.json was present in the
 // installed zip but failed schema validation. Hook returns this to
-// fail the install loudly (per the C-FMC-5a fail-loud contract).
+// fail the install loudly rather than silently falling back.
 func ErrDescriptorInvalid(cause error) *Error {
 	return &Error{
 		Category: ErrCategoryValidation,

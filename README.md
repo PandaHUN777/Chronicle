@@ -2,10 +2,11 @@
 
 **A self-hosted worldbuilding platform for tabletop RPG campaigns.**
 
-Chronicle gives game masters and players a shared space to build worlds, track lore, manage calendars, visualize timelines, and run campaigns — all on your own server, with no paywall, no forced public content, and full control over your data.
+Chronicle gives game masters and players a shared space to build worlds, track lore, and run campaigns — all on your own server, with no paywall, no forced public content, and full control over your data.
 
-> **Screenshots coming soon** — Chronicle features a rich entity editor, interactive calendar,
-> D3.js timeline, Leaflet.js map viewer, drag-and-drop page layouts, and customizable dashboards.
+> **Calendar is being rebuilt.** Chronicle's calendar and real-time date sync
+> are offline for a ground-up rewrite (#741) and unavailable in this version.
+> Timeline still works for calendar-free (standalone) events.
 
 ---
 
@@ -26,17 +27,10 @@ Chronicle is purpose-built for tabletop RPGs, open source, and designed to be se
 - **Custom Attributes** — Per-category field templates (text, number, select, checkbox, URL) with per-entity overrides
 - **Drag-and-Drop Page Layouts** — Visual layout editor for entity profile pages — no other tool has this
 
-### Calendar & Time
-- **Custom Calendars** — Define months, weekdays, moons, seasons, eras, and leap year rules for any fantasy calendar system
-- **Real-Life Sync** — Optional Gregorian calendar mode synced to real-world dates
-- **Events** — Single-day, multi-day, and recurring events with visibility controls, entity linking, and category icons
-- **Import/Export** — Import from Simple Calendar, Calendaria, Fantasy-Calendar, or Chronicle JSON
-
 ### Timeline
 - **Interactive D3 Visualization** — SVG-rendered timeline with zoom, pan, and minimap
-- **Eras** — Named time periods with colored bars spanning year ranges
-- **Standalone Events** — Calendar-free events for campaigns without formal calendars
-- **Event Clustering** — Overlapping events automatically group for readability
+- **Standalone Events** — Calendar-free events, organized into swim-lanes by entity group
+- **Event Clustering** — Overlapping events at low zoom automatically group into count badges for readability
 
 ### Maps
 - **Leaflet.js Maps** — Upload custom map images and place interactive markers
@@ -50,7 +44,7 @@ Chronicle is purpose-built for tabletop RPGs, open source, and designed to be se
 
 ### Campaign Management
 - **Roles** — Owner (GM), Scribe (co-GM), and Player roles with granular permissions
-- **Customizable Dashboards** — Drag-and-drop dashboard blocks (recent pages, calendar preview, timeline, maps, stats)
+- **Customizable Dashboards** — Drag-and-drop dashboard blocks (recent pages, maps, stats)
 - **Customizable Sidebar** — Reorder, rename, and add custom navigation links
 - **Category Dashboards** — Per-category landing pages with their own layouts
 - **Public Campaigns** — Optionally make campaigns publicly viewable
@@ -63,7 +57,7 @@ Chronicle is purpose-built for tabletop RPGs, open source, and designed to be se
 - **Checklists** — Quick checklist blocks within notes
 
 ### REST API
-- **API v1** — Full CRUD for entities, entity types, tags, relations, calendar, events, maps, drawings, tokens, layers, fog, media, and notes
+- **API v1** — Full CRUD for entities, entity types, tags, relations, maps, drawings, tokens, layers, fog, media, and notes
 - **API Key Auth** — Per-campaign API keys with read/write/sync permissions and device fingerprint binding
 - **Addon Discovery** — External tools can detect which features are enabled per campaign
 - **Bulk Operations** — Bulk tag assignment and entity type reassignment (up to 200 per request)
@@ -85,9 +79,8 @@ Chronicle is purpose-built for tabletop RPGs, open source, and designed to be se
 ## What's in v0.1
 
 - Worldbuilding with custom entity types and rich text editor
-- Interactive calendar with events, seasons, moons, and eras
 - Map viewer with markers, drawings, and fog of war
-- Timeline visualization
+- Timeline visualization with standalone (calendar-free) events
 - Session planning with RSVP tracking
 - Bestiary with community sharing and ratings
 - Full REST API for integrations
@@ -108,7 +101,7 @@ Chronicle is purpose-built for tabletop RPGs, open source, and designed to be se
 
 ```bash
 # Clone the repository
-git clone https://github.com/chronicle-app/chronicle.git
+git clone https://github.com/keyxmakerx/chronicle.git
 cd chronicle
 
 # Set required secrets
@@ -129,7 +122,7 @@ docker compose up -d
 
 ```bash
 # Clone and setup
-git clone https://github.com/chronicle-app/chronicle.git
+git clone https://github.com/keyxmakerx/chronicle.git
 cd chronicle
 cp .env.example .env       # Edit with your database credentials
 

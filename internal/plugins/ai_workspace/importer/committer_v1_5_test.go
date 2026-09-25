@@ -1,7 +1,6 @@
-// committer_v1_5_test.go covers the V1.5 verb-set extension behavior
-// (C-AI-WORKSPACE-V1-G): action: create / update / delete dispatch,
-// ActionMismatch handling, Delete confirmation gate, and AST pin
-// negative verification for the renamed commitUpdate path.
+// committer_v1_5_test.go covers action: create / update / delete
+// dispatch, ActionMismatch handling, the Delete confirmation gate,
+// and the AST pin's negative verification for the commitUpdate path.
 
 package importer
 
@@ -15,8 +14,8 @@ import (
 )
 
 // pageWithAction builds a ParsedPage with sensible defaults + the
-// V1.5 action verb. The non-action helper `page` keeps action empty
-// (defaults to create at parse time + committer fall-through).
+// front-matter action verb. The non-action helper `page` keeps action
+// empty (defaults to create at parse time + committer fall-through).
 func pageWithAction(name, typeSlug, body, action string) ParsedPage {
 	p := page(name, typeSlug, body)
 	p.FrontMatter.Action = action
@@ -30,10 +29,9 @@ func decisionWithAction(include bool, name, category, visibility, conflict, acti
 	return d
 }
 
-// TestCommit_ActionCreate_DefaultWhenEmpty — backward-compat: a
-// RowDecision with empty Action behaves identically to action=create.
-// Preserves V1 behavior for forms that don't yet send the action
-// field (e.g., test fixtures, in-flight V1 sessions).
+// TestCommit_ActionCreate_DefaultWhenEmpty: a RowDecision with empty
+// Action behaves identically to action=create, for forms that don't
+// send the field (e.g. test fixtures).
 func TestCommit_ActionCreate_DefaultWhenEmpty(t *testing.T) {
 	f := &fakeCreator{
 		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
@@ -232,10 +230,8 @@ func TestCommit_ActionUpdate_TargetMissing(t *testing.T) {
 	}
 }
 
-// TestCommit_ConflictModeOverwriteAlias — backward-compat: a form
-// submission with conflict=overwrite (V1 form value) routes to the
-// renamed commitUpdate path; result is StatusUpdated; one release
-// after V1.5 ships the alias gets removed.
+// TestCommit_ConflictModeOverwriteAlias: a form submission with
+// conflict=overwrite routes through commitUpdate; result is StatusUpdated.
 func TestCommit_ConflictModeOverwriteAlias(t *testing.T) {
 	f := &fakeCreator{
 		types: []entities.EntityType{{ID: 1, Name: "Character", Slug: "character", Enabled: true}},
@@ -247,9 +243,8 @@ func TestCommit_ConflictModeOverwriteAlias(t *testing.T) {
 	res, err := c.Commit(context.Background(), "camp-1", CommitInput{
 		OwnerID: "u-1",
 		Pages:   []ParsedPage{page("Lyra Vance", "character", "# Lyra\n\nNew body.")},
-		// action="" + ConflictMode="update" (post-V1.5 form value).
-		// The handler accepts conflict="overwrite" too (alias), but
-		// this test goes through the post-alias path.
+		// action="" + ConflictMode="update"; the handler also accepts
+		// conflict="overwrite" as an alias, exercised elsewhere.
 		Decisions: []RowDecision{decisionWithAction(true, "Lyra Vance", "character", "private", "update", "", false)},
 	})
 	if err != nil {

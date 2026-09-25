@@ -1,6 +1,6 @@
 // data.go provides typed context helpers for passing layout data from
-// handlers/middleware to Templ templates. This avoids importing plugin
-// types in the layouts package — only simple types are stored.
+// handlers/middleware to Templ templates. Avoids importing plugin types
+// into the layouts package — only simple types are stored.
 //
 // Data flow: Handler/Middleware → Echo Context → LayoutInjector → Go Context → Templ
 package layouts
@@ -330,11 +330,10 @@ type SidebarLink struct {
 // SidebarItemView is the template-ready representation of a sidebar item.
 // Populated by the LayoutInjector from the campaign's SidebarConfig.Items.
 //
-// Sub-category entity_types (ParentTypeID != nil) are filtered out at
-// build time in routes.go and never become SidebarItemViews — they are
-// template variants of their parent, not navigable collections. The
-// ParentTypeID field here is always nil in practice; it is retained as
-// defensive documentation of the invariant.
+// Sub-category entity_types (ParentTypeID != nil) are filtered out at build
+// time in routes.go and never become SidebarItemViews — they are template
+// variants of their parent, not navigable collections. ParentTypeID here is
+// always nil in practice; retained as defensive documentation of that.
 type SidebarItemView struct {
 	Type         string // "dashboard", "addon", "category", "section", "link", "all_pages"
 	Slug         string // Addon slug (for addon items).
@@ -484,14 +483,12 @@ func GetExtWidgetScripts(ctx context.Context) []string {
 // --- Plugin Body Scripts ---
 
 // SetPluginBodyScripts stores script URLs that plugins contribute to the
-// page <body> before the extension-widget block. Used so plugins can inject
-// their own widget scripts without hardcoding plugin paths in the core layout.
-// Called from App startup (RegisterRoutes) for always-on plugin assets; the
-// calendar plugin's calendar_widget.js is the canonical first use-case.
+// page <body> before the extension-widget block, so plugins can inject their
+// own widget scripts without hardcoding plugin paths in the core layout.
+// Called from App startup (RegisterRoutes) for always-on plugin assets.
 //
 // Unlike SetExtWidgetScripts (per-campaign, set per-request), plugin body
-// scripts are global and constant for the lifetime of the process. They are
-// set once during startup and read by base.templ on every request.
+// scripts are global and constant for the lifetime of the process.
 func SetPluginBodyScripts(ctx context.Context, urls []string) context.Context {
 	return context.WithValue(ctx, keyPluginBodyScripts, urls)
 }
@@ -507,11 +504,10 @@ func SetAccentColor(ctx context.Context, color string) context.Context {
 	return context.WithValue(ctx, keyAccentColor, color)
 }
 
-// keyAccentSurface1/2 hold the campaign's surface-pair accents (C-ACCENT-TRIO
-// rev 2, cordinator design D14 rev): slot 1 stays the chrome accent above;
-// these two are consumed by themed content surfaces as primary/secondary via
-// --color-accent-surface-1/2 tokens. Unset = surfaces fall back to the chrome
-// accent through var(..., var(--color-accent)) chains at the consumer.
+// keyAccentSurface1/2 hold the campaign's surface-pair accents: slot 1 stays
+// the chrome accent above; these two are consumed by themed content surfaces
+// as primary/secondary via --color-accent-surface-1/2 tokens. Unset surfaces
+// fall back to the chrome accent through var(..., var(--color-accent)) chains.
 const (
 	keyAccentSurface1 ctxKey = "layout_accent_surface_1"
 	keyAccentSurface2 ctxKey = "layout_accent_surface_2"
@@ -549,11 +545,10 @@ func GetAccentColor(ctx context.Context) string {
 	return color
 }
 
-// keyAccentAction/keyAccentApp hold the campaign's two NEW semantic accent
-// slots (C-ACCENT-SLOTS, operator-corrected mapping): slot 2 "Action
-// highlight" (primary buttons, hover/press, FABs — no prior trio analog) and
-// slot 3 "App accent" (per-app identity — character pages, calendar app).
-// Site accent (slot 1) is unchanged: it's the existing keyAccentColor above.
+// keyAccentAction/keyAccentApp hold the campaign's two semantic accent slots:
+// slot 2 "Action highlight" (primary buttons, hover/press, FABs) and slot 3
+// "App accent" (per-app identity — character pages, calendar app). Site
+// accent (slot 1) is the existing keyAccentColor above.
 const (
 	keyAccentAction ctxKey = "layout_accent_action"
 	keyAccentApp    ctxKey = "layout_accent_app"
@@ -588,20 +583,16 @@ func GetAccentApp(ctx context.Context) string {
 // properties. It computes hover (darker) and light (lighter) variants from the
 // base hex color. Returns empty string if no accent is set.
 func AccentColorCSS(ctx context.Context) string {
-	// Site slot (semantic slot 1 — today's "chrome"). Its emission is
-	// byte-identical to the pre-trio implementation — campaigns that never
-	// touch the other slots must render EXACTLY the CSS they rendered before
-	// (pinned by TestAccentColorCSS_*).
+	// Site slot (semantic slot 1 — "chrome"). Campaigns that never touch the
+	// other slots must render exactly this CSS (pinned by TestAccentColorCSS_*).
 	css := accentSlotCSS("--color-accent", GetAccentColor(ctx))
-	// Legacy surface pair (C-ACCENT-TRIO rev 2). Unset slots emit nothing —
-	// consumers inherit chrome via var(--color-accent-surface-N, var(--color-accent)).
-	// Kept as-is (C-ACCENT-SLOTS Step-0: map onto the new slots, don't delete).
+	// Legacy surface pair. Unset slots emit nothing — consumers inherit
+	// chrome via var(--color-accent-surface-N, var(--color-accent)).
 	css += accentSlotCSS("--color-accent-surface-1", GetAccentSurface(ctx, 1))
 	css += accentSlotCSS("--color-accent-surface-2", GetAccentSurface(ctx, 2))
-	// New semantic slots (C-ACCENT-SLOTS). Unset emits nothing; consumers'
-	// var() fallback chains (and the Tailwind action/app tokens) resolve
-	// through the legacy trio down to the site accent, so this is additive —
-	// it never changes the bytes emitted above.
+	// Semantic slots. Unset emits nothing; consumers' var() fallback chains
+	// resolve through the legacy trio down to the site accent, so this is
+	// additive and never changes the bytes emitted above.
 	css += accentSlotCSS("--color-accent-action", GetAccentAction(ctx))
 	css += accentSlotCSS("--color-accent-app", GetAccentApp(ctx))
 	return css
@@ -609,10 +600,9 @@ func AccentColorCSS(ctx context.Context) string {
 
 // accentSlotCSS renders one accent slot's :root block: the base color plus
 // derived hover (12% darken) and light (60% white-blend) variants and their
-// RGB triples. The derivation is shared by all three slots so they can never
-// drift (C-ACCENT-TRIO stop-and-flag: one derivation, no forks). Empty base
-// emits nothing; a non-#RRGGBB base passes through without variants (legacy
-// behavior for hand-entered values the picker never produces).
+// RGB triples. The derivation is shared by all slots so they can never drift.
+// Empty base emits nothing; a non-#RRGGBB base passes through without
+// variants (for hand-entered values the picker never produces).
 func accentSlotCSS(varName, base string) string {
 	if base == "" {
 		return ""
@@ -705,14 +695,10 @@ func GetBrandName(ctx context.Context) string {
 
 // GetDisplayName returns the name to show for the current campaign in chrome
 // (topbar + sidebar): the custom brand name when the owner has set one, else
-// the campaign's real name. This is the single source of truth for the
-// brand-name-override fallback — before C-CUSTOMIZE-RESCUE the sidebar honored
-// the brand name but the two topbar sites read GetCampaignName directly, so a
-// custom brand appeared in the sidebar and silently reverted to the campaign
-// name in the header (the operator-reported "header customization is broken",
-// audit §8.1). Callers already inside an in-campaign guard can use this
-// directly; GetBrandName is empty whenever no brand is set (or off-campaign),
-// so the fallback is always correct.
+// the campaign's real name. Single source of truth for the brand-name-override
+// fallback, so topbar and sidebar can't disagree. Callers already inside an
+// in-campaign guard can use this directly; GetBrandName is empty whenever no
+// brand is set (or off-campaign), so the fallback is always correct.
 func GetDisplayName(ctx context.Context) string {
 	if name := GetBrandName(ctx); name != "" {
 		return name

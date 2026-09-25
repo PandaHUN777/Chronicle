@@ -1,15 +1,12 @@
-// extensions_hub_handler.go — C-EXT-HUB Phase 1 handlers for the
-// top-level Extensions hub.
+// extensions_hub_handler.go — handlers for the top-level Extensions hub.
 //
 // Routes (registered in `internal/plugins/campaigns/routes.go`):
 //   - GET /campaigns/:id/extensions          → ExtensionsHub (owner)
 //   - GET /campaigns/:id/extensions/fragment → ExtensionsHubFragmentAPI (owner)
 //
-// The hub owns the bare /campaigns/:id/extensions path; the
-// extensions plugin's standalone `ListCampaignExtensions` GET (which
-// previously owned that path for Content Packs) retires in this PR
-// and Content Packs is re-rendered as a card inside the hub via the
-// `ContentPacksCardRenderer` interface.
+// The hub owns the bare /campaigns/:id/extensions path; Content Packs
+// renders as a card inside the hub via the `ContentPacksCardRenderer`
+// interface rather than as a standalone page.
 
 package campaigns
 
@@ -97,11 +94,10 @@ func (h *Handler) ExtensionsHubFragmentAPI(c echo.Context) error {
 }
 
 // ExtensionDashboardFragmentAPI returns the inline dashboard for a
-// single extension slug as an HTMX fragment. C-EXT-HUB Phase 2.
+// single extension slug as an HTMX fragment.
 //
 // Resolution rules — all paths render without panicking and without
-// surfacing a 4xx to the operator, mirroring the audit §1.4 nil-safe
-// design philosophy:
+// surfacing a 4xx to the operator:
 //
 //   - Unknown slug      → extensionDashboardMissing placeholder
 //   - Disabled in store → extensionDashboardDisabled placeholder

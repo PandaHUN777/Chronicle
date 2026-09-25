@@ -197,10 +197,9 @@ func TestAppearanceTab_RendersThreeAccentRows(t *testing.T) {
 	}
 }
 
-// TestAppearanceTab_RendersSemanticSlotPickers pins C-ACCENT-SLOTS' three
-// labeled pickers: the relabeled Site accent card plus the two new Action
-// highlight / App accent cards, each with the exact operator-specified label
-// text and their own preset/reset/custom-picker markup wired for the
+// TestAppearanceTab_RendersSemanticSlotPickers pins the three labeled
+// pickers — Site accent, Action highlight, App accent — each with the exact
+// label text and its own preset/reset/custom-picker markup wired for the
 // appearance-editor draft/save flow.
 func TestAppearanceTab_RendersSemanticSlotPickers(t *testing.T) {
 	cc := &CampaignContext{

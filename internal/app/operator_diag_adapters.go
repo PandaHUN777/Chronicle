@@ -143,14 +143,13 @@ func (a entityDiagAdapter) resolveType(ctx context.Context, campaignID, ref stri
 }
 
 // embeddedAssetSets reports every registered plugin's //go:embed-ed static
-// filesystem for the host.embedded diagnostics. Those bytes live only inside
-// the executable, so nothing an operator can run against the container
-// filesystem will ever see them — this adapter is the only window onto them.
+// filesystem for the host.embedded diagnostics — those bytes live only inside
+// the executable, so nothing an operator can check against the container
+// filesystem will ever see them.
 //
-// It reads a.registeredPlugins THROUGH the exported accessor at CALL time, not
-// at wiring time, so it does not care whether it is wired before or after the
-// plugins register. It mirrors the mount in mountPluginStatic exactly, sharing
-// pluginStaticPrefix so the reported URL cannot drift from the served one.
+// Reads a.RegisteredPlugins() at call time so it works regardless of wiring
+// order, and shares pluginStaticPrefix with mountPluginStatic so the reported
+// URL cannot drift from the one actually served.
 func (a *App) embeddedAssetSets() []systems.EmbeddedAssetSet {
 	regs := a.RegisteredPlugins()
 	out := make([]systems.EmbeddedAssetSet, 0, len(regs))
@@ -168,29 +167,17 @@ func (a *App) embeddedAssetSets() []systems.EmbeddedAssetSet {
 }
 
 // hostPluginRows merges Chronicle's plugin registries into the flat rows
-// host.plugins reports. It is the app layer's job because internal/systems must
-// not import internal/database or the plugin packages — the same dependency
-// inversion as embeddedAssetSets.
+// host.plugins reports (app layer's job: internal/systems must not import
+// internal/database or the plugin packages).
 //
-// There are THREE registries and they contain different plugins:
+// Three registries, different plugins: a.registeredPlugins (opt-in metadata:
+// StaticFS, health hook), a.PluginSchemas (plugins that handed migrations to
+// the runner), a.PluginHealth (what those migrations did). None is a manifest
+// of what exists — every plugin is compiled in and routes unconditionally.
 //
-//   - a.registeredPlugins (PluginRegistration): opt-in metadata. Carries the
-//     StaticFS and the health hook. Four plugins today.
-//   - a.PluginSchemas (database.PluginSchema): the plugins that own tables and
-//     handed migrations to the runner. Nine today.
-//   - a.PluginHealth: the runner's record of what those migrations DID.
-//
-// None of them is a manifest of what exists — every plugin is compiled in and
-// registers its routes unconditionally. The renderer says so on every run;
-// this function's job is only to stop the merge itself from lying.
-//
-// THE MERGE KEY IS NORMALISED, and that is not cosmetic: foundry_vtt registers
-// as `foundry-vtt` in the metadata registry (that spelling is also its static
-// URL prefix) and as `foundry_vtt` in the schema runner and health registry.
-// Keyed literally, one plugin would render as two rows — one apparently
-// migration-less, one apparently unregistered — which is exactly the kind of
-// half-true inventory this whole workstream exists to stop. The row carries
-// BOTH spellings so the reader learns the alias rather than having it hidden.
+// The merge key is normalised because the same plugin spells its slug two
+// ways across registries (e.g. `foundry-vtt` vs `foundry_vtt`); keyed
+// literally it would render as two rows. The row carries both spellings.
 func (a *App) hostPluginRows() []systems.HostPlugin {
 	rows := map[string]*systems.HostPlugin{}
 	get := func(key, display string) *systems.HostPlugin {
@@ -259,17 +246,13 @@ func normalizePluginKey(slug string) string {
 }
 
 // recentErrorSnapshot reports the process error ring for the host.errors /
-// host.errors-summary diagnostics.
+// host.errors-summary diagnostics, translating observability.Entry to
+// systems.RecentError since internal/systems must not import the ring's
+// writer side.
 //
-// The translation between observability.Entry and systems.RecentError is
-// deliberate, not incidental: internal/systems must not import the writer side
-// of the ring any more than it imports the plugins, so the app layer owns the
-// only place the two shapes meet. Same dependency inversion as
-// embeddedAssetSets and SetInstalledPackagesProvider.
-//
-// limit <= 0 means "every held entry" and is passed straight through, because
-// the summary groups over the whole ring — a frequency computed over one page
-// would be a lie about how often something is failing.
+// limit <= 0 means "every held entry", passed straight through: the summary
+// groups over the whole ring, so a frequency computed over one page would
+// misstate how often something is failing.
 func recentErrorSnapshot(limit int) systems.RecentErrors {
 	s := observability.Recent(limit)
 	out := systems.RecentErrors{Capacity: s.Capacity, Held: s.Held, Total: s.Total}

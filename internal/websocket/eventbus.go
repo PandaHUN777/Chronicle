@@ -25,10 +25,3 @@ func (b *hubEventBus) Publish(msg *Message) {
 		b.hub.Broadcast(msg)
 	}
 }
-
-// NoopEventBus is a no-op implementation for use when WebSocket is disabled
-// or in tests that don't need event broadcasting.
-type NoopEventBus struct{}
-
-// Publish does nothing.
-func (NoopEventBus) Publish(*Message) {}

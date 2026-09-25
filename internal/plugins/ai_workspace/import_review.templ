@@ -1,11 +1,8 @@
 // import_review.templ renders the per-page review screen returned
-// by POST /ai-workspace/import/parse. Operator inspects every
-// parsed page + bulk-defaults bar + decides Include / Name /
-// Category / Visibility / Conflict-mode per row. Submit is INERT
-// in Phase 4 — the commit handler lives in Phase 5.
-//
-// Per scoping §2.2 (review screen mockup). The screen consumes the
-// ParsedPage + Classification slices produced by the import handler.
+// by POST /ai-workspace/import/parse. The operator inspects every
+// parsed page + bulk-defaults bar and decides Include / Name /
+// Category / Visibility / Conflict-mode per row before Submit posts
+// to CommitImport.
 
 package ai_workspace
 
@@ -46,17 +43,9 @@ type ReviewSummary struct {
 // ImportReview renders the review fragment + the bulk-defaults bar
 // + the Submit button. HTMX swaps this into #ai-import-review-host.
 //
-// A11y (V1-F): skip-link lands focus on Submit for keyboard users;
-// the bulk-defaults bar + per-row table carry role/aria-label/aria-
-// labelledby attributes; row cards use the focus-visible ring on
-// every interactive control.
-//
-// Bug 2 fix (V1-F): hx-push-url tells HTMX to register a history
-// entry on commit so the browser Back button after the result render
-// lands somewhere sensible. The pushed URL points back at the
-// settings tab — Back from result lands on a fresh settings page
-// (no re-POST risk; review state is sacrificed by design — restoring
-// it would require V2-class URL-encoded state).
+// hx-push-url registers a history entry on commit so browser Back
+// after the result render lands on a fresh settings page rather than
+// re-POSTing; review state is deliberately not restored.
 templ ImportReview(d ImportReviewData) {
 	<form
 		id="ai-import-review"
@@ -71,14 +60,12 @@ templ ImportReview(d ImportReviewData) {
 		class="card p-4 mt-4"
 	>
 		// Re-pass the original markdown source so the commit handler
-		// can re-parse + match form fields by index. Avoids round-
-		// tripping every per-page body as a separate hidden field.
+		// can re-parse + match form fields by index, instead of
+		// round-tripping every per-page body as a hidden field.
 		<input type="hidden" name="markdown_source" value={ d.MarkdownSource }/>
 
-		// Skip-link — a11y. Operators on keyboard-only nav can jump
-		// straight to Submit from the top of the review screen.
-		// `sr-only focus:not-sr-only` lights the link up only when
-		// focused — invisible to sighted operators unless tabbed to.
+		// `sr-only focus:not-sr-only` lets keyboard-only operators
+		// jump straight to Submit; invisible to sighted operators.
 		<a
 			href="#ai-import-submit"
 			class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-10 focus:bg-accent focus:text-white focus:px-3 focus:py-1.5 focus:rounded focus:text-xs"
@@ -90,11 +77,10 @@ templ ImportReview(d ImportReviewData) {
 			<h3 id="ai-import-review-heading" class="text-base font-semibold text-fg">
 				Review — { strconv.Itoa(d.SummaryCounts.Total) } { pluralize("page", "pages", d.SummaryCounts.Total) } detected
 			</h3>
-			// Cancel NAVIGATES back to the settings tab (boosted full-page
-			// move) instead of hx-targeting the settings route into the
-			// review host — that route renders the FULL page (no fragment
-			// branch), so targeting it into a div nested the whole app
-			// inside itself (operator bug, 2026-06-12).
+			// Navigates (boosted full-page move) rather than hx-targeting
+			// the settings route into the review host: that route
+			// renders a full page (no fragment branch), so
+			// fragment-targeting it would nest the app inside itself.
 			<a
 				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/settings?tab=ai-workspace", d.CampaignID)) }
 				class="text-xs text-fg-muted hover:text-fg"
@@ -121,11 +107,10 @@ templ ImportReview(d ImportReviewData) {
 		</div>
 
 		<div class="flex items-center gap-3 mt-5 pt-4 border-t border-edge">
-			// Phase 5 (C-AI-WORKSPACE-V1-E) — Submit is live. The
-			// commit handler POST /ai-workspace/import/commit
-			// creates entities (with per-row autonomy) + creates
-			// any new categories the operator confirmed, then
-			// HTMX-swaps the import_result fragment into place.
+			// Submit POSTs to /ai-workspace/import/commit, which
+			// creates entities (per-row autonomy) and any confirmed
+			// new categories, then swaps in the import_result
+			// fragment.
 			if d.SummaryCounts.ParseErrors > 0 {
 				<button
 					id="ai-import-submit"
@@ -158,15 +143,12 @@ templ ImportReview(d ImportReviewData) {
 			}
 		</div>
 	</form>
-	// Alpine x-data factory. Defined inline so the review screen
-	// doesn't require a separate JS bundle; mirror of the
-	// settings-tab x-data pattern used by promptBuilderSection.
-	//
-	// Bulk action ops (Apply defaults / Skip conflicts / Toggle all)
-	// run via direct DOM mutation rather than a fully-reactive row
-	// model — keeps the templ-rendered server-side state authoritative
-	// and avoids a 3-way sync between FormData, the templ markup, and
-	// the Alpine store.
+	// Alpine x-data factory, defined inline so the review screen
+	// doesn't require a separate JS bundle. Bulk action ops run via
+	// direct DOM mutation rather than a fully-reactive row model, to
+	// keep the templ-rendered server-side state authoritative and
+	// avoid a 3-way sync between FormData, the templ markup, and the
+	// Alpine store.
 	<script>
 		(function () {
 			if (window.aiImportReview) { return; }
@@ -212,9 +194,7 @@ templ ImportReview(d ImportReviewData) {
 	</script>
 }
 
-// pluralize returns singular when n==1, plural otherwise. Used in
-// the header summary line to fix the "1 new categories" grammar
-// per V1-F dispatch §Review-screen polish item #6.
+// pluralize returns singular when n==1, plural otherwise.
 func pluralize(singular, plural string, n int) string {
 	if n == 1 {
 		return singular
@@ -223,10 +203,8 @@ func pluralize(singular, plural string, n int) string {
 }
 
 // countRowsForProposedSlug counts how many included rows reference
-// the same new-category slug. Used to surface the "applies to N
-// rows" hint per V1-F dispatch §Review-screen polish item #5; an
-// operator picking Create-vs-Map sees the downstream impact of the
-// decision.
+// the same new-category slug, for the "applies to N rows" hint so
+// an operator picking Create-vs-Map sees the downstream impact.
 func countRowsForProposedSlug(d ImportReviewData, slug string) int {
 	n := 0
 	for _, c := range d.Classes {
@@ -238,12 +216,12 @@ func countRowsForProposedSlug(d ImportReviewData, slug string) int {
 }
 
 // bulkDefaultsBar renders the top-of-table controls + action
-// buttons. V1-F adds the action buttons (Apply / Skip-conflicts /
-// Toggle-all) wired to the form-level Alpine factory; the dropdowns
-// continue to back the per-row default-fill logic on Submit.
+// buttons (Apply / Skip-conflicts / Toggle-all), wired to the
+// form-level Alpine factory; the dropdowns back the per-row
+// default-fill logic on Submit.
 //
 // `position: sticky; top: 0` keeps the bar reachable on long
-// imports (20+ rows). z-index lifts it above row cards.
+// imports; z-index lifts it above row cards.
 templ bulkDefaultsBar(d ImportReviewData) {
 	<div
 		class="card p-3 bg-surface-alt text-xs space-y-2 sticky top-0 z-10"
@@ -280,9 +258,8 @@ templ bulkDefaultsBar(d ImportReviewData) {
 				</select>
 			</label>
 		</div>
-		// Bulk action buttons — per V1-F dispatch §Review-screen
-		// polish item #4. Pure client-side ops via the form's Alpine
-		// factory; no server round-trip until Submit.
+		// Pure client-side ops via the form's Alpine factory; no
+		// server round-trip until Submit.
 		<div class="flex flex-wrap items-center gap-2 pt-2">
 			<button
 				type="button"
@@ -319,24 +296,15 @@ templ bulkDefaultsBar(d ImportReviewData) {
 
 // reviewRow renders one row per ParsedPage. The row's render
 // variant depends on Status — parse errors get a different shape
-// from successful rows. Per V1-F dispatch adds tags chips, the
-// subcategory label, and the map-to-existing radio surface for
-// new-category rows.
+// from successful rows.
 //
 // The data parameter is the full ImportReviewData so the row can
 // compute its "applies to N rows" hint without per-row pre-
 // aggregation in the handler.
 templ reviewRow(campaignID string, idx int, page importer.ParsedPage, cls importer.Classification, data ImportReviewData) {
-	// V2 design-tokens smoke adoption (PR C-CAL-V2-DESIGN-TOKENS) —
-	// `card-elev` composes on the existing `.card` to add the V2
-	// elevation tier shadow + hover lift via --elev-resting →
-	// --elev-hover + transform: translateY(-1px). The transition
-	// honors --dur-large + --ease-out from the locked motion
-	// vocabulary; `transition-colors` keeps the border-color
-	// transition for status changes (transform + opacity-only rule
-	// satisfied — box-shadow + transform on the lift; border-color
-	// is allowed for status-state crossfade per the dispatch's
-	// "clarify cause-and-effect" guidance).
+	// `card-elev` composes on `.card` to add the elevation-tier
+	// shadow + hover lift; `transition-colors` additionally animates
+	// the border color on status changes.
 	<div
 		role="listitem"
 		aria-label={ fmt.Sprintf("Page %d: %s", idx+1, statusLabel(cls.Status)) }
@@ -368,20 +336,17 @@ templ reviewRow(campaignID string, idx int, page importer.ParsedPage, cls import
 						<i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
 						{ cls.Reason }
 					</div>
-					// V1.5: still expose the action chip so the operator can
-					// override (e.g., change action: delete → create) to
-					// recover the row without re-pasting markdown.
+					// Still expose the action chip so the operator can
+					// override (e.g. delete → create)
+					// without re-pasting.
 					@reviewRowFields(idx, page, cls, data)
 					@reviewRowMeta(page)
 				} else {
 					@reviewRowFields(idx, page, cls, data)
 					@reviewRowMeta(page)
 				}
-				// V1.5 (C-AI-WORKSPACE-V1-G): per-row Delete confirmation.
-				// Renders only when the AI-suggested action is "delete";
-				// the per-row checkbox uses required-attribute so the
-				// browser's native form-validity gate blocks Submit if
-				// any Delete row is unconfirmed (audit §5.2 recommendation).
+				// Per-row delete confirmation; renders only when the
+				// AI-suggested action is "delete".
 				if page.FrontMatter.Action == importer.ActionDelete {
 					@reviewRowDeleteConfirm(idx, page.Name)
 				}
@@ -401,11 +366,10 @@ templ reviewRow(campaignID string, idx int, page importer.ParsedPage, cls import
 }
 
 // reviewRowDeleteConfirm renders the per-row "I understand X will be
-// permanently deleted" confirmation block. V1.5 / C-AI-WORKSPACE-V1-G
-// per audit §5.2. The checkbox uses the `required` attribute so the
-// browser's HTML5 form-validity gate prevents Submit until every
-// Delete row is confirmed; the committer re-checks DeleteConfirmed as
-// belt-and-suspenders against any client-side bypass.
+// permanently deleted" confirmation block. The checkbox's `required`
+// attribute blocks Submit via the browser's form-validity gate until
+// every Delete row is confirmed; the committer re-checks
+// DeleteConfirmed independently against any client-side bypass.
 templ reviewRowDeleteConfirm(idx int, name string) {
 	<div class="mt-2 p-2 rounded border border-rose-300 dark:border-rose-700 bg-rose-50 dark:bg-rose-900/20">
 		<label class="flex items-start gap-2 text-xs text-rose-900 dark:text-rose-100 cursor-pointer">
@@ -425,12 +389,8 @@ templ reviewRowDeleteConfirm(idx int, name string) {
 }
 
 // reviewRowMeta renders the read-only tags + subcategory line for
-// successfully-parsed rows. Per V1-F dispatch §Review-screen polish
-// items #2 (tags chips) + #3 (subcategory display).
-//
-// Empty tags + empty subcategory → no DOM emitted (avoid stale-empty
-// whitespace). Both surfaces are read-only in V1; V2 may allow
-// in-form editing.
+// successfully-parsed rows. Emits nothing when both are empty, to
+// avoid stale-empty whitespace.
 templ reviewRowMeta(page importer.ParsedPage) {
 	if len(page.FrontMatter.Tags) > 0 || page.FrontMatter.Subcategory != "" {
 		<div class="flex flex-wrap items-center gap-1.5 mt-1">
@@ -470,8 +430,8 @@ func statusLabel(s importer.ParseStatus) string {
 	}
 }
 
-// reviewRowHeader renders the name input + Action chip (V1.5) + status
-// chip. The action chip is a writable select so the operator can
+// reviewRowHeader renders the name input + Action chip + status chip.
+// The action chip is a writable select so the operator can
 // override the AI's suggested action without re-pasting markdown; the
 // status chip remains read-only as the parser+classifier's diagnosis.
 templ reviewRowHeader(idx int, page importer.ParsedPage, cls importer.Classification) {
@@ -492,15 +452,9 @@ templ reviewRowHeader(idx int, page importer.ParsedPage, cls importer.Classifica
 	</div>
 }
 
-// reviewRowActionChip (V1.5 / C-AI-WORKSPACE-V1-G per audit §5.1)
-// renders the per-row Action chip as a writable select element styled
-// as a chip. The operator can override the AI-suggested action verb
-// for this row without re-pasting markdown (audit §5.4).
-//
-// Color treatment:
-//   - create  → emerald (matches StatusNew chip)
-//   - update  → sky     (matches StatusUpdated result icon)
-//   - delete  → rose    (warning-color for destructive action)
+// reviewRowActionChip renders the per-row Action chip as a writable
+// select styled as a chip, so the operator can override the
+// AI-suggested action verb without re-pasting markdown.
 templ reviewRowActionChip(idx int, action string) {
 	<select
 		name={ fmt.Sprintf("page_%d_action", idx) }
@@ -556,9 +510,8 @@ templ statusChip(s importer.ParseStatus) {
 
 // reviewRowFields renders the per-row Category / Visibility /
 // Conflict-mode controls. New-category rows get the explicit
-// radio-pair surface (Create new / Map to existing) per V1-F
-// dispatch §Review-screen polish item #1; other rows keep the
-// existing dropdown.
+// radio-pair surface (Create new / Map to existing); other rows
+// keep the plain dropdown.
 templ reviewRowFields(idx int, page importer.ParsedPage, cls importer.Classification, data ImportReviewData) {
 	<div class="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-2 text-xs">
 		// Category control. For new-category rows we hand off to the
@@ -625,13 +578,10 @@ templ reviewRowFields(idx int, page importer.ParsedPage, cls importer.Classifica
 
 // newCategoryControl renders the Create-new / Map-to-existing radio
 // surface for rows whose front-matter proposes an unknown entity-
-// type slug. Per V1-F dispatch §Review-screen polish item #1 (spec
-// gap — §2.2 mockup had it; V1-D shipped only the dropdown).
-//
-// The hidden input keeps the form-encoded value compatible with the
-// commit handler's parser (which reads `page_N_category` as either
-// an existing slug or the "new:<slug>" sentinel — see
-// importer.parseNewCategorySpec).
+// type slug. The hidden input keeps the form-encoded value
+// compatible with the commit handler's importer.parseNewCategorySpec,
+// which reads `page_N_category` as either an existing slug or the
+// "new:<slug>" sentinel.
 templ newCategoryControl(idx int, page importer.ParsedPage, cls importer.Classification, data ImportReviewData) {
 	{{ shared := countRowsForProposedSlug(data, cls.ProposedTypeSlug) }}
 	<div
@@ -716,20 +666,11 @@ templ visibilityOption(idx int, value, label, fmValue string) {
 	}
 }
 
-// SettingsImportSection — V1 Phase 4 surface. Paste textarea +
-// optional file upload (via the markdown_importer.js widget) +
-// Parse button. POST → review fragment swap.
-//
-// V1-F additions:
-//   - Per-textarea Alpine state computes a live character counter
-//     (5 MB cap mirrored client-side; server still enforces it on
-//     the Parse handler at internal/plugins/ai_workspace/handler.go).
-//   - File input is visible (`block` rather than `hidden`) as a
-//     keyboard-only fallback to drag-drop; sighted operators see
-//     both the drop zone AND the file picker.
-//   - aria-live region announces files added to the import list,
-//     so screen-reader operators hear the file count update without
-//     visiting the visible list.
+// importSection renders the paste textarea + optional file upload
+// (via the markdown_importer.js widget) + Parse button. POST →
+// review fragment swap. Per-textarea Alpine state computes a live
+// character counter (5 MB cap mirrored client-side; the server
+// enforces it too, in handler.go's importBodyCap).
 templ importSection(cc *campaigns.CampaignContext) {
 	<div class="card p-6">
 		<div class="flex items-start gap-4 mb-4">
@@ -771,10 +712,9 @@ templ importSection(cc *campaigns.CampaignContext) {
 					aria-describedby="ai-import-char-counter"
 				></textarea>
 
-				// Char counter — V1-F dispatch §Large-input handling.
 				// 5 MB cap mirrors handler.go's importBodyCap; counter
-				// turns rose when within 10% of the limit so the
-				// operator notices BEFORE the server rejects.
+				// turns rose within 10% of the limit so the operator
+				// notices before the server rejects.
 				<div
 					id="ai-import-char-counter"
 					class="text-[11px] text-right"
@@ -799,10 +739,8 @@ templ importSection(cc *campaigns.CampaignContext) {
 					<i class="fa-solid fa-cloud-arrow-up mr-1" aria-hidden="true"></i>
 					Drag and drop .md files here.
 				</div>
-				// File input is visible (V1-F a11y) — keyboard-only
-				// operators must be able to reach the picker without
-				// drag-drop. Mounted as a labelled input rather than
-				// hidden under the drop zone.
+				// Visible (not hidden under the drop zone) so
+				// keyboard-only operators can reach the picker.
 				<label class="flex items-center gap-2 text-xs">
 					<span class="text-fg-muted">Or pick files:</span>
 					<input
@@ -815,9 +753,8 @@ templ importSection(cc *campaigns.CampaignContext) {
 						aria-label="Choose one or more markdown files to import"
 					/>
 				</label>
-				// aria-live region announces file-list updates to
-				// assistive tech. Visible list is below; the live
-				// region is sr-only so it doesn't double up visually.
+				// sr-only live region announces file-list updates to
+				// assistive tech without duplicating the visible list.
 				<div data-importer-file-list class="text-xs text-fg-muted space-y-1"></div>
 				<div data-importer-file-announce class="sr-only" role="status" aria-live="polite"></div>
 			</div>

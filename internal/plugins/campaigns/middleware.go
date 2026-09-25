@@ -89,8 +89,8 @@ func hasDmGrant(campaign *Campaign, userID string) bool {
 // unauthenticated users to view public campaigns. Non-member public visitors
 // (logged-out, or authenticated but not a member) get MemberRole=RoleNone —
 // strictly below RolePlayer — so they see only public/everyone content and
-// never Player-only or Player-role tag-granted content (C-PERM-ANON-IDENTITY).
-// RolePlayer is reserved for authenticated party members.
+// never Player-only or Player-role tag-granted content. RolePlayer is
+// reserved for authenticated party members.
 //
 // Use this on view routes (/campaigns/:id, /campaigns/:id/entities, etc.).
 // Mutating routes should still use RequireCampaignAccess + RequireRole.
@@ -129,15 +129,14 @@ func AllowPublicCampaignAccess(service CampaignService) echo.MiddlewareFunc {
 					// are NOT a party member, so they get the public identity
 					// (RoleNone), not RolePlayer. Their user/group grants still
 					// match (the filter keys those off userID), but Player-role
-					// grants do not. C-PERM-ANON-IDENTITY.
+					// grants do not.
 					cc.MemberRole = RoleNone
 				}
-				// A grant is only honoured for an actual member
-				// (C-PERM-DMGRANT-REVOKE). Above, an authenticated non-member on
-				// a PUBLIC campaign is deliberately admitted as RoleNone; without
-				// this membership test a stale id in dm_grant_ids would then send
-				// them straight back to RoleOwner through VisibilityRole(), which
-				// is the whole leak. Site admins are unaffected — they take the
+				// A grant is only honoured for an actual member. Without this
+				// membership test, a stale id in dm_grant_ids on a PUBLIC
+				// campaign would send an authenticated non-member (deliberately
+				// admitted as RoleNone above) straight to RoleOwner through
+				// VisibilityRole(). Site admins are unaffected — they take the
 				// IsSiteAdmin branch above and never rely on a grant.
 				cc.IsDmGranted = cc.IsMember && hasDmGrant(campaign, session.UserID)
 				c.Set(contextKeyCampaign, cc)
@@ -188,17 +187,11 @@ func RequireRole(minRole Role) echo.MiddlewareFunc {
 // RequireViewAccess gates a public-capable VIEW route on view eligibility rather
 // than a role threshold: it passes when the requester is a real campaign member,
 // a site admin, or the campaign is public. This is the correct gate for routes
-// mounted under AllowPublicCampaignAccess.
-//
-// WHY this exists (C-PUBLIC-VIEW-FIX): PR #478 (C-PERM-ANON-IDENTITY, 8631aad)
-// demoted anonymous visitors AND authenticated non-members from RolePlayer to
-// RoleNone so Player-only content can never leak to the public. But the pub
-// routes still carried RequireRole(RolePlayer), so the composition rejected
-// every RoleNone requester (`0 < 1`) — 403-ing all anonymous and non-member
-// access to PUBLIC campaigns, taking every public surface dark. Restoring
-// anon -> RolePlayer would reopen the #478 leak, so instead we gate on view
-// eligibility explicitly and keep RoleNone: the visibility filter still strips
-// Player-only content for these viewers, so they see only public/everyone data.
+// mounted under AllowPublicCampaignAccess — RequireRole(RolePlayer) would reject
+// every anonymous/non-member RoleNone requester even on a public campaign, and
+// promoting anon to RolePlayer would let Player-only content leak to the public.
+// The visibility filter still strips Player-only content for RoleNone viewers,
+// so they see only public/everyone data.
 //
 // Must be applied AFTER AllowPublicCampaignAccess (which populates the context;
 // for a PRIVATE campaign it already rejects anon -> 302 /login and authenticated
@@ -227,8 +220,8 @@ func RequireViewAccess() echo.MiddlewareFunc {
 // RequireCapability gates a route on a CampaignContext capability predicate
 // (e.g. (*CampaignContext).CanControlWorldState) rather than a flat MemberRole
 // threshold — so a co-DM grantee passes where RequireRole(RoleOwner) would
-// reject them (C-CAL-COGM-CAPABILITY / D6). Must be applied after
-// RequireCampaignAccess. denyMsg is the 403 message on failure.
+// reject them. Must be applied after RequireCampaignAccess. denyMsg is the
+// 403 message on failure.
 func RequireCapability(check func(*CampaignContext) bool, denyMsg string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
