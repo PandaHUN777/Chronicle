@@ -1,4 +1,5 @@
-**Fixes:** #<issue> (one line per issue; "none" for a trivial change)
+Fixes #<issue>
+<!-- One plain line per issue, exactly "Fixes #123" (no bold, no colon), so GitHub closes it on merge. No issue: "Fixes: none". -->
 **Security implication:** <one line; can be "none — pure refactor / CSS / docs">
 **Consumer-verified:** <file:line citation if this PR specifies a wire surface; "n/a" otherwise>
 **Mockup:** <path/to/mockups/file.html if UI-touching; "n/a" otherwise>
