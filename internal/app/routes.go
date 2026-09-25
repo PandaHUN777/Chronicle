@@ -1974,6 +1974,10 @@ func (a *App) RegisterRoutes() {
 	pkgRepo := packages.NewPackageRepository(a.DB)
 	pkgGitHub := packages.NewGitHubClient()
 	pkgService := packages.NewPackageService(pkgRepo, pkgGitHub, a.Config.Upload.MediaPath, a.Config.BaseURL)
+	// Wire the pending-submission count into the admin dashboard. Without
+	// this, SetPendingCounter is never called and the dashboard's "Pending"
+	// stat reads 0 no matter how many submissions are actually queued.
+	adminHandler.SetPendingCounter(pkgService)
 	// Rescan system registry and re-register addons when a system package
 	// is installed or updated, so it appears in the campaign Settings >
 	// Game System dropdown immediately without requiring a server restart.
