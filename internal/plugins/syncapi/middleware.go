@@ -304,9 +304,16 @@ func RequirePermission(perm APIKeyPermission) echo.MiddlewareFunc {
 }
 
 // RequireCampaignMatch returns middleware that verifies the API key's campaign
-// matches the :id parameter in the URL. Prevents using a key scoped to one
-// campaign to access another.
-func RequireCampaignMatch() echo.MiddlewareFunc {
+// matches the :id parameter in the URL, and blocks state-changing methods
+// (POST/PUT/PATCH/DELETE) against an archived campaign. Bearer-key requests
+// never pass through campaigns.RequireCampaignAccess (they carry no session,
+// so that web middleware never runs), so this is the sync API's one
+// group-level place to enforce the same "archived is read-only" rule the web
+// app enforces by default — every route mounted on the /api/v1/campaigns/:id
+// group (including the parallel v1Multipart media-upload group, which also
+// calls this) inherits it. Prevents using a key scoped to one campaign to
+// access another.
+func RequireCampaignMatch(campaignSvc campaigns.CampaignService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			key := GetAPIKey(c)
@@ -317,6 +324,18 @@ func RequireCampaignMatch() echo.MiddlewareFunc {
 			if campaignID != key.CampaignID {
 				return apperror.NewForbidden("api key not authorized for this campaign")
 			}
+
+			switch c.Request().Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+				campaign, err := campaignSvc.GetByID(c.Request().Context(), campaignID)
+				if err != nil {
+					return err
+				}
+				if campaign.IsArchived() {
+					return apperror.NewForbidden("campaign is archived and read-only")
+				}
+			}
+
 			return next(c)
 		}
 	}

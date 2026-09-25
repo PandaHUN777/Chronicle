@@ -2,6 +2,7 @@ package campaigns
 
 import (
 	"fmt"
+	"net/http"
 
 	"github.com/labstack/echo/v4"
 
@@ -12,6 +13,67 @@ import (
 // contextKeyCampaign is the Echo context key for campaign context data.
 const contextKeyCampaign = "campaign_context"
 
+// resolveCampaignContext resolves the campaign from the :id URL parameter and
+// the caller's session/membership into a CampaignContext. Shared by
+// RequireCampaignAccess and RequireCampaignAccessEvenIfArchived so the two
+// can never drift on who counts as a member — they differ only in whether an
+// archived campaign additionally blocks the write.
+func resolveCampaignContext(c echo.Context, service CampaignService) (*CampaignContext, error) {
+	campaignID := c.Param("id")
+	if campaignID == "" {
+		return nil, apperror.NewBadRequest("campaign ID is required")
+	}
+
+	session := auth.GetSession(c)
+	if session == nil {
+		return nil, apperror.NewUnauthorized("authentication required")
+	}
+
+	// Verify the campaign exists.
+	campaign, err := service.GetByID(c.Request().Context(), campaignID)
+	if err != nil {
+		return nil, err
+	}
+
+	cc := &CampaignContext{
+		Campaign:    campaign,
+		IsSiteAdmin: session.IsAdmin,
+		MemberRole:  RoleNone,
+	}
+
+	// Look up the user's membership.
+	member, err := service.GetMember(c.Request().Context(), campaignID, session.UserID)
+	if err == nil {
+		// User is a member — set their actual role.
+		cc.MemberRole = member.Role
+		cc.IsMember = true
+	} else if session.IsAdmin {
+		// Not a member but is a site admin — they can still access
+		// the route, but with no content visibility (RoleNone).
+		// Admin-specific actions route through /admin endpoints.
+		cc.MemberRole = RoleNone
+	} else {
+		// Not a member and not an admin — deny access.
+		return nil, apperror.NewForbidden("you are not a member of this campaign")
+	}
+
+	// Check if this member has been granted dm_only visibility.
+	cc.IsDmGranted = hasDmGrant(campaign, session.UserID)
+
+	return cc, nil
+}
+
+// isWriteMethod reports whether method is state-changing. GET/HEAD/OPTIONS
+// (and anything else Echo might route) are treated as safe and pass through.
+func isWriteMethod(method string) bool {
+	switch method {
+	case http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete:
+		return true
+	default:
+		return false
+	}
+}
+
 // RequireCampaignAccess returns middleware that resolves the campaign from the
 // :id URL parameter and the user's membership role. The resolved CampaignContext
 // is injected into the Echo context for downstream handlers.
@@ -21,51 +83,46 @@ const contextKeyCampaign = "campaign_context"
 //   - If the user is NOT a member AND is a site admin → MemberRole = RoleNone,
 //     IsSiteAdmin = true (admin actions go through /admin routes)
 //   - If the user is NOT a member AND is NOT an admin → 403 Forbidden
+//   - If the campaign is archived, POST/PUT/PATCH/DELETE → 403 Forbidden
+//     (GET/HEAD/OPTIONS still pass). Checked only after the above, so a
+//     non-member's 403/404 is unchanged by archive state. This is the
+//     single default every route group built on this middleware inherits;
+//     RequireCampaignAccessEvenIfArchived is the deliberate, short exception
+//     list (see routes.go).
 //
 // Must be applied AFTER auth.RequireAuth.
 func RequireCampaignAccess(service CampaignService) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			campaignID := c.Param("id")
-			if campaignID == "" {
-				return apperror.NewBadRequest("campaign ID is required")
-			}
-
-			session := auth.GetSession(c)
-			if session == nil {
-				return apperror.NewUnauthorized("authentication required")
-			}
-
-			// Verify the campaign exists.
-			campaign, err := service.GetByID(c.Request().Context(), campaignID)
+			cc, err := resolveCampaignContext(c, service)
 			if err != nil {
 				return err
 			}
 
-			cc := &CampaignContext{
-				Campaign:    campaign,
-				IsSiteAdmin: session.IsAdmin,
-				MemberRole:  RoleNone,
+			if isWriteMethod(c.Request().Method) && cc.Campaign.IsArchived() {
+				return apperror.NewForbidden("campaign is archived and read-only")
 			}
 
-			// Look up the user's membership.
-			member, err := service.GetMember(c.Request().Context(), campaignID, session.UserID)
-			if err == nil {
-				// User is a member — set their actual role.
-				cc.MemberRole = member.Role
-				cc.IsMember = true
-			} else if session.IsAdmin {
-				// Not a member but is a site admin — they can still access
-				// the route, but with no content visibility (RoleNone).
-				// Admin-specific actions route through /admin endpoints.
-				cc.MemberRole = RoleNone
-			} else {
-				// Not a member and not an admin — deny access.
-				return apperror.NewForbidden("you are not a member of this campaign")
-			}
+			c.Set(contextKeyCampaign, cc)
+			return next(c)
+		}
+	}
+}
 
-			// Check if this member has been granted dm_only visibility.
-			cc.IsDmGranted = hasDmGrant(campaign, session.UserID)
+// RequireCampaignAccessEvenIfArchived is RequireCampaignAccess without the
+// archive gate: same membership resolution, same 404/403 for a missing
+// campaign or a non-member, but a write is never blocked for being archived.
+// Reserved for the few actions that must keep working on an archived
+// campaign — see routes.go for the short, commented list.
+//
+// Must be applied AFTER auth.RequireAuth.
+func RequireCampaignAccessEvenIfArchived(service CampaignService) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			cc, err := resolveCampaignContext(c, service)
+			if err != nil {
+				return err
+			}
 
 			c.Set(contextKeyCampaign, cc)
 			return next(c)
@@ -233,24 +290,6 @@ func RequireCapability(check func(*CampaignContext) bool, denyMsg string) echo.M
 			}
 			if !check(cc) {
 				return apperror.NewForbidden(denyMsg)
-			}
-			return next(c)
-		}
-	}
-}
-
-// RejectIfArchived blocks mutating requests (POST/PUT/DELETE) to archived
-// campaigns. GET and HEAD requests pass through for read-only access.
-// Must be applied after RequireCampaignAccess.
-func RejectIfArchived() echo.MiddlewareFunc {
-	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			cc := GetCampaignContext(c)
-			if cc != nil && cc.Campaign.IsArchived() {
-				method := c.Request().Method
-				if method != "GET" && method != "HEAD" {
-					return apperror.NewForbidden("campaign is archived and read-only")
-				}
 			}
 			return next(c)
 		}

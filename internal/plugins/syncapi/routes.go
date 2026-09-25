@@ -121,7 +121,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	)
 
 	// Campaign-scoped routes with campaign match enforcement.
-	cg := v1.Group("/campaigns/:id", RequireCampaignMatch())
+	cg := v1.Group("/campaigns/:id", RequireCampaignMatch(campaignSvc))
 
 	// Read endpoints (require "read" permission).
 	cg.GET("", api.GetCampaign, RequirePermission(PermRead))
@@ -227,7 +227,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	// DeleteMedia stays on the JSON group: it accepts a body-less
 	// DELETE which the Content-Type middleware passes through anyway.
 	v1Multipart.POST("/campaigns/:id/media", mediaAPI.UploadMedia,
-		RequireCampaignMatch(),
+		RequireCampaignMatch(campaignSvc),
 		RequirePermission(PermWrite),
 	)
 	cg.DELETE("/media/:mediaID", mediaAPI.DeleteMedia, RequirePermission(PermWrite))
