@@ -2,6 +2,7 @@ package maps
 
 import (
 	"context"
+	"regexp"
 	"strings"
 	"time"
 
@@ -25,6 +26,60 @@ var validLayerTypes = map[string]bool{
 	"token":      true,
 	"gm":         true,
 	"fog":        true,
+}
+
+// imageURISchemePattern matches a leading URI scheme ("http:", "javascript:",
+// "data:", ...). Every legitimate token image_path Chronicle itself ever
+// writes is scheme-less: a bare filename ("wolf.png") or a root-relative
+// path ("/media/<id>"), rendered by the map widget straight into an <img
+// src>/Leaflet iconUrl. A scheme means the browser instead fetches (or, for
+// javascript:/vbscript:, could try to run) whatever the token's placer typed.
+var imageURISchemePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9+.-]*:`)
+
+// trimURLControlChars mirrors the WHATWG URL parser's own preprocessing: it
+// strips leading/trailing C0 controls and space, then removes every ASCII
+// tab, CR and LF wherever they appear. Browsers apply this before parsing a
+// URL assigned to <img src>/Leaflet iconUrl, so a leading " http://…" or
+// "\thttp://…" is fetched as plain http(s) even though it doesn't match the
+// scheme checks byte-for-byte — the checks below must see what the browser
+// will actually parse, not the raw stored bytes.
+func trimURLControlChars(p string) string {
+	p = strings.TrimFunc(p, func(r rune) bool { return r <= ' ' })
+	return strings.Map(func(r rune) rune {
+		if r == '\t' || r == '\n' || r == '\r' {
+			return -1
+		}
+		return r
+	}, p)
+}
+
+// isExternalImagePath reports whether a token image_path would make the
+// viewer's browser reach outside Chronicle: any URI scheme other than the
+// self-contained "data:" form (this also catches "http://…"/"https://…",
+// since their scheme prefix matches before the "//" is ever inspected), or a
+// protocol-relative "//host/…" reference. A relative path never matches.
+func isExternalImagePath(p string) bool {
+	p = trimURLControlChars(p)
+	if p == "" {
+		return false
+	}
+	if strings.HasPrefix(p, "//") {
+		return true
+	}
+	if scheme := imageURISchemePattern.FindString(p); scheme != "" {
+		return !strings.EqualFold(strings.TrimSuffix(scheme, ":"), "data")
+	}
+	return false
+}
+
+// validateTokenImagePath rejects a token image_path that isn't a local
+// reference, per isExternalImagePath. Shared by CreateToken and UpdateToken
+// so both entry points enforce the same rule.
+func validateTokenImagePath(path *string) error {
+	if path == nil || !isExternalImagePath(*path) {
+		return nil
+	}
+	return apperror.NewValidation("image_path must be a local reference, not an external URL")
 }
 
 // DrawingService defines business logic for drawings, tokens, layers, and fog.
@@ -259,6 +314,9 @@ func (s *drawingService) CreateToken(ctx context.Context, input CreateTokenInput
 	if input.X < 0 || input.X > 100 || input.Y < 0 || input.Y > 100 {
 		return nil, apperror.NewBadRequest("token coordinates must be between 0 and 100")
 	}
+	if err := validateTokenImagePath(input.ImagePath); err != nil {
+		return nil, err
+	}
 
 	t := &Token{
 		ID:             generateID(),
@@ -336,6 +394,16 @@ func (s *drawingService) UpdateToken(ctx context.Context, id, mapID string, inpu
 		t.Name = input.Name
 	}
 	t.ImagePath = input.ImagePath.Ptr(t.ImagePath)
+	// Validate only a newly-supplied image_path, never the merged/stored
+	// value: per the partial-update contract, an update that omits
+	// image_path must succeed even if a pre-existing stored value predates
+	// this check (a legacy row, an older sync-API client) — the caller never
+	// touched that field and shouldn't be blocked by it.
+	if input.ImagePath.Present() {
+		if err := validateTokenImagePath(t.ImagePath); err != nil {
+			return err
+		}
+	}
 	t.X = input.X.Val(t.X)
 	t.Y = input.Y.Val(t.Y)
 	t.Width = input.Width.Val(t.Width)
