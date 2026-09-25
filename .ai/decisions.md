@@ -5120,3 +5120,88 @@ miss:
   control, and every leak fixed today was a way of being handed one.
 - **Shortening the TTL alone.** It narrows the window and changes nothing
   about who may read. Worth doing, not a substitute.
+
+## ADR-059: Chronicle stays separate from Grimoire; they integrate at the login and the link
+
+**Date:** 2026-09-16 · **Status:** Accepted; operator-ruled ("not worth merging
+or anything. Sounds like vastly different things."). Nothing built under this
+ADR yet; two follow-ups booked in `.ai/todo.md`.
+
+### Context
+
+The operator asked whether Chronicle should be merged into, attached to, or
+made an app inside [hunter-read/grimoire](https://github.com/hunter-read/grimoire),
+on the belief that it "does most of what I am trying to accomplish already."
+Measured against a clone of grimoire `main` at `fa7082ef` (2026-09-16):
+
+- **Grimoire is a file library manager.** Its core is PDFs (every page indexed
+  in SQLite FTS5, rendered server-side for reading), a battlemap image gallery,
+  tokens, audio with a soundboard, 3D models, OPDS feeds. Its campaign tracker
+  is a **flat markdown wiki** — `[[links]]`, per-page visibility, `||secrets||`,
+  session scheduling. Its data model has **no entity, relation or timeline
+  concept**; checked directly in `backend/models/`.
+- **Chronicle is a structured world.** Typed entities with attributes, a
+  relations graph, a timeline, interactive maps with markers/fog/live sync,
+  permissions down to tags and groups, bidirectional Foundry sync, an item
+  economy. The overlap with grimoire is the campaign-tracker band only.
+- **Stacks are disjoint:** Python/FastAPI/SQLite/React versus Go/Echo/MariaDB/
+  HTMX. Chronicle is ~182K lines (120K Go, 30K templ, 32K JS); grimoire ~78K.
+- **Grimoire's addon system is not an app host.** Declarative YAML metadata
+  scrapers, plus optional scripts run in a subprocess with — their words — "no
+  database handle and no access to Grimoire internals." Nothing to plug an
+  application into.
+- **Grimoire is a one-person project, five months old.** 1.0.0 on 2026-04-06;
+  250 of its last 298 commits (84%) by one author, the next human contributor
+  at six. Well-run for its age (semver, changelog, architecture docs, CI), and
+  still a single point of dependency.
+- **Licences are compatible** (GPL-3 ↔ AGPL-3, GPL-3 §13) and it does not
+  matter: the languages differ, so anything "pulled" is a reimplemented idea,
+  not copied code.
+
+### Decision
+
+**Keep them separate. Run both. Integrate at two seams, cheapest first.**
+
+1. **One login.** Grimoire already speaks OIDC (authorization code + PKCE).
+   Chronicle has none. Put both behind one open-source identity provider and
+   they become one suite: one login, one user list. This is the only change
+   that makes them *feel* integrated, and it is Chronicle's largest missing
+   feature independent of grimoire.
+2. **Cross-links, with a division of labour.** Grimoire owns the library — the
+   PDF, the battlemap image, the audio track. Chronicle owns the world and
+   links out: a monster entity to its stat block at a page, a location to its
+   map image. Grimoire publishes OpenAPI, so a "Grimoire resource" link type
+   with a preview is small.
+
+**Consequence for ADR-058 and the media renovation design:** some of what
+Chronicle stores as media — battlemaps, audio — is grimoire's job. Where both
+run, Chronicle's media scope may narrow to "pictures attached to entities."
+That simplifies `.ai/designs/2026-09-13-media-renovation.md`; it does not
+invalidate it.
+
+**Features worth reimplementing from grimoire, ranked:** OIDC; guest invite
+codes (code-only accounts scoped to one campaign, convertible and mergeable —
+Chronicle's "guest" today means only "not logged in"); a per-user revocable
+`.ics` session feed; a **player-safe export** (each person gets exactly what
+they can see — Chronicle's export is Owner-only and dumps everything, verified
+in `campaigns/export.go`); LegendKeeper import; the mixed-selection
+confirmation pattern; per-user themes with a WCAG-AAA option.
+
+**Not worth reimplementing:** PDF indexing, audio, 3D models, the token and
+UVTT editors — grimoire's core, and the reason to run it alongside.
+
+**Not actually gaps:** inline `||secrets||` (Chronicle has `editor_secret.js`,
+server-stripped at `entities/handler.go:1744`); "restricted content is hidden
+outright — the title is the spoiler" is ADR-055 rule 3.
+
+### Rejected
+
+- **Chronicle as an app inside grimoire.** Requires rewriting ~182K lines into
+  a different language, database and rendering model; there is no host to
+  plug into; and it ties Chronicle's future to one maintainer's roadmap.
+- **Grimoire's features rebuilt inside Chronicle.** The same rewrite in
+  reverse, and PDF indexing / audio / 3D are large specialised systems
+  Chronicle has no reason to own.
+- **Deep API coupling** beyond links and login. Grimoire's API is versioned
+  and documented, but at 84% single-author the right depth of dependency is
+  "a URL and a preview," not shared state.

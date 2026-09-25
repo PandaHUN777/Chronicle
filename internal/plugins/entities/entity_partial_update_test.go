@@ -41,7 +41,7 @@ func parentedEntityRepo() *mockEntityRepo {
 				}, nil
 			}
 		},
-		findAncestorsFn: func(_ context.Context, _ string) ([]Entity, error) { return nil, nil },
+		findAncestorsFn: func(_ context.Context, _ string, _ int, _ string) ([]Entity, error) { return nil, nil },
 		slugExistsFn:    func(_ context.Context, _, _ string) (bool, error) { return false, nil },
 	}
 }

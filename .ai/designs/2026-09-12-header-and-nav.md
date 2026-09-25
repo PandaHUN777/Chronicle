@@ -154,7 +154,8 @@ D traced ring (their idea: on click a 2px line runs the button's perimeter,
 direction random, ~350ms, then settles into the lit row; reduced motion =
 no trace), E the icon fills (ripple from the icon, icon stays solid), F
 folder tab (the active row takes the page colour and joins it at the edge).
-All drawn with C's header path alongside. **Still open.**
+All drawn with C's header path alongside. **CLOSED 2026-09-13 — see the
+ruling at the foot of this file.**
 
 **Where-am-I, round 4:** the operator likes D and wants the page name kept in
 the row (A's sub-label), and clarified D is CONTINUOUS: two traces that keep
@@ -166,7 +167,8 @@ two `stroke-dashoffset` keyframe tracks with uneven reversals, CSS only, no
 script loop; `prefers-reduced-motion` disables it. Lively-at-rest is a
 permanent repaint on every page and a permanent eye-pull; if the operator
 wants it anyway, make the strength an Owner setting on Customize → Header
-with the user's reduced-motion preference always winning. **Still open.**
+with the user's reduced-motion preference always winning. **CLOSED
+2026-09-13 — see the ruling at the foot of this file.**
 
 **D, corrected (round 5, operator):** the traces ride the FULL glow border
 — the row's own box, `sidebar-nav-glow::before` inset 0, square corners —
@@ -187,6 +189,7 @@ In the row. Colour follows the Chrome accent. Reduced-motion members always
 get Still; a per-user "turn nav motion off" lives in the account menu.
 Extend `CampaignSettings` (`campaigns/model.go`), never a parallel model.
 **D + C is the pick in all but name; awaiting the operator's word.**
+*(That word arrived 2026-09-13. See the ruling at the foot of this file.)*
 
 ## Addendum — round 6 (2026-09-12): styles, not knobs; the Customize page
 
@@ -230,3 +233,45 @@ Extend `CampaignSettings` (`campaigns/model.go`), never a parallel model.
   Motion and depth), the demo site always in view, one staged save.
   Header (H3) and Navigation (N1 + the highlight style) are sections of
   it, not separate tabs.
+
+
+## RULED 2026-09-13 — the nav highlight is settled. Build it.
+
+The operator confirmed **D, the living ring, at CALM strength**, with C's
+header path alongside. This closes the question that stood open through
+rounds 3, 4, 5 and 6, and it unblocks N1/N2 and the Customize page.
+
+**Exactly what ships** (this is the spec; it is the operator's own round-5
+and round-6 corrections, not a fresh interpretation):
+
+- **Rest:** nothing. No traces, no page name. You are not in that app.
+- **Hover:** today's right-edge glow, unchanged in effect, rendered as two
+  traces touching end to end — top-right corner, down the right edge, two
+  thirds along the bottom — tugging at each other a few percent and going
+  nowhere. They never part on hover.
+- **Active (click):** the two traces part and circle the FULL glow border —
+  the row's own box, `sidebar-nav-glow::before` inset 0, square corners, not
+  an inset ring — at a middle speed. Each drifts in LENGTH and PACE on its
+  own long uneven cycle (14s / 19s, ease-in-out per segment); now and then
+  one closes the whole loop. Never quick. The page name appears in the row.
+- **Reduced motion:** style J (rail and tint), always, for any member whose
+  system asks for it. A per-user "turn nav motion off" lives in the account
+  menu and also wins.
+
+**Implementation:** CSS only. One SVG rect pair per active row,
+`pathLength="100"`, keyframes on `stroke-dasharray` + `stroke-dashoffset`.
+No script loop — a JS animation loop on every page is the thing this design
+is specifically avoiding. Colour follows the Chrome accent.
+
+**Why Calm and not Lively.** Lively-at-rest is a permanent repaint and a
+permanent eye-pull on every page in the app. The operator's own constraint
+was "we don't want to freak out ADHD users." Lively remains selectable by an
+Owner on Customize → Navigation; it is simply not what a new campaign gets.
+
+**Still a STYLE choice, not knobs.** The Owner picks one style from the eight
+drawn in round 6 — moving: D living ring, G comet, H breathing, I tide;
+still: J rail and tint, K folder tab, L edge-lit, M solid icon — plus
+Strength (Calm/Lively) for the moving ones and Page name (Hidden/In the row).
+Every moving style names its still fallback. Extend `CampaignSettings`
+(`campaigns/model.go`); never a parallel settings model — the nav-v3
+retrospective names "two data models" as the root of three bugs.

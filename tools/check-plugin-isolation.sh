@@ -146,6 +146,16 @@ always_allowed_prefixes=(
   # DIRECTORY in a test fixture, not a runtime dependency. Substituting a
   # non-colliding name would simply fail to find the migrations.
   "internal/plugins/sessions/dbtest_support_test.go"
+  # The timeline plugin's real-MariaDB reachability harness, added 2026-09-13
+  # for the audit's timeline-search finding. Identical case to the sessions
+  # entry directly above: timeline/migrations carries
+  # `FOREIGN KEY (calendar_id) REFERENCES calendars(id)`, so the schema cannot
+  # be created at all without the CALENDAR plugin's migrations applied first.
+  # It loads them OFF DISK via os.DirFS for the same reason sessions does —
+  # internal/wire/plugin_import_guard_test.go forbids a timeline->calendar
+  # import outright — so the slug names a migrations DIRECTORY in a test
+  # fixture, not a runtime dependency.
+  "internal/plugins/timeline/search_visibility_reachability_test.go"
 )
 
 # ---------------------------------------------------------------------------

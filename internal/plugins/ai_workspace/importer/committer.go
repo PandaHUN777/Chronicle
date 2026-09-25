@@ -91,10 +91,22 @@ type RowDecision struct {
 	// per-row editing.
 	Subcategory string
 
-	// Visibility is the enum value. Mapped to IsPrivate at
-	// commit-time (private / dm_only → private; public → public).
-	// Visibility=dm_only is preserved on the entity's Visibility
-	// field via Update; CreateEntityInput doesn't carry it.
+	// Visibility is the enum value. It maps to IsPrivate at commit
+	// time (private / dm_only → private; public → public) and to
+	// NOTHING ELSE.
+	//
+	// The comment that stood here claimed "Visibility=dm_only is
+	// preserved on the entity's Visibility field via Update". That was
+	// never true: UpdateEntityInput has no Visibility member, the
+	// entities service never assigns entity.Visibility on update, and
+	// the UPDATE statement has no visibility column. Entity.Visibility
+	// is a different concept entirely — the default/custom visibility
+	// MODE switch — and nothing in this plugin touches it. So dm_only
+	// and private are indistinguishable once committed; both land as
+	// IsPrivate=true. Audit finding 8, 2026-09-12.
+	//
+	// On an UPDATE this value is only honored when the markdown carried
+	// an explicit `visibility:` key — see commitUpdate.
 	Visibility string
 
 	// ConflictMode is "skip" | "rename" | "update". Honored only when
@@ -306,8 +318,8 @@ func parseNewCategorySpec(spec string) (string, bool) {
 //  1. MarkdownToHTML(page.Body)  — goldmark + sanitize.HTML
 //  2. htmlconv.Convert(html)     — HTML → ProseMirror JSON
 //  3. creator.Create / Update    — entity service (which also
-//                                  calls sanitize.HTML internally
-//                                  → belt-and-suspenders)
+//     calls sanitize.HTML internally
+//     → belt-and-suspenders)
 //  4. creator.UpdateEntry(entryJSON, entryHTML)
 //
 // Future maintenance: keep this function as the SINGLE place that
@@ -470,11 +482,43 @@ func (c *Committer) commitUpdate(
 	// ParentID is deliberately ABSENT, which now means "preserve" (sweep R4):
 	// an import that re-commits an existing page must not flatten it out of
 	// the entity hierarchy, which is exactly what this call used to do.
+	//
+	// IsPrivate, TypeLabel and FieldsData now follow the same rule, for the
+	// same reason (audit findings 6 and 7, 2026-09-12). An update targets a
+	// page that ALREADY EXISTS and whose current state nobody reviewed: the
+	// review row's Visibility dropdown is pre-filled from the INCOMING front
+	// matter, never from the entity, so an operator leaving it alone is not
+	// consent to change the page. Only an explicit `visibility:` key in the
+	// markdown is an instruction about visibility. Everything else preserves.
+	//
+	// This matters because the markdown is the one input on this path that
+	// Chronicle did not author — it is pasted back from an external AI tool,
+	// which in turn read campaign text a player may have written. Re-deciding
+	// an existing page's privacy from that text is how a hidden page gets
+	// published by a commit the operator approved for an unrelated reason.
+	var isPrivateField *bool
+	if page.FrontMatter.Visibility != "" {
+		isPrivateField = &isPrivate
+	}
+
+	// TypeLabel: absent preserves, present-but-empty CLEARS. patch.Of("") is
+	// the clear, so a page whose front matter omits `subcategory:` used to
+	// erase the descriptor off the entity it was updating.
+	typeLabel := patch.Absent[string]()
+	if dec.Subcategory != "" {
+		typeLabel = patch.Of(dec.Subcategory)
+	}
+
 	if _, err := c.creator.Update(ctx, existing.ID, entities.UpdateEntityInput{
-		Name:       patch.Of(existing.Name), // update keeps the existing name
-		TypeLabel:  patch.Of(dec.Subcategory),
-		IsPrivate:  &isPrivate,
-		FieldsData: map[string]any{},
+		Name:      patch.Of(existing.Name), // update keeps the existing name
+		TypeLabel: typeLabel,
+		IsPrivate: isPrivateField,
+		// FieldsData is ABSENT (nil), never an empty map. The importer has no
+		// source of structured field data — front matter carries no key for
+		// it — so the empty map was not "nothing to write here", it was
+		// "delete every field on this page". The service replaces on any
+		// non-nil map (entities/service.go).
+		//
 		// Entry + EntryHTML on UpdateEntityInput would also work,
 		// but we use UpdateEntry below to mirror the create path
 		// + go through service.go's sanitize.HTML for symmetry.

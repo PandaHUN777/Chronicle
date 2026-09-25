@@ -623,7 +623,12 @@ func (h *Handler) Show(c echo.Context) error {
 	// CheckEntityAccess call just above. Before this fix a Co-DM allowed onto
 	// a dm_only parent page (promoted) then had that page's own dm_only
 	// children silently dropped (raw MemberRole) from the Sub-pages list.
-	ancestors, _ := h.service.GetAncestors(c.Request().Context(), entity.ID)
+	// GetAncestors takes the same pair for the same reason. It did not, until
+	// 2026-09-13: the breadcrumb printed the whole chain unfiltered, so a
+	// hidden PARENT's name and link rendered to anyone who could see the
+	// CHILD. The fix that gave GetChildren its role/userID arguments stopped
+	// one line short of the call above it.
+	ancestors, _ := h.service.GetAncestors(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 	children, _ := h.service.GetChildren(c.Request().Context(), entity.ID, int(cc.VisibilityRole()), userID)
 
 	// Check if the "attributes" addon is enabled for this campaign.

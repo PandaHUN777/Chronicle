@@ -92,7 +92,7 @@ templ dashWelcomeBanner(cc *CampaignContext) {
 	if cc.Campaign.BackdropPath != nil && *cc.Campaign.BackdropPath != "" {
 		<div class="relative rounded-xl overflow-hidden -mt-4 -mx-5 md:-mx-0 md:mt-0">
 			<img
-				src={ "/media/" + *cc.Campaign.BackdropPath }
+				src={ layouts.MediaURL(ctx, *cc.Campaign.BackdropPath) }
 				alt=""
 				class="w-full h-48 md:h-56 object-cover"
 			/>

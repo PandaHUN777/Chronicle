@@ -750,7 +750,7 @@ type EntityRepository interface {
 
 	// FindAncestors returns the ancestor chain from an entity up to the root,
 	// ordered from immediate parent to furthest ancestor. Uses a recursive CTE.
-	FindAncestors(ctx context.Context, entityID string) ([]Entity, error)
+	FindAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error)
 
 	// UpdateParent sets or clears an entity's parent_id. Scoped to campaign for safety.
 	UpdateParent(ctx context.Context, entityID, campaignID string, parentID *string) error
@@ -1616,8 +1616,32 @@ func (r *entityRepository) FindChildren(ctx context.Context, parentID string, ro
 // FindAncestors returns the ancestor chain from an entity up to the root,
 // ordered from immediate parent to furthest ancestor. Uses a recursive CTE
 // with a depth limit of 20 to prevent infinite loops from data corruption.
-func (r *entityRepository) FindAncestors(ctx context.Context, entityID string) ([]Entity, error) {
-	query := `WITH RECURSIVE ancestors AS (
+func (r *entityRepository) FindAncestors(ctx context.Context, entityID string, role int, userID string) ([]Entity, error) {
+	// The breadcrumb used to print this chain unfiltered, so a hidden PARENT's
+	// name and link rendered to anyone who could see the CHILD -- exactly what
+	// ADR-055 rule 3 forbids ("hidden content is absent, not greyed, not
+	// counted, not named"). FindChildren, two functions above, was fixed for
+	// this class under ADR-057/P1FIX; FindAncestors was missed.
+	//
+	// The OUTER select aliases the CTE as `e`, not `a`, so visibilityFilter's
+	// `e.`-qualified predicate applies verbatim. That is deliberate: it reuses
+	// the one canonical predicate instead of hand-rolling a second copy of the
+	// policy, which is the mistake that produced three separate leaks in this
+	// repository already.
+	//
+	// The filter goes on the OUTER select, never inside the recursion. Pruning
+	// mid-recursion would drop every ancestor ABOVE a hidden one too, hiding
+	// pages the viewer is entitled to see. Filtering outside means a hidden
+	// link in the chain is simply absent and its visible parent still shows.
+	visFilter, visArgs := visibilityFilter(role, userID)
+	where := ""
+	if visFilter != "" {
+		// visibilityFilter emits a leading " AND ...", so it needs something
+		// to hang off. An Owner gets "" back and no WHERE clause at all.
+		where = "WHERE 1=1" + visFilter
+	}
+
+	query := fmt.Sprintf(`WITH RECURSIVE ancestors AS (
 	    SELECT e.id, e.campaign_id, e.entity_type_id, e.name, e.slug,
 	           e.entry, e.entry_html, e.player_notes, e.player_notes_html,
 	           e.image_path, e.cover_image_path, e.parent_id, e.parent_node_id, e.sort_order, e.type_label,
@@ -1637,17 +1661,23 @@ func (r *entityRepository) FindAncestors(ctx context.Context, entityID string) (
 	    INNER JOIN ancestors a ON e.id = a.parent_id
 	    WHERE a.depth < 20
 	)
-	SELECT a.id, a.campaign_id, a.entity_type_id, a.name, a.slug,
-	       a.entry, a.entry_html, a.player_notes, a.player_notes_html,
-	       a.image_path, a.cover_image_path, a.parent_id, a.parent_node_id, a.sort_order, a.type_label,
-	       a.is_private, a.visibility, a.is_template, a.fields_data, a.field_overrides, a.popup_config,
-	       a.created_by, a.owner_user_id, a.map_id, a.created_at, a.updated_at,
+	SELECT e.id, e.campaign_id, e.entity_type_id, e.name, e.slug,
+	       e.entry, e.entry_html, e.player_notes, e.player_notes_html,
+	       e.image_path, e.cover_image_path, e.parent_id, e.parent_node_id, e.sort_order, e.type_label,
+	       e.is_private, e.visibility, e.is_template, e.fields_data, e.field_overrides, e.popup_config,
+	       e.created_by, e.owner_user_id, e.map_id, e.created_at, e.updated_at,
 	       et.name, et.name_plural, et.icon, et.color, et.slug
-	FROM ancestors a
-	INNER JOIN entity_types et ON et.id = a.entity_type_id
-	ORDER BY a.depth ASC`
+	FROM ancestors e
+	INNER JOIN entity_types et ON et.id = e.entity_type_id
+	%s
+	ORDER BY e.depth ASC`, where)
 
-	rows, err := r.db.QueryContext(ctx, query, entityID)
+	// entityID binds the CTE's single placeholder, which appears FIRST in the
+	// query text; visArgs bind the WHERE that follows it. MySQL binds
+	// positionally, so this order is load-bearing.
+	args := append([]any{entityID}, visArgs...)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("finding ancestors: %w", err)
 	}

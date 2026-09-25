@@ -104,34 +104,61 @@ guarantee that is not there.
 
 ---
 
-## UNTESTED — recorded, not verified. Treat as unknown.
+## TESTED 2026-09-13 — three real, three not. Verdicts below.
 
-- **MEDIUM `internal/plugins/entities/repository.go:1619`** — the entity
+**This section used to say "UNTESTED — treat as unknown." It is no longer
+unknown.** Two agents reachability-tested all six against real code (real
+MariaDB, real repositories and services, no fakes installed for the function
+under test). Result: **3 CONFIRMED, 2 already fixed by ADR-058, 1 not a bug.**
+
+The count also drops from "eight" to six — the task list carried a stale
+number that nobody had recounted against this list.
+
+**Do not read a verdict here as permanent.** Each one is true against the
+tree it was measured on (commit at time of test: `eb45947a`). The Foundry
+repo learned this the expensive way: a claim measured against another repo's
+source is only true on the day it is measured.
+
+
+
+- **CONFIRMED — REAL, UNFIXED.** MEDIUM `internal/plugins/entities/repository.go:1619` — the entity
   breadcrumb prints the full ancestor chain with no visibility filter.
   `FindAncestors` is a bare recursive CTE and `GetAncestors` is passed no role
   or user at all, so a hidden parent's name and link render to anyone who can
   see the child. This is the textbook shape ADR-055 rule 3 forbids.
-- **MEDIUM `internal/plugins/timeline/repository.go:251`** — cross-plugin
+- **REFUTED — already fixed; this anchor has drifted into a doc comment.**
+  ADR-058 closed it: `timeline/service.go:867` (`SearchTimelines`) runs
+  `filterTimelinesByUser` over every result from `repo.Search`. Pinned by
+  `timeline/search_visibility_reachability_test.go` (PASSES). Original text:
+  MEDIUM `internal/plugins/timeline/repository.go:251` — cross-plugin
   timeline search applies only the SQL role narrowing and returns results
   without passing them through the per-user filter that `List` uses, so a
   restricted timeline can be named to an anonymous viewer.
-- **MEDIUM `internal/plugins/maps/repository.go:124`** — the marker popup
+- **CONFIRMED — REAL, UNFIXED.** MEDIUM `internal/plugins/maps/repository.go:124` — the marker popup
   joins entities and selects the linked entity's name with no visibility
   predicate on the joined row. The marker's own visibility is filtered; the
   entity it points at is not, so an "everyone" marker can name a private page.
-- **MEDIUM `internal/plugins/media/handler.go:308`** — on a public campaign
+- **NOT A BUG — operator-ruled and shipped.** ADR-058 decision 7 is this
+  finding, quoted almost verbatim, and landed in `922fd3b1`. The public-campaign
+  carve-out was never meant for all media, only for files on pages the viewer can
+  already see; `checkMediaAccess` now routes public campaigns through
+  `checkEntityScopedAccess` with `RoleNone` for anonymous. Original text:
+  MEDIUM `internal/plugins/media/handler.go:308` — on a public campaign
   `allowUnsignedAccess` returns true for every file, and the access check
   consults only campaign membership, never the visibility of the entity the
   file hangs off. Any media id in a public campaign is readable by the
   internet. There is a test pinning this deliberately, so decide whether it
   is intended for ALL media or only for media on visible pages.
-- **MEDIUM/LOW `internal/plugins/media/handler.go:272`** — a private
+- **CONFIRMED — REAL, UNFIXED.** MEDIUM/LOW `internal/plugins/media/handler.go:272` — a private
   campaign's file answers 403 to an anonymous caller while an unknown id
   answers 404. Two distinguishable responses is an existence oracle. The
   function has a defence-in-depth branch 17 lines below that deliberately
   returns not-found, and it is unreachable whenever a signer is configured,
   which is always in production.
-- **LOW `internal/middleware/logging.go:18`** — the sensitive-parameter list
+- **NOT A BUG — already fixed in the same ADR-058 sweep (`922fd3b1`).**
+  `sensitiveParams` contains `sig` and `expires`; verified end-to-end through the
+  real middleware by `middleware/logging_endtoend_test.go` (PASSES). Original text:
+  LOW `internal/middleware/logging.go:18` — the sensitive-parameter list
   omits `sig` and `expires`, so the request logger writes a live,
   user-unbound bearer credential for a private image into the log in
   plaintext, where it stays valid for the rest of its hour.
