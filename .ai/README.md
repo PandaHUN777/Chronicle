@@ -31,7 +31,7 @@ never append dated entries or "recent work".
 | `glossary.md` | TTRPG and Chronicle terminology |
 | `troubleshooting.md` | Non-obvious problems and their fixes, including the test-environment ones |
 | `plugin-development.md` | Building WASM extensions |
-| `designs/` | Designs. `2026-09-12-build-order.md` and `2026-09-12-header-and-nav.md` are approved and unbuilt (#739); the rest are finished or superseded |
+| `designs/` | Designs. `2026-09-12-build-order.md` and `2026-09-12-header-and-nav.md` are approved and unbuilt (#739). `2026-09-13-media-renovation.md` is the media plan, waiting on four decisions (#730, #733). The rest are finished or superseded |
 
 `status.md` and `todo.md` are pointers to the issues now. `audit.md`,
 `competitive-gap-analysis.md`, `design-content-extensions.md`,
