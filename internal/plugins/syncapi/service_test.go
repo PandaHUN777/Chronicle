@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
+	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -628,6 +629,14 @@ func TestAuthenticateKey_SharedByRESTAndWS(t *testing.T) {
 	wsGate := newFakeAddonGate()
 	wsGate.enabled[storedKey.CampaignID] = true
 	svc.SetAddonGate(wsGate)
+	// AuthenticateKeyForWS also confirms the key's creator is still an
+	// Owner, so this parity test must wire that too; the check's own
+	// behavior is covered in key_owner_gate_test.go.
+	svc.SetMemberChecker(&fakeCampaignService{
+		getMemberFn: func(_ context.Context, campaignID, userID string) (*campaigns.CampaignMember, error) {
+			return &campaigns.CampaignMember{CampaignID: campaignID, UserID: userID, Role: campaigns.RoleOwner}, nil
+		},
+	})
 	ctx := context.Background()
 
 	// REST path: service.AuthenticateKey(rawKey) → *APIKey

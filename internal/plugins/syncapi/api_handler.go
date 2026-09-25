@@ -97,13 +97,15 @@ var degradeSignalThrottle sync.Map
 //
 //   - Session-authed callers (synthetic key, ID == synthKeySessionID) keep their
 //     LIVE campaign role.
-//   - A real stored Bearer key resolves to Owner-level sync visibility,
-//     DECOUPLED from its creator's current membership: keys are strictly
-//     Owner-minted (routes.go: POST /api-keys is RequireRole(Owner)) and the
-//     WebSocket path already grants any valid key Owner role
-//     (service.AuthenticateKeyForWS), so this keeps REST and WS in agreement.
-//     When the key's creator HAS lost access we still sync, but emit a loud,
-//     operator-visible signal instead of degrading silently.
+//   - A real stored Bearer key resolves to Owner-level sync visibility: keys
+//     are strictly Owner-minted (routes.go: POST /api-keys is
+//     RequireRole(Owner)) and the WebSocket path grants the same
+//     (service.AuthenticateKeyForWS), so REST and WS agree.
+//     RequireKeyOwnerStillOwner (middleware.go) already refused the request
+//     before it reached here once the key's creator is no longer an Owner,
+//     so a Bearer key that reaches this point is confirmed live-Owner; the
+//     loud signal below is a defense-in-depth breadcrumb for any caller
+//     that chain doesn't cover, not the primary gate.
 func (h *APIHandler) resolveRole(c echo.Context) int {
 	key := GetAPIKey(c)
 	if key == nil {
@@ -125,9 +127,11 @@ func (h *APIHandler) resolveRole(c echo.Context) int {
 
 // flagIfKeyOwnerLostAccess emits a loud, module-surfaceable signal when a stored
 // Bearer key's creator (key.UserID) is no longer an Owner (or no longer a member)
-// of the key's campaign. Deliberately does NOT downgrade the key's sync
-// visibility here — degrading silently is worse than flagging loudly.
-// TODO(keyxmakerx/Cordinator#180): decide whether to auto-disable such a key.
+// of the key's campaign. RequireKeyOwnerStillOwner already refuses the request
+// on every route that mounts it, so this rarely fires in production; it stays
+// as a defense-in-depth breadcrumb for any resolveRole caller outside that
+// middleware chain, so the condition still surfaces instead of looking silently
+// normal.
 func (h *APIHandler) flagIfKeyOwnerLostAccess(c echo.Context, key *APIKey) {
 	member, err := h.campaignSvc.GetMember(c.Request().Context(), key.CampaignID, key.UserID)
 	// err != nil => creator removed from campaign; role < Owner => demoted.

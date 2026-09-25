@@ -103,6 +103,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	// revokes outside access, not Chronicle's own UI. See its doc comment.
 	v1 := e.Group("/api/v1",
 		RequireAuthOrAPIKey(authSvc, campaignSvc, syncSvc),
+		RequireKeyOwnerStillOwner(campaignSvc, syncSvc),
 		RequireSyncAPIAddon(addonChecker),
 		RateLimit(syncSvc),
 		RequireJSONContentType(),
@@ -116,6 +117,7 @@ func RegisterAPIRoutes(e *echo.Echo, api *APIHandler, calAPI *CalendarAPIHandler
 	// multipart endpoint under /api/v1/* mounts here, not on v1.
 	v1Multipart := e.Group("/api/v1",
 		RequireAuthOrAPIKey(authSvc, campaignSvc, syncSvc),
+		RequireKeyOwnerStillOwner(campaignSvc, syncSvc),
 		RequireSyncAPIAddon(addonChecker),
 		RateLimit(syncSvc),
 	)

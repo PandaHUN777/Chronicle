@@ -2303,6 +2303,12 @@ func (a *App) RegisterRoutes() {
 	// fails CLOSED if this line is ever dropped, which is the intended
 	// direction for a security control.
 	syncService.SetAddonGate(addonService)
+	// The key's creator must currently be a campaign Owner or the key stops
+	// working (REST via syncapi.RequireKeyOwnerStillOwner, WebSocket via
+	// AuthenticateKeyForWS). Both read membership through this checker; the
+	// WS path fails CLOSED if this line is ever dropped, same direction as
+	// the addon gate above.
+	syncService.SetMemberChecker(campaignService)
 	// One-time, idempotent startup backfill: enable sync-api for campaigns
 	// that already own API keys but have no recorded toggle state, so
 	// enforcing the toggle cannot cut off an integration that was working.
