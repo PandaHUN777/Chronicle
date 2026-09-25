@@ -322,9 +322,18 @@ func currentViewerIdentity(c echo.Context) string {
 // campaign access control. Returns nil if access is allowed, or an error to
 // return to the client.
 func (h *Handler) checkMediaAccess(c echo.Context, file *MediaFile, isThumb bool, thumbSize string) error {
-	// Files without a campaign (avatars, backdrops) are public.
+	// A nil campaign is only public when the file was uploaded that way on
+	// purpose (avatar, backdrop). Campaign-scoped usage types (attachment,
+	// entity_image) can end up with a nil campaign_id later — the FK is
+	// ON DELETE SET NULL, and campaign-delete's media cleanup is
+	// best-effort — and must not fall through to public just because the
+	// column went NULL. Deny exactly like an unknown id, so an orphaned
+	// row isn't distinguishable from one that was never there.
 	if file.CampaignID == nil {
-		return nil
+		if file.UsageType == UsageAvatar || file.UsageType == UsageBackdrop {
+			return nil
+		}
+		return apperror.NewNotFound("media file not found")
 	}
 
 	fileID := file.ID
