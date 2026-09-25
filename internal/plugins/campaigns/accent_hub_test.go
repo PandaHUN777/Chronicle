@@ -189,10 +189,13 @@ func TestAppearanceTab_RendersThreeAccentRows(t *testing.T) {
 	if !strings.Contains(html, `id="appearance-surface-accents"`) {
 		t.Error("surface accents section must render")
 	}
-	if !strings.Contains(html, `data-surface-slot="1"`) {
+	// Each row's custom-color input carries a slot-numbered id (its inline
+	// onchange handler looks itself up by this id — see surfaceAccentRow /
+	// surface_accent_onclick.go).
+	if !strings.Contains(html, `id="appearance-surface-custom-1"`) {
 		t.Error("surface accent row 1 must render")
 	}
-	if !strings.Contains(html, `data-surface-slot="2"`) {
+	if !strings.Contains(html, `id="appearance-surface-custom-2"`) {
 		t.Error("surface accent row 2 must render")
 	}
 }

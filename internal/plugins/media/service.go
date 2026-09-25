@@ -3,7 +3,6 @@ package media
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -11,7 +10,6 @@ import (
 	"image/gif"
 	"image/jpeg"
 	"image/png"
-	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -23,6 +21,7 @@ import (
 	// Register decoders for image formats.
 	_ "golang.org/x/image/webp"
 
+	"github.com/google/uuid"
 	"golang.org/x/image/draw"
 
 	"github.com/keyxmakerx/chronicle/internal/apperror"
@@ -863,16 +862,7 @@ func checkDiskSpace(path string, fileSize int64) error {
 	return nil
 }
 
-// generateUUID creates a new v4 UUID string using crypto/rand.
-// Panics if the system entropy source fails, as this indicates a
-// catastrophic system problem that would compromise all security.
+// generateUUID returns a new random (v4) UUID string.
 func generateUUID() string {
-	uuid := make([]byte, 16)
-	if _, err := io.ReadFull(rand.Reader, uuid); err != nil {
-		panic("crypto/rand failed: " + err.Error())
-	}
-	uuid[6] = (uuid[6] & 0x0f) | 0x40
-	uuid[8] = (uuid[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
-		uuid[0:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:16])
+	return uuid.NewString()
 }

@@ -102,3 +102,44 @@ func TestShowSession_ScribeAndOwnerSeeEverything(t *testing.T) {
 		}
 	}
 }
+
+// TestFilterEntitiesForViewer_NilFilterFailsClosed pins the fail-closed branch
+// of sessionService.FilterEntitiesForViewer: a Player/anonymous viewer with no
+// EntityVisibilityFilter wired must get back no linked entities at all, never
+// the unfiltered list.
+// Without this test, a later "simplification" of the nil check could turn it
+// into a leak of hidden page names (keyxmakerx/Chronicle#716).
+func TestFilterEntitiesForViewer_NilFilterFailsClosed(t *testing.T) {
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
+	ents := []SessionEntity{
+		{EntityID: "ent-secret", EntityName: "Secret Villain", EntitySlug: "secret-villain"},
+		{EntityID: "ent-public", EntityName: "Town Square", EntitySlug: "town-square"},
+	}
+
+	got, err := svc.FilterEntitiesForViewer(context.Background(), "camp-1", ents, int(campaigns.RolePlayer), "user-1")
+	if err != nil {
+		t.Fatalf("FilterEntitiesForViewer returned error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("FilterEntitiesForViewer with a nil filter returned %d entities, want 0 (fail closed): %+v", len(got), got)
+	}
+}
+
+// TestFilterEntitiesForViewer_NilFilterStillUnchangedForScribe confirms the
+// nil-filter fail-closed branch only applies below RoleScribe: a Scribe/Owner
+// viewer must still see everything even when no filter is wired, since
+// role >= RoleScribe returns before the nil check.
+func TestFilterEntitiesForViewer_NilFilterStillUnchangedForScribe(t *testing.T) {
+	svc := NewSessionService(&mockSessionRepo{}, nil, nil)
+	ents := []SessionEntity{
+		{EntityID: "ent-secret", EntityName: "Secret Villain"},
+	}
+
+	got, err := svc.FilterEntitiesForViewer(context.Background(), "camp-1", ents, int(campaigns.RoleScribe), "user-1")
+	if err != nil {
+		t.Fatalf("FilterEntitiesForViewer returned error: %v", err)
+	}
+	if len(got) != 1 {
+		t.Errorf("FilterEntitiesForViewer for a Scribe with a nil filter returned %d entities, want 1 (unchanged)", len(got))
+	}
+}

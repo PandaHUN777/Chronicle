@@ -39,6 +39,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/keyxmakerx/chronicle/internal/hostinfo"
 )
 
 // preMigrationManifestVersion is the schema version for the manifest
@@ -424,10 +426,11 @@ func writeManifest(cfg HealthCheckConfig, timestamp string, migrationVersion uin
 	finalPath := filepath.Join(cfg.BackupDir, basename)
 	partialPath := finalPath + ".partial"
 
-	chronicleVersion := os.Getenv("CHRONICLE_VERSION")
-	if chronicleVersion == "" {
-		chronicleVersion = "unknown"
-	}
+	// Same precedence the rest of the app uses (env -> VCS revision ->
+	// module version -> "unknown"), so a manifest written from a build
+	// without CHRONICLE_VERSION set still names the commit it came from
+	// instead of just "unknown".
+	chronicleVersion := hostinfo.Version()
 
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "chronicle_manifest_version=%d\n", preMigrationManifestVersion)

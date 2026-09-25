@@ -15,6 +15,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/keyxmakerx/chronicle/internal/hostinfo"
 )
 
 // TestSha256AndSize pins the streaming hash + size helper used to
@@ -134,6 +136,30 @@ func TestWriteManifest_DefaultsUnknownVersion(t *testing.T) {
 	body, _ := os.ReadFile(manifestPath)
 	if !strings.Contains(string(body), "chronicle_version=unknown") {
 		t.Errorf("expected chronicle_version=unknown, got:\n%s", body)
+	}
+}
+
+// TestWriteManifest_UsesHostinfoVersionRule pins the manifest's version
+// line to hostinfo.Version()'s precedence rather than a private re-read
+// of the env var (#695). A whitespace-only CHRONICLE_VERSION is the case
+// that told them apart: hostinfo.Version() trims and falls through to its
+// VCS/module/"unknown" fallback chain, while the old os.Getenv-only copy
+// treated the untrimmed whitespace as a real, non-empty version string.
+func TestWriteManifest_UsesHostinfoVersionRule(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("CHRONICLE_VERSION", "   ")
+	manifestPath, err := writeManifest(HealthCheckConfig{BackupDir: dir}, "ts", 0, nil)
+	if err != nil {
+		t.Fatalf("writeManifest: %v", err)
+	}
+	body, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+
+	want := "chronicle_version=" + hostinfo.Version()
+	if !strings.Contains(string(body), want) {
+		t.Errorf("manifest chronicle_version line does not match hostinfo.Version(); want %q in:\n%s", want, body)
 	}
 }
 

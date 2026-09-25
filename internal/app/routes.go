@@ -1753,9 +1753,12 @@ func (a *App) RegisterRoutes() {
 	// run the backfill in a detached goroutine so a campaign with
 	// thousands of legacy media files doesn't stall startup. New uploads
 	// always populate the hash inline; this only catches the gap.
+	// Uses a.ShutdownCtx (not context.Background()) so the backfill stops
+	// on graceful shutdown instead of continuing to work against a closing
+	// DB connection (#711); BackfillContentHashes already checks ctx.Done()
+	// between batches.
 	go func() {
-		bgCtx := context.Background()
-		n, err := mediaService.BackfillContentHashes(bgCtx, 100)
+		n, err := mediaService.BackfillContentHashes(a.ShutdownCtx, 100)
 		if err != nil {
 			slog.Warn("media: content_hash backfill aborted", slog.Any("error", err), slog.Int("hashed_so_far", n))
 			return

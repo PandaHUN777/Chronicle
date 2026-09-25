@@ -364,17 +364,14 @@ func (a *sessionExportAdapter) ExportSessions(ctx context.Context, campaignID st
 	var result []campaigns.ExportSession
 	for _, sess := range allSessions {
 		es := campaigns.ExportSession{
-			Name:          sess.Name,
-			Summary:       sess.Summary,
-			Notes:         sess.Notes,
-			NotesHTML:     sess.NotesHTML,
-			Recap:         sess.Recap,
-			RecapHTML:     sess.RecapHTML,
-			ScheduledDate: sess.ScheduledDate,
-			// TODO(keyxmakerx/Chronicle#615): sess.ScheduledTime is not exported
-			// (needs a `ScheduledTime *string` field on campaigns.ExportSession),
-			// so a campaign export/clone drops the confirmed session's time; the
-			// date still round-trips.
+			Name:               sess.Name,
+			Summary:            sess.Summary,
+			Notes:              sess.Notes,
+			NotesHTML:          sess.NotesHTML,
+			Recap:              sess.Recap,
+			RecapHTML:          sess.RecapHTML,
+			ScheduledDate:      sess.ScheduledDate,
+			ScheduledTime:      sess.ScheduledTime,
 			CalendarYear:       sess.CalendarYear,
 			CalendarMonth:      sess.CalendarMonth,
 			CalendarDay:        sess.CalendarDay,
@@ -1000,10 +997,9 @@ type sessionImportAdapter struct {
 func (a *sessionImportAdapter) ImportSessions(ctx context.Context, campaignID, userID string, data []campaigns.ExportSession, idMap *campaigns.IDMap, report *campaigns.ImportReport) error {
 	for _, sess := range data {
 		newSession, err := a.svc.CreateSession(ctx, campaignID, sessions.CreateSessionInput{
-			Name:          sess.Name,
-			ScheduledDate: sess.ScheduledDate,
-			// TODO(keyxmakerx/Chronicle#615): ScheduledTime import is blocked on
-			// the same missing campaigns.ExportSession field as ExportSessions.
+			Name:               sess.Name,
+			ScheduledDate:      sess.ScheduledDate,
+			ScheduledTime:      sess.ScheduledTime,
 			CalendarYear:       sess.CalendarYear,
 			CalendarMonth:      sess.CalendarMonth,
 			CalendarDay:        sess.CalendarDay,
@@ -1031,6 +1027,7 @@ func (a *sessionImportAdapter) ImportSessions(ctx context.Context, campaignID, u
 				Name:               patch.Of(sess.Name),
 				Summary:            patch.FromPtr(sess.Summary),
 				ScheduledDate:      patch.FromPtr(sess.ScheduledDate),
+				ScheduledTime:      patch.FromPtr(sess.ScheduledTime),
 				CalendarYear:       patch.FromPtr(sess.CalendarYear),
 				CalendarMonth:      patch.FromPtr(sess.CalendarMonth),
 				CalendarDay:        patch.FromPtr(sess.CalendarDay),

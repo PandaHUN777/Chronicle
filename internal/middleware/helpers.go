@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
@@ -23,6 +24,22 @@ var LayoutInjector func(echo.Context, context.Context) context.Context
 func IsHTMX(c echo.Context) bool {
 	return c.Request().Header.Get("HX-Request") == "true" &&
 		c.Request().Header.Get("HX-Boosted") != "true"
+}
+
+// IsAPIRequest reports whether the caller expects JSON rather than HTML: the
+// path is under /api, or the request sent or asked for JSON (Content-Type or
+// Accept: application/json). The header checks catch fetch() widgets under
+// /campaigns/*, and match the app's error handler, so such a caller gets
+// JSON from a refusal the same way it does from an error.
+func IsAPIRequest(c echo.Context) bool {
+	path := c.Request().URL.Path
+	if len(path) >= 4 && path[:4] == "/api" {
+		return true
+	}
+	if strings.Contains(c.Request().Header.Get("Content-Type"), "application/json") {
+		return true
+	}
+	return strings.Contains(c.Request().Header.Get("Accept"), "application/json")
 }
 
 // HTMXRedirect sends a redirect that works for both HTMX and normal requests.

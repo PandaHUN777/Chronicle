@@ -188,6 +188,11 @@ func main() {
 
 		slog.Info("shutting down server...")
 
+		// Signal long-running background jobs (e.g. the media content-hash
+		// backfill, #711) to stop instead of continuing to work against a
+		// closing DB connection.
+		application.ShutdownCancel()
+
 		// Give in-flight requests 10 seconds to complete.
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

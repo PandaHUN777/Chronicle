@@ -6,6 +6,10 @@ package entities
 
 import (
 	"fmt"
+	"regexp"
+	"strconv"
+	"strings"
+
 	"github.com/keyxmakerx/chronicle/internal/plugins/campaigns"
 	"github.com/keyxmakerx/chronicle/internal/sanitize"
 	"github.com/keyxmakerx/chronicle/internal/templates/layouts"
@@ -550,11 +554,52 @@ templ blockExtWidget(cc *campaigns.CampaignContext, entity *Entity, block Templa
 			if cc.MemberRole >= campaigns.RoleScribe {
 				data-editable="true"
 			}
+			{ extWidgetConfigAttrs(block.Config)... }
 			class="ext-widget-block"
 		></div>
 	} else {
 		<div class="text-fg-muted text-sm italic py-2">Extension widget not configured</div>
 	}
+}
+
+// extWidgetConfigKey is the shape a config key needs to become a data-*
+// attribute name. templ escapes attribute values but not names, so a key
+// holding a space or '=' could inject attributes of its own (an onfocus
+// handler, say); block config is editable layout JSON, so other keys are
+// dropped.
+var extWidgetConfigKey = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
+
+// extWidgetReservedKeys are set explicitly on the mount div, so a config key
+// may not repeat them (attribute names are case-insensitive).
+var extWidgetReservedKeys = map[string]bool{
+	"widget_slug": true,
+	"widget":      true,
+	"campaign-id": true,
+	"entity-id":   true,
+	"editable":    true,
+}
+
+// extWidgetConfigAttrs turns a placed ext_widget block's own config into
+// data-* attributes, so the widget receives its manifest-declared config
+// (WidgetContribution.Config, internal/extensions/manifest.go) instead of
+// its hardcoded default. Only string, bool and number values pass; keys must
+// match extWidgetConfigKey and not be reserved.
+func extWidgetConfigAttrs(config map[string]any) templ.Attributes {
+	attrs := templ.Attributes{}
+	for key, val := range config {
+		if extWidgetReservedKeys[strings.ToLower(key)] || !extWidgetConfigKey.MatchString(key) {
+			continue
+		}
+		switch v := val.(type) {
+		case string:
+			attrs["data-"+key] = v
+		case bool:
+			attrs["data-"+key] = strconv.FormatBool(v)
+		case float64:
+			attrs["data-"+key] = strconv.FormatFloat(v, 'f', -1, 64)
+		}
+	}
+	return attrs
 }
 
 // blockPosts renders the entity posts (sub-notes) widget mount point.

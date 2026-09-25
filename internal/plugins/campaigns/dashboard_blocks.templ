@@ -481,37 +481,14 @@ func dashGraphHeight(config map[string]any) int {
 	return height
 }
 
-// dashCalendarFull renders a full interactive calendar grid embedded in the dashboard.
-// Uses HTMX to lazy-load the calendar grid fragment from the calendar plugin.
-// Config: height (int, default 500).
+// dashCalendarFull renders the full-calendar dashboard block.
+// CALV5-PLACEHOLDER: its /calendars/embed fragment route was deleted with the
+// V4 calendar plugin (#741); same reasoning as dashCalendarPreview above —
+// show the rebuilding notice instead of an hx-get that always 404s.
 templ dashCalendarFull(cc *CampaignContext, config map[string]any) {
-	<div>
-		<div class="flex items-center justify-between mb-3">
-			<h2 class="text-sm font-semibold text-fg-secondary uppercase tracking-wider">
-				<i class="fa-solid fa-calendar-days mr-1.5"></i>Calendar
-			</h2>
-			// This block still serves the legacy V1 calendar embed
-			// (/calendars/embed); only the "open full page" link points
-			// at the current calendar app.
-			<a
-				href={ templ.SafeURL(fmt.Sprintf("/campaigns/%s/apps/calendar", cc.Campaign.ID)) }
-				class="text-xs text-accent hover:underline"
-			>
-				Open full page
-			</a>
-		</div>
-		<div
-			hx-get={ fmt.Sprintf("/campaigns/%s/calendars/embed", cc.Campaign.ID) }
-			hx-trigger="intersect once"
-			hx-swap="innerHTML"
-			class="card overflow-hidden rounded-lg"
-			style={ fmt.Sprintf("min-height: %dpx", dashFullBlockHeight(config, 500)) }
-		>
-			<div class="flex items-center justify-center h-full text-sm text-fg-muted py-8">
-				<i class="fa-solid fa-spinner fa-spin mr-2"></i>Loading calendar...
-			</div>
-		</div>
-	</div>
+	_ = cc
+	_ = config
+	@components.FeatureRebuildingBlock("The calendar")
 }
 
 // dashTimelineFull renders a full interactive timeline visualization in the dashboard.
