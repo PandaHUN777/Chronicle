@@ -1,0 +1,31 @@
+name: Bug report
+description: Something in Chronicle is broken or behaves wrongly.
+type: Bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. **If it's a security problem** (it lets someone see or change something they shouldn't), please don't post the details here. Use the **Report a vulnerability** button on the repository's Security tab if you see one; otherwise open an issue that just says you have a security report, and the maintainer will arrange a private way to share it.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you saw, and what you expected to see instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it happen?
+      description: The steps that lead to it — which page, what you clicked or sent.
+      placeholder: |
+        1. Go to …
+        2. Click …
+        3. See …
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Anything else?
+      description: Browser, whether you self-host (and how), API requests/responses, screenshots, console errors.

@@ -7,6 +7,11 @@
 <!-- Update: Whenever a route is added, removed, or its handler changes.      -->
 <!-- ====================================================================== -->
 
+> **Incomplete; don't treat this as the route list.** It covers 78 of the 658
+> routes. The CI-guarded list is `internal/wire/routes_snapshot.txt`, and the
+> public API is described in `docs/api/openapi.yaml`. Replacing this file is
+> tracked in #742.
+
 > Routes marked with **(implemented)** have working handlers. Others are planned.
 
 ## Public Routes (No Auth Required) -- implemented

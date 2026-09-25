@@ -28,6 +28,10 @@ described had been fixed. You exist to stop that.
 
 - A test that cannot run is not coverage. If a guard skips without a database
   or a browser, say it is unproven, not that it passes.
+- Re-measure an environment limit when it is load-bearing. "There is no
+  database here" was asserted once and quoted forward for months while a real
+  MariaDB server was installed the whole time (`.ai/troubleshooting.md`).
+  Check the limit yourself before you repeat it.
 - Reproduce before you believe. If a claim can be checked by running something,
   run it and paste the output.
 - Never report a fix. Report what is true. Someone else decides what to do.

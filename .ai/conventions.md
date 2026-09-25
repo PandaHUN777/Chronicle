@@ -546,6 +546,32 @@ work — coordinator updates the dispatch + audit citations.
 | Sanitize-on-write invariant | `internal/sanitize/invariant_test.go` + `internal/sanitize/sanitize_invariant_snapshot.txt` | **FAIL** (snapshot + invariant) | T-B1 + security-audit §3 G-C4: every `internal/plugins/*/service.go` (+ widgets) that declares HTML-typed inputs MUST call `sanitize.HTML` somewhere in the file. The snapshot pins the per-file inventory of HTML signals + sanitize-call counts; the invariant test fails outright if any file declares HTML inputs with zero sanitize calls. |
 | Decision-citations | `tools/check-decision-citations.sh` | **WARN** (always exit 0) | T-O3 + meta-audit Phase 2: every `cordinator/decisions/*.md` is referenced from at least one piece of code, dispatch, report, or other decision |
 
+### Pre-merge rules that no guard checks
+
+Each of these came from a production incident. Check them by hand in review.
+
+1. **Fragment consumer trace.** A PR that adds an `hx-get` fragment endpoint
+   lists every consumer (each templ file or fetch call that embeds it). A PR
+   that deletes one shows every consumer was moved to something else. Once, a
+   fragment endpoint was replaced while `campaigns/settings.templ` still
+   pointed at the old URL, and owners couldn't load their settings page.
+2. **On-disk artifact trace.** A PR that changes how a URL is served checks that
+   files already on disk (extracted zips, cached files, generated manifests)
+   carry the new URL too. Rewriting the Foundry manifest at serve time wasn't
+   enough, because Foundry reads the installed `module.json` from disk, so
+   update checks kept going back to GitHub.
+3. **Click handlers inside HTMX fragments** use the inline-IIFE `onclick`
+   pattern (Go-side builders like `foundry_vtt/onclick_handlers.go`), never
+   `templ script` helpers or delegated `document.addEventListener`. A templ
+   script is emitted as a sibling `<script>` tag, and browsers don't reliably
+   run swapped-in scripts before the button can be clicked: production threw
+   `__templ_X is not defined` across four PRs. `onclick_handlers_test.go`
+   enforces this for `foundry_vtt` only.
+
+(The fourth rule from the same incidents, keeping `foundry_vtt/errors.go`, its
+`.ai.md` catalog table and `error-catalog.json` in step, is enforced by
+`foundry_vtt/errors_test.go`.)
+
 ### Extending the wire-contract snapshot
 
 When a PR intentionally adds, removes, or changes Echo routes:
@@ -673,6 +699,22 @@ Per `cordinator/decisions/2026-05-21-core-tenets.md §T-B1`, security is the hig
 ### For AI sessions
 
 When a PR touches any of the surfaces in this section, the PR description MUST include a Security-implication line per the audit's discipline. If the surface change is a regression risk, the corresponding CI guard (listed throughout this section) catches it; the guard is the load-bearing mechanism.
+
+### "The route is authorized" is not "the object is authorized"
+
+Campaign middleware proves the caller belongs to the campaign in the URL. It
+proves nothing about the object a handler then loads **by its own id**. Four of
+the five fixes in one security sweep were this same mistake in four places: a
+relation, a note, a calendar and an entity each fetched by id with no ownership
+or visibility check below the route. Two were cross-user reads of private data,
+and one was a cross-*campaign* write through an enumerable integer id.
+
+When a handler or service addresses an object by id:
+
+1. Resolve the object.
+2. Answer 404 if its campaign is not the campaign in the route.
+3. Run the plugin's canonical visibility gate (see the next section).
+4. Only then look in any cache. A cache hit must never skip the gate.
 
 ### Visibility filters take a `permissions.Viewer`, never a bare `(role, userID)` (ADR-049)
 
@@ -834,7 +876,7 @@ Every Chronicle dispatch executes 7 pre-flight steps before commits land. The co
 4. **Not-already-executed** — confirm the symbols / files the dispatch adds don't already exist. Catches duplicate dispatches and prior partial work.
 5. **`UPDATE_ROUTES_SNAPSHOT`** — if Echo routes change, regenerate `internal/wire/routes_snapshot.txt` in the same PR and cite the motivating decision per the §CI tenet-enforcement-guards table.
 6. **Full repo test** — `go test ./...` before opening a PR. Catches incidental fallout from package-internal renames, fixture drift, snapshot bumps.
-7. **Boot verification** — per the safety-system rubric above. Literal `make docker-up` when available; substitute pattern when not. Document the outcome (real or substitute) in the dispatch's status report.
+7. **Boot verification** — per the safety-system rubric above. Literal `make docker-up` when available; substitute pattern when not. Record the outcome (real or substitute) in the PR description.
 
 A dispatch that fails any step 1-4 stop-and-flags rather than presses through. The verify-before-claim discipline from `cordinator/decisions/2026-05-21-core-tenets.md §T-O1, §T-O2` is the binding source; this checklist is the operationalization.
 
