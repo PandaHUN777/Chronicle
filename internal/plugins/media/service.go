@@ -836,10 +836,292 @@ func validateMagicBytes(data []byte, declaredMIME string) bool {
 		return len(data) >= 12 && string(data[:4]) == "RIFF" && string(data[8:12]) == "WAVE"
 	case "audio/webm":
 		// WebM uses Matroska container: starts with EBML header 0x1A45DFA3.
-		return len(data) >= 4 && data[0] == 0x1A && data[1] == 0x45 && data[2] == 0xDF && data[3] == 0xA3
+		// That header alone doesn't distinguish audio from video, or WebM
+		// from a raw .mkv — every Matroska-family file shares it — so a
+		// narrow structural check decides the rest.
+		if len(data) < 4 || data[0] != 0x1A || data[1] != 0x45 || data[2] != 0xDF || data[3] != 0xA3 {
+			return false
+		}
+		return isAudioOnlyWebM(data)
 	default:
 		return false
 	}
+}
+
+// Matroska/WebM element IDs needed to tell an audio-only WebM stream from
+// one carrying video, or from a raw (non-WebM) Matroska file. IDs are
+// written in their conventional form, length-marker bits included — see
+// readEBMLID.
+const (
+	ebmlHeaderID     = 0x1A45DFA3 // EBML header (4-byte id)
+	ebmlDocTypeID    = 0x4282     // EBML\DocType, e.g. "webm" or "matroska" (2-byte id)
+	ebmlSegmentID    = 0x18538067 // Segment (4-byte id)
+	ebmlTracksID     = 0x1654AE6B // Segment\Tracks (4-byte id)
+	ebmlTrackEntryID = 0xAE       // Tracks\TrackEntry (1-byte id)
+	ebmlTrackTypeID  = 0x83       // TrackEntry\TrackType (1-byte id)
+
+	ebmlTrackTypeVideo = 1 // Matroska TrackType value for a video track
+)
+
+// ebmlMaxScanElements bounds how many EBML element headers
+// isAudioOnlyWebM will read before giving up. Skipping an element's
+// *content* is O(1) — the parser advances past its declared size rather
+// than reading it — so this bounds worst-case work to a constant
+// regardless of file size, while comfortably covering any real file:
+// Tracks must precede the Clusters that depend on it, so it always
+// appears within the first handful of top-level and Segment children.
+const ebmlMaxScanElements = 10_000
+
+// ebmlElement is one parsed EBML element header: its id and where its
+// content lives in the buffer.
+type ebmlElement struct {
+	id          uint32
+	contentPos  int
+	contentSize uint64
+	unknownSize bool // the reserved "all data bits set" size encoding
+}
+
+// ebmlVintLen returns the length (1-8) an EBML variable-length integer's
+// leading byte encodes — the position of its highest set bit, counting
+// from the top — or 0 for an invalid (all-zero) leading byte.
+func ebmlVintLen(first byte) int {
+	if first == 0 {
+		return 0
+	}
+	length := 1
+	for mask := byte(0x80); mask != 0 && first&mask == 0; mask >>= 1 {
+		length++
+	}
+	if length > 8 {
+		return 0
+	}
+	return length
+}
+
+// readEBMLID reads an element id at data[pos]. Unlike a size vint, an
+// id's length-marker bits are kept as part of the value — that's why
+// conventional Matroska id constants (e.g. Segment = 0x18538067) already
+// include them.
+func readEBMLID(data []byte, pos int) (id uint32, n int, ok bool) {
+	if pos < 0 || pos >= len(data) {
+		return 0, 0, false
+	}
+	length := ebmlVintLen(data[pos])
+	if length == 0 || length > 4 || pos+length > len(data) {
+		return 0, 0, false
+	}
+	for i := 0; i < length; i++ {
+		id = id<<8 | uint32(data[pos+i])
+	}
+	return id, length, true
+}
+
+// readEBMLSize reads an element size vint at data[pos], with the
+// length-marker bit stripped to get the actual value. unknown reports
+// the reserved "all remaining bits set" encoding EBML permits for a
+// still-being-written (unbounded) element.
+func readEBMLSize(data []byte, pos int) (size uint64, unknown bool, n int, ok bool) {
+	if pos < 0 || pos >= len(data) {
+		return 0, false, 0, false
+	}
+	first := data[pos]
+	length := ebmlVintLen(first)
+	if length == 0 || length > 8 || pos+length > len(data) {
+		return 0, false, 0, false
+	}
+	marker := byte(0x80) >> uint(length-1)
+	value := uint64(first &^ marker)
+	for i := 1; i < length; i++ {
+		value = value<<8 | uint64(data[pos+i])
+	}
+	maxVal := uint64(1)<<(uint(length)*7) - 1
+	return value, value == maxVal, length, true
+}
+
+// readEBMLElement reads one element header (id + size) at data[pos].
+func readEBMLElement(data []byte, pos int) (el ebmlElement, ok bool) {
+	id, idLen, ok1 := readEBMLID(data, pos)
+	if !ok1 {
+		return ebmlElement{}, false
+	}
+	size, unknown, sizeLen, ok2 := readEBMLSize(data, pos+idLen)
+	if !ok2 {
+		return ebmlElement{}, false
+	}
+	return ebmlElement{id: id, contentPos: pos + idLen + sizeLen, contentSize: size, unknownSize: unknown}, true
+}
+
+// ebmlChildEnd resolves el's content end within parentEnd: parentEnd
+// itself when el's size is unknown (can't know its real end, so treat it
+// as running to the edge of what we're allowed to look at) or when the
+// declared size doesn't fit (truncated/malformed input), otherwise the
+// declared end.
+func ebmlChildEnd(el ebmlElement, parentEnd int) int {
+	if el.unknownSize || el.contentSize > uint64(parentEnd-el.contentPos) {
+		return parentEnd
+	}
+	return el.contentPos + int(el.contentSize)
+}
+
+// ebmlWalkChildren iterates sibling elements in [pos, end), calling visit
+// for each. It stops when visit returns false, when an element's header
+// is malformed or its size is unknown (unknown size means the next
+// sibling's start can't be located, so the safe move is to stop rather
+// than guess), or when budget is exhausted — whichever comes first.
+// budget is shared across an entire isAudioOnlyWebM call (including
+// nested calls), so total work stays bounded regardless of nesting depth.
+//
+// budgetExhausted reports specifically whether the walk stopped because
+// *budget hit zero, as opposed to a clean finish or a malformed/refused
+// element. A caller walking Tracks/TrackEntry — where running out of
+// budget mid-scan could silently skip a disqualifying track — uses this
+// to fail closed instead of trusting a partial result.
+func ebmlWalkChildren(data []byte, pos, end int, budget *int, visit func(ebmlElement) bool) (budgetExhausted bool) {
+	for pos < end {
+		if *budget <= 0 {
+			return true
+		}
+		*budget--
+		el, ok := readEBMLElement(data, pos)
+		if !ok || el.contentPos > end {
+			return false
+		}
+		if !visit(el) {
+			return false
+		}
+		if el.unknownSize || el.contentSize > uint64(end-el.contentPos) {
+			return false
+		}
+		next := el.contentPos + int(el.contentSize)
+		if next <= pos {
+			return false
+		}
+		pos = next
+	}
+	return false
+}
+
+// ebmlReadASCII returns el's content as a string, bounded to parentEnd.
+func ebmlReadASCII(data []byte, el ebmlElement, parentEnd int) string {
+	end := ebmlChildEnd(el, parentEnd)
+	if end <= el.contentPos || end > len(data) {
+		return ""
+	}
+	return string(data[el.contentPos:end])
+}
+
+// ebmlReadUint returns el's content as a big-endian unsigned integer,
+// bounded to parentEnd. Matroska encodes small integers (like TrackType)
+// in the minimum number of bytes, always well under 8.
+func ebmlReadUint(data []byte, el ebmlElement, parentEnd int) (uint64, bool) {
+	end := ebmlChildEnd(el, parentEnd)
+	if end <= el.contentPos || end > len(data) || end-el.contentPos > 8 {
+		return 0, false
+	}
+	var v uint64
+	for _, b := range data[el.contentPos:end] {
+		v = v<<8 | uint64(b)
+	}
+	return v, true
+}
+
+// isAudioOnlyWebM does the narrow structural check validateMagicBytes
+// needs to accept "audio/webm" only for a file that really is one: every
+// track in Segment\Tracks must be audio (TrackType 2, never 1/video),
+// and an EBML\DocType, if present, must say "webm" rather than
+// "matroska" (a raw .mkv shares the exact same magic bytes). It does not
+// decode any media — only the small header structure describing what's
+// inside — so cost is bounded by ebmlMaxScanElements, not file size.
+//
+// A file whose Tracks element can't be found within that budget is
+// rejected: this function only ever narrows what audio/webm accepts, so
+// "can't tell" must fail closed rather than fall back to the old
+// magic-bytes-only behavior.
+//
+// audioOnly starts true and only a video TrackEntry actually read flips
+// it, so running out of budget partway through Tracks must never read as
+// "scanned, all audio": padding can push a video entry past the budget.
+// truncated latches on any budget exhaustion inside the Tracks walk and
+// forces rejection.
+func isAudioOnlyWebM(data []byte) bool {
+	budget := ebmlMaxScanElements
+	sawTracks := false
+	sawTrackEntry := false
+	audioOnly := true
+	truncated := false
+	docType := ""
+
+	ebmlWalkChildren(data, 0, len(data), &budget, func(top ebmlElement) bool {
+		switch top.id {
+		case ebmlHeaderID:
+			headerEnd := ebmlChildEnd(top, len(data))
+			ebmlWalkChildren(data, top.contentPos, headerEnd, &budget, func(child ebmlElement) bool {
+				if child.id == ebmlDocTypeID {
+					docType = ebmlReadASCII(data, child, headerEnd)
+				}
+				return true
+			})
+		case ebmlSegmentID:
+			segEnd := ebmlChildEnd(top, len(data))
+			ebmlWalkChildren(data, top.contentPos, segEnd, &budget, func(segChild ebmlElement) bool {
+				if segChild.id != ebmlTracksID {
+					return true // keep looking for Tracks among Segment's children
+				}
+				sawTracks = true
+				tracksEnd := ebmlChildEnd(segChild, segEnd)
+				entriesExhausted := ebmlWalkChildren(data, segChild.contentPos, tracksEnd, &budget, func(entry ebmlElement) bool {
+					if entry.id != ebmlTrackEntryID {
+						return true
+					}
+					sawTrackEntry = true
+					entryEnd := ebmlChildEnd(entry, tracksEnd)
+					typeKnown := false
+					fieldsExhausted := ebmlWalkChildren(data, entry.contentPos, entryEnd, &budget, func(field ebmlElement) bool {
+						if field.id == ebmlTrackTypeID {
+							if v, ok := ebmlReadUint(data, field, entryEnd); ok {
+								typeKnown = true
+								if v == ebmlTrackTypeVideo {
+									audioOnly = false
+								}
+							}
+						}
+						return true
+					})
+					if fieldsExhausted {
+						truncated = true
+					}
+					if !typeKnown {
+						// TrackType is mandatory per spec; a TrackEntry
+						// without a readable one means truncated or
+						// malformed input, not a confirmed audio track —
+						// fail closed rather than assume audio.
+						audioOnly = false
+					}
+					return true
+				})
+				if entriesExhausted {
+					// Budget ran out before every TrackEntry in Tracks was
+					// visited — a later, unvisited TrackEntry could be
+					// video. Not a confirmed audio-only file.
+					truncated = true
+				}
+				return false // Tracks found; no need to keep scanning Segment
+			})
+		}
+		return true
+	})
+
+	if !sawTracks || !sawTrackEntry || truncated {
+		// A Tracks element that never actually enumerated a TrackEntry
+		// (or a missing Tracks element at all) can't confirm the file is
+		// audio-only — fail closed rather than trust the untouched
+		// audioOnly default.
+		return false
+	}
+	if docType != "" && docType != "webm" {
+		return false
+	}
+	return audioOnly
 }
 
 // checkDiskSpace verifies that writing a file of the given size will leave at
