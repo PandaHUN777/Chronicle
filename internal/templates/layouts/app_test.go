@@ -286,3 +286,28 @@ func TestAllPagesLinkHighlightsOnEntitySubpath(t *testing.T) {
 		t.Errorf("All Pages link must be inactive off the entities tree; got %q", got)
 	}
 }
+
+// TestSidebarOmitsLegacyNPCAddonLink pins the Characters consolidation: the
+// npcs addon still enables the Characters entry, but no standalone /npcs
+// sidebar destination is rendered anymore.
+func TestSidebarOmitsLegacyNPCAddonLink(t *testing.T) {
+	ctx := SetCampaignID(context.Background(), "camp1")
+	ctx = SetEnabledAddons(ctx, map[string]bool{"npcs": true})
+	ctx = SetSidebarItems(ctx, []SidebarItemView{{Type: "addon", Slug: "npcs"}})
+
+	var buf bytes.Buffer
+	if err := Sidebar().Render(ctx, &buf); err != nil {
+		t.Fatalf("render Sidebar: %v", err)
+	}
+	html := buf.String()
+
+	if strings.Contains(html, "/campaigns/camp1/npcs") {
+		t.Fatal("legacy NPC sidebar link must not be rendered")
+	}
+	if !strings.Contains(html, "/campaigns/camp1/characters") {
+		t.Fatal("Characters sidebar link must remain available when the npcs addon is enabled")
+	}
+	if got := AddonSidebarPath("npcs"); got != "" {
+		t.Fatalf("AddonSidebarPath(\"npcs\") = %q, want no sidebar destination", got)
+	}
+}
