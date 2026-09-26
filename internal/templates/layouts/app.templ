@@ -267,7 +267,7 @@ templ Sidebar() {
 						if item.Type == "dashboard" {
 							@sidebarDashboardLink(ctx)
 						}
-						if item.Type == "addon" && IsAddonEnabled(ctx, item.Slug) {
+						if item.Type == "addon" && IsAddonEnabled(ctx, item.Slug) && addonURLMap[item.Slug] != "" {
 							@sidebarAddonLink(ctx, item)
 						}
 						if item.Type == "all_pages" {
@@ -733,7 +733,6 @@ templ DefaultSidebarNav() {
 // addonURLMap maps addon slugs to their sidebar URL paths.
 var addonURLMap = map[string]string{
 	"notes":    "/journal",
-	"npcs":     "/npcs",
 	"armory":   "/armory",
 	"calendar": "/apps/calendar", // W5c: the role-aware calendar dashboard
 }
@@ -741,7 +740,6 @@ var addonURLMap = map[string]string{
 // addonIconMap maps addon slugs to their default icons.
 var addonIconMap = map[string]string{
 	"notes":    "fa-book-open",
-	"npcs":     "fa-users",
 	"armory":   "fa-shield-halved",
 	"calendar": "fa-calendar-days",
 }
@@ -749,7 +747,6 @@ var addonIconMap = map[string]string{
 // addonLabelMap maps addon slugs to their display labels.
 var addonLabelMap = map[string]string{
 	"notes":    "Journal",
-	"npcs":     "NPCs",
 	"armory":   "Armory",
 	"calendar": "Calendar",
 }
